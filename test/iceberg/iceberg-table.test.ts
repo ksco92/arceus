@@ -825,9 +825,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
-            columns: [
-
-            ],
+            columns: [],
             location: 's3://my-bucket/simple/',
         })).toThrow(/at least one column/);
     });
@@ -946,9 +944,7 @@ describe('IcebergTable — validation', () => {
             tableName: 'simple',
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
-            sortOrder: [
-
-            ],
+            sortOrder: [],
         })).toThrow(/sortOrder must contain at least one field/);
     });
 

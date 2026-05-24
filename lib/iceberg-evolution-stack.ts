@@ -105,9 +105,7 @@ export class IcebergEvolutionStack extends Stack {
                 'ALTER',
                 'DESCRIBE',
             ],
-            permissionsWithGrantOption: [
-
-            ],
+            permissionsWithGrantOption: [],
             resource: {
                 tableResource: {
                     catalogId: this.account,
