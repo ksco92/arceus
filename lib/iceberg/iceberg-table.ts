@@ -693,6 +693,9 @@ function renderPartitionSpec(
         name: field.name ?? defaultPartitionName(field),
         sourceId: columnByName.get(field.sourceColumn)!.id,
         transform: field.transform.toTransformString(),
+        /// Per the Iceberg spec, partition field ids must be in the
+        /// range [1000, 9999]; the construct allocates them densely
+        /// from 1000 in declaration order.
         fieldId: 1000 + index,
     }));
     return {

@@ -1,6 +1,9 @@
 {
     "name": "arceus",
     "version": "0.1.0",
+    "license": "MIT",
+    "description": "CDK app + IcebergTable L2 construct for managing Apache Iceberg tables in the AWS Glue Data Catalog.",
+    "private": true,
     "bin": {
         "arceus": "bin/arceus.js"
     },

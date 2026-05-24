@@ -44,8 +44,19 @@ import {
     IcebergType,
 } from './iceberg';
 
+/** Props for `ArceusStack`. */
+export interface ArceusStackProps extends StackProps {
+    /**
+     * IAM user name (in this account) that should be granted Lake
+     * Formation admin + per-table SELECT/INSERT/DELETE/ALTER on the
+     * demo Iceberg tables. Required so that the stack is portable
+     * to any account, not just the author's.
+     */
+    readonly developerIamUserName: string;
+}
+
 export class ArceusStack extends Stack {
-    constructor(scope: Construct, id: string, props?: StackProps) {
+    constructor(scope: Construct, id: string, props: ArceusStackProps) {
         super(scope, id, props);
 
         /// /////////////////////////////////////////////////
@@ -54,7 +65,7 @@ export class ArceusStack extends Stack {
         /// /////////////////////////////////////////////////
         // Security
 
-        const myUser = new ArnPrincipal(`arn:${this.partition}:iam::${this.account}:user/rodrigo`);
+        const myUser = new ArnPrincipal(`arn:${this.partition}:iam::${this.account}:user/${props.developerIamUserName}`);
 
         const dataLakeBucketKmsKey = new Key(this, 'DataLakeBucketKmsKey', {
             enableKeyRotation: true,
@@ -211,7 +222,7 @@ export class ArceusStack extends Stack {
 
         const glueDatabase = new Database(this, 'SampleDatabase', {
             databaseName: databaseName,
-            description: 'This is the description.',
+            description: 'Demo Iceberg tables for the arceus IcebergTable construct.',
             locationUri: `s3://${dataLakeBucket.bucketName}/${databaseName}/`,
         });
 
