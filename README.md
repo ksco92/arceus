@@ -52,7 +52,13 @@ Before running the quickstart you need:
 ## Quickstart
 
 ```bash
-export DEVELOPER_IAM_USER="$(aws sts get-caller-identity --query Arn --output text | awk -F/ '{print $NF}')"
+# DEVELOPER_IAM_USER must be the name of an existing IAM user in
+# this account. `aws iam get-user` works when you're authenticated
+# directly as an IAM user; for SSO / assumed-role / aws-vault setups
+# (the modern default) the call fails with "Must specify userName
+# when calling with non-User credentials" and you should set the
+# variable manually to whichever IAM user you want LF to grant on.
+export DEVELOPER_IAM_USER="$(aws iam get-user --query 'User.UserName' --output text)"
 
 npm install
 npx jest                         # 167 tests, 100% line coverage
