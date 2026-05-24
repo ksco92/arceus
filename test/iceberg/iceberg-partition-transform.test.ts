@@ -52,10 +52,32 @@ describe('IcebergPartitionTransform — direct constructor', () => {
         })).toThrow(/bucketCount/);
     });
 
+    it.each([
+        0,
+        -1,
+        1.5,
+    ])('rejects bucket kind with invalid bucketCount=%s', (bucketCount) => {
+        expect(() => new IcebergPartitionTransform({
+            kind: IcebergPartitionTransformKind.BUCKET,
+            bucketCount,
+        })).toThrow(/positive integer/);
+    });
+
     it('rejects truncate kind without truncateWidth', () => {
         expect(() => new IcebergPartitionTransform({
             kind: IcebergPartitionTransformKind.TRUNCATE,
         })).toThrow(/truncateWidth/);
+    });
+
+    it.each([
+        0,
+        -1,
+        1.5,
+    ])('rejects truncate kind with invalid truncateWidth=%s', (truncateWidth) => {
+        expect(() => new IcebergPartitionTransform({
+            kind: IcebergPartitionTransformKind.TRUNCATE,
+            truncateWidth,
+        })).toThrow(/positive integer/);
     });
 });
 
