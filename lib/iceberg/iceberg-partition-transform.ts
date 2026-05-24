@@ -1,13 +1,10 @@
 import {
     IcebergType,
+    IcebergTypeKind,
 } from './iceberg-type';
 
 /**
- * Discriminator for the kind of transform. Used by the source-type
- * validator (in this file) and by the renderer (which just calls
- * `toTransformString()`).
- *
- * @internal
+ * Discriminator for `IcebergPartitionTransform`.
  */
 export enum IcebergPartitionTransformKind {
     IDENTITY = 'identity',
@@ -23,19 +20,20 @@ export enum IcebergPartitionTransformKind {
 /**
  * Construction options for an `IcebergPartitionTransform`.
  *
- * Most callers should use the static factories (`IcebergPartitionTransform.IDENTITY`,
- * `IcebergPartitionTransform.bucket(...)`, etc.) rather than instantiate
- * directly. The constructor is public only because jsii reflection
- * requires it.
+ * Most callers should use the static factories
+ * (`IcebergPartitionTransform.IDENTITY`,
+ * `IcebergPartitionTransform.bucket(...)`, etc.) rather than
+ * instantiate directly. The constructor exists for jsii reflection
+ * and runs the same validation as the factories.
  */
 export interface IcebergPartitionTransformOptions {
-    /** Discriminator for source-type validation. */
+    /** Discriminator. */
     readonly kind: IcebergPartitionTransformKind;
 
-    /** Number of buckets — required when `kind === BUCKET`. */
+    /** Number of buckets (positive integer). Required when `kind === BUCKET`. */
     readonly bucketCount?: number;
 
-    /** Truncate width — required when `kind === TRUNCATE`. */
+    /** Truncate width (positive integer). Required when `kind === TRUNCATE`. */
     readonly truncateWidth?: number;
 }
 
@@ -83,9 +81,6 @@ export class IcebergPartitionTransform {
      * @param numBuckets Number of buckets (positive integer).
      */
     public static bucket(numBuckets: number): IcebergPartitionTransform {
-        if (!Number.isInteger(numBuckets) || numBuckets < 1) {
-            throw new Error(`bucket() numBuckets must be a positive integer, got ${numBuckets}`);
-        }
         return new IcebergPartitionTransform({
             kind: IcebergPartitionTransformKind.BUCKET,
             bucketCount: numBuckets,
@@ -97,9 +92,6 @@ export class IcebergPartitionTransform {
      * @param width Width (positive integer).
      */
     public static truncate(width: number): IcebergPartitionTransform {
-        if (!Number.isInteger(width) || width < 1) {
-            throw new Error(`truncate() width must be a positive integer, got ${width}`);
-        }
         return new IcebergPartitionTransform({
             kind: IcebergPartitionTransformKind.TRUNCATE,
             truncateWidth: width,
@@ -109,33 +101,68 @@ export class IcebergPartitionTransform {
     /** Discriminator. */
     public readonly kind: IcebergPartitionTransformKind;
 
-    /** @internal */
-    public readonly _bucketCount?: number;
+    /** Number of buckets (set when `kind === BUCKET`). */
+    public readonly bucketCount?: number;
 
-    /** @internal */
-    public readonly _truncateWidth?: number;
+    /** Truncate width (set when `kind === TRUNCATE`). */
+    public readonly truncateWidth?: number;
 
     public constructor(options: IcebergPartitionTransformOptions) {
-        if (options.kind === IcebergPartitionTransformKind.BUCKET && options.bucketCount === undefined) {
-            throw new Error('bucket transform requires bucketCount');
-        }
-        if (options.kind === IcebergPartitionTransformKind.TRUNCATE && options.truncateWidth === undefined) {
-            throw new Error('truncate transform requires truncateWidth');
-        }
         this.kind = options.kind;
-        this._bucketCount = options.bucketCount;
-        this._truncateWidth = options.truncateWidth;
+        switch (options.kind) {
+            case IcebergPartitionTransformKind.IDENTITY:
+            case IcebergPartitionTransformKind.YEAR:
+            case IcebergPartitionTransformKind.MONTH:
+            case IcebergPartitionTransformKind.DAY:
+            case IcebergPartitionTransformKind.HOUR:
+            case IcebergPartitionTransformKind.VOID:
+                /// These transforms carry no extra data.
+                break;
+            case IcebergPartitionTransformKind.BUCKET:
+                if (options.bucketCount === undefined) {
+                    throw new Error('bucket transform requires bucketCount');
+                }
+                if (!Number.isInteger(options.bucketCount) || options.bucketCount < 1) {
+                    throw new Error(`bucket() numBuckets must be a positive integer, got ${options.bucketCount}`);
+                }
+                this.bucketCount = options.bucketCount;
+                break;
+            case IcebergPartitionTransformKind.TRUNCATE:
+                if (options.truncateWidth === undefined) {
+                    throw new Error('truncate transform requires truncateWidth');
+                }
+                if (!Number.isInteger(options.truncateWidth) || options.truncateWidth < 1) {
+                    throw new Error(`truncate() width must be a positive integer, got ${options.truncateWidth}`);
+                }
+                this.truncateWidth = options.truncateWidth;
+                break;
+            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
+            default: {
+                const exhaustive: never = options.kind;
+                throw new Error(`unknown IcebergPartitionTransformKind: ${exhaustive}`);
+            }
+        }
     }
 
     /** Iceberg/Glue transform string (e.g. `identity`, `bucket[16]`, `hour`). */
     public toTransformString(): string {
         switch (this.kind) {
             case IcebergPartitionTransformKind.BUCKET:
-                return `bucket[${this._bucketCount}]`;
+                return `bucket[${this.bucketCount}]`;
             case IcebergPartitionTransformKind.TRUNCATE:
-                return `truncate[${this._truncateWidth}]`;
-            default:
+                return `truncate[${this.truncateWidth}]`;
+            case IcebergPartitionTransformKind.IDENTITY:
+            case IcebergPartitionTransformKind.YEAR:
+            case IcebergPartitionTransformKind.MONTH:
+            case IcebergPartitionTransformKind.DAY:
+            case IcebergPartitionTransformKind.HOUR:
+            case IcebergPartitionTransformKind.VOID:
                 return this.kind;
+            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
+            default: {
+                const exhaustive: never = this.kind;
+                throw new Error(`unknown IcebergPartitionTransformKind in toTransformString: ${exhaustive}`);
+            }
         }
     }
 
@@ -170,7 +197,7 @@ export class IcebergPartitionTransform {
             case IcebergPartitionTransformKind.BUCKET:
                 if (!isBucketLegal(sourceType)) {
                     throw new Error(
-                        `partition transform 'bucket[${this._bucketCount}]' on column '${sourceColumnName}' requires `
+                        `partition transform 'bucket[${this.bucketCount}]' on column '${sourceColumnName}' requires `
                         + 'an int/long/decimal/date/time/timestamp/timestamptz/string/uuid/fixed/binary column',
                     );
                 }
@@ -178,44 +205,59 @@ export class IcebergPartitionTransform {
             case IcebergPartitionTransformKind.TRUNCATE:
                 if (!isTruncateLegal(sourceType)) {
                     throw new Error(
-                        `partition transform 'truncate[${this._truncateWidth}]' on column '${sourceColumnName}' requires `
+                        `partition transform 'truncate[${this.truncateWidth}]' on column '${sourceColumnName}' requires `
                         + 'an int/long/decimal/string/binary column',
                     );
                 }
                 return;
+            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
+            default: {
+                const exhaustive: never = this.kind;
+                throw new Error(`unknown IcebergPartitionTransformKind in validateSourceType: ${exhaustive}`);
+            }
         }
     }
 }
 
 function isTemporal(type: IcebergType): boolean {
-    return type === IcebergType.DATE
-        || type === IcebergType.TIMESTAMP
-        || type === IcebergType.TIMESTAMPTZ;
+    return type.kind === IcebergTypeKind.DATE
+        || type.kind === IcebergTypeKind.TIMESTAMP
+        || type.kind === IcebergTypeKind.TIMESTAMPTZ;
 }
 
 function isTimestamp(type: IcebergType): boolean {
-    return type === IcebergType.TIMESTAMP
-        || type === IcebergType.TIMESTAMPTZ;
+    return type.kind === IcebergTypeKind.TIMESTAMP
+        || type.kind === IcebergTypeKind.TIMESTAMPTZ;
 }
 
 function isBucketLegal(type: IcebergType): boolean {
-    return type === IcebergType.INT
-        || type === IcebergType.LONG
-        || type === IcebergType.DATE
-        || type === IcebergType.TIME
-        || type === IcebergType.TIMESTAMP
-        || type === IcebergType.TIMESTAMPTZ
-        || type === IcebergType.STRING
-        || type === IcebergType.UUID
-        || type === IcebergType.BINARY
-        || type.isDecimal()
-        || type.isFixed();
+    switch (type.kind) {
+        case IcebergTypeKind.INT:
+        case IcebergTypeKind.LONG:
+        case IcebergTypeKind.DATE:
+        case IcebergTypeKind.TIME:
+        case IcebergTypeKind.TIMESTAMP:
+        case IcebergTypeKind.TIMESTAMPTZ:
+        case IcebergTypeKind.STRING:
+        case IcebergTypeKind.UUID:
+        case IcebergTypeKind.BINARY:
+        case IcebergTypeKind.DECIMAL:
+        case IcebergTypeKind.FIXED:
+            return true;
+        default:
+            return false;
+    }
 }
 
 function isTruncateLegal(type: IcebergType): boolean {
-    return type === IcebergType.INT
-        || type === IcebergType.LONG
-        || type === IcebergType.STRING
-        || type === IcebergType.BINARY
-        || type.isDecimal();
+    switch (type.kind) {
+        case IcebergTypeKind.INT:
+        case IcebergTypeKind.LONG:
+        case IcebergTypeKind.STRING:
+        case IcebergTypeKind.BINARY:
+        case IcebergTypeKind.DECIMAL:
+            return true;
+        default:
+            return false;
+    }
 }

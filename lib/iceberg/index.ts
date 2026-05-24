@@ -1,9 +1,13 @@
 export {
     IcebergType,
+    IcebergTypeKind,
+    IcebergTypeOptions,
     IcebergStructFieldDefinition,
 } from './iceberg-type';
 export {
     IcebergPartitionTransform,
+    IcebergPartitionTransformKind,
+    IcebergPartitionTransformOptions,
 } from './iceberg-partition-transform';
 export {
     IcebergDataFormat,
