@@ -12,6 +12,34 @@ shape and the silent-corruption traps you can hit by getting it
 slightly wrong. This construct implements that shape and refuses to
 emit the unsafe alternatives.
 
+> **Repo shape:** this is a self-contained CDK **app + demo**, not an
+> npm-publishable library. The `IcebergTable` construct itself is
+> reusable — copy the `lib/iceberg/` directory into your own CDK
+> project. The `bin/` and stack files are demo scaffolding.
+
+## Prerequisites
+
+Before running the quickstart you need:
+
+1. AWS credentials in the default profile with permissions to manage
+   CloudFormation, KMS, S3, Glue, Lake Formation, Athena, and IAM
+   policies. `aws sts get-caller-identity` must return successfully.
+2. `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` set in the
+   environment (the AWS CLI sets these automatically for most
+   profile setups; `cdk` also populates them from the active profile).
+3. `DEVELOPER_IAM_USER` set to the name of an **existing IAM user**
+   in this account. The stack adds that user as a Lake Formation
+   admin and grants it per-table `SELECT/INSERT/DELETE/ALTER/DESCRIBE`
+   on the demo Iceberg tables — without it the deploy fails when LF
+   can't resolve the principal.
+4. The Lake Formation service-linked role
+   `AWSServiceRoleForLakeFormationDataAccess` must exist in the
+   account. Create it once with
+   `aws iam create-service-linked-role --aws-service-name lakeformation.amazonaws.com`
+   if you haven't already.
+5. `cdk bootstrap aws://<account>/<region>` if the account hasn't
+   been bootstrapped for CDK.
+
 ## What you get
 
 - **`lib/iceberg/iceberg-table.ts`** — the `IcebergTable` L2 construct.
@@ -24,11 +52,19 @@ emit the unsafe alternatives.
 ## Quickstart
 
 ```bash
+export DEVELOPER_IAM_USER="$(aws sts get-caller-identity --query Arn --output text | awk -F/ '{print $NF}')"
+
 npm install
 npx jest                         # 167 tests, 100% line coverage
 npx cdk deploy ArceusStack --require-approval=never
 ./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
 ```
+
+`cdk ls` will show two stacks — `ArceusStack` (the demo data lake +
+three Iceberg tables) and `IcebergEvolutionStack` (the evolution
+test target driven by `scripts/integration-test-evolution.sh`).
+Deploy only `ArceusStack` for the quickstart; the evolution stack
+is created on demand by the script.
 
 ## Using `IcebergTable`
 
@@ -229,11 +265,11 @@ existing.grantRead(role);
 
 ## Demo tables (deployed by `ArceusStack`)
 
-| Table | Format | Partitions | Sort | Notable properties |
-| --- | --- | --- | --- | --- |
-| `orders` | parquet, v2 | `day(placed_at)`, `bucket(16)(customer_id)` | `placed_at ASC NULLS LAST`, `order_id ASC` | `write.{delete,update,merge}.mode = merge-on-read`, `zstd`, `history.expire.min-snapshots-to-keep = 5`, identifier-field-ids = `[order_id]`, nested `list`/`struct`/`map` columns |
-| `events` | parquet, v2 | `hour(occurred_at)` | (none) | high-cardinality hourly partitioning |
-| `customers` | parquet, v2 | (none) | (none) | identifier-field-ids = `[customer_id]` — used as the schema-evolution playground |
+| Table | Format | Columns | Partitions | Sort | Notable properties |
+| --- | --- | --- | --- | --- | --- |
+| `orders` | parquet, v2 | `order_id(1)`, `customer_id(2)`, `order_amount(3)`, `currency(4)`, `placed_at(5)`, `tags(6)` (list), `shipping_address(7)` (struct), `metadata(8)` (map) | `day(placed_at)`, `bucket(16)(customer_id)` | `placed_at ASC NULLS LAST`, `order_id ASC` | `write.{delete,update,merge}.mode = merge-on-read`, `zstd`, `history.expire.min-snapshots-to-keep = 5`, identifier-field-ids = `[order_id]`, nested `list`/`struct`/`map` columns |
+| `events` | parquet, v2 | `event_id(1)`, `event_name(2)`, `session_id(3)`, `occurred_at(4)`, `attributes(5)` (map) | `hour(occurred_at)` | (none) | high-cardinality hourly partitioning |
+| `customers` | parquet, v2 | `customer_id(1)`, `email(2)`, `signed_up_at(4)`, `loyalty_tier(5)` (id 3 retired) | (none) | (none) | identifier-field-ids = `[customer_id]` — the stack's `customers` block carries inline comments narrating the schema-evolution journey that landed here (drop `full_name`, add `loyalty_tier`); the live evolution loop runs against the separate `IcebergEvolutionStack` |
 
 After `cdk deploy ArceusStack`, the three tables are queryable from Athena (workgroup `ReadOnly`).
 
@@ -466,10 +502,10 @@ Test Suites: 6 passed, 6 total
 Tests:       167 passed, 167 total
 
 Coverage summary
-Statements   : 100% ( 408/408 )
-Branches     : 100% ( 145/145 )
+Statements   : 100% ( 411/411 )
+Branches     : 100% ( 146/146 )
 Functions    : 98.8% ( 83/84 )
-Lines        : 100% ( 405/405 )
+Lines        : 100% ( 408/408 )
 ```
 
 The 95% coverage floor is enforced in `jest.config.js`.

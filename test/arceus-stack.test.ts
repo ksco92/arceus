@@ -19,6 +19,7 @@ describe('ArceusStack', () => {
                 account: '123456789012',
                 region: 'us-east-1',
             },
+            developerIamUserName: 'tester',
         });
         template = Template.fromStack(stack);
     });
