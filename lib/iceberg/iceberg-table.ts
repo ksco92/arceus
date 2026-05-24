@@ -221,12 +221,19 @@ const WRITE_TABLE_ACTIONS = [
     'glue:UpdateTable',
 ];
 
-/// S3 actions that operate at the bucket level (no object in the
-/// resource ARN). Must be granted on the bucket ARN with an
-/// `s3:prefix` condition so the grantee can only list the table's
-/// prefix, not the whole bucket.
-const READ_S3_BUCKET_ACTIONS = [
+/// S3 actions that operate at the bucket level AND support the
+/// `s3:prefix` request condition key (per the S3 docs). Granted on
+/// the bucket ARN with a `StringLike s3:prefix = [<prefix>*, <prefix>]`
+/// condition so the grantee can only list the table's own prefix.
+const READ_S3_LIST_ACTIONS = [
     's3:ListBucket',
+];
+
+/// S3 actions that operate at the bucket level but DO NOT support
+/// `s3:prefix`. Granted on the bucket ARN with no condition — adding
+/// one would silently deny these actions at runtime even though they
+/// appear in the policy document.
+const READ_S3_BUCKET_ACTIONS = [
     's3:GetBucketLocation',
 ];
 
@@ -390,6 +397,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                     objectArn,
                     prefixGlob,
                     tableActions: READ_TABLE_ACTIONS,
+                    listActions: READ_S3_LIST_ACTIONS,
                     bucketActions: READ_S3_BUCKET_ACTIONS,
                     objectActions: READ_S3_OBJECT_ACTIONS,
                 });
@@ -402,6 +410,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
                     objectArn,
                     prefixGlob,
                     tableActions: WRITE_TABLE_ACTIONS,
+                    listActions: [
+
+                    ],
                     bucketActions: WRITE_S3_BUCKET_ACTIONS,
                     objectActions: WRITE_S3_OBJECT_ACTIONS,
                 });
@@ -417,6 +428,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                         ...READ_TABLE_ACTIONS,
                         ...WRITE_TABLE_ACTIONS,
                     ],
+                    listActions: READ_S3_LIST_ACTIONS,
                     bucketActions: [
                         ...READ_S3_BUCKET_ACTIONS,
                         ...WRITE_S3_BUCKET_ACTIONS,
@@ -440,6 +452,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
             objectArn: this.objectArn,
             prefixGlob: this.s3PrefixGlob,
             tableActions: READ_TABLE_ACTIONS,
+            listActions: READ_S3_LIST_ACTIONS,
             bucketActions: READ_S3_BUCKET_ACTIONS,
             objectActions: READ_S3_OBJECT_ACTIONS,
         });
@@ -453,6 +466,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
             objectArn: this.objectArn,
             prefixGlob: this.s3PrefixGlob,
             tableActions: WRITE_TABLE_ACTIONS,
+            listActions: [
+
+            ],
             bucketActions: WRITE_S3_BUCKET_ACTIONS,
             objectActions: WRITE_S3_OBJECT_ACTIONS,
         });
@@ -469,6 +485,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                 ...READ_TABLE_ACTIONS,
                 ...WRITE_TABLE_ACTIONS,
             ],
+            listActions: READ_S3_LIST_ACTIONS,
             bucketActions: [
                 ...READ_S3_BUCKET_ACTIONS,
                 ...WRITE_S3_BUCKET_ACTIONS,
@@ -755,13 +772,17 @@ function mergeProperties(
 }
 
 /**
- * Issue the three policy statements that scope an Iceberg-table
- * grant correctly: Glue actions on the table ARN, S3 bucket-level
- * actions on the bucket ARN with an `s3:prefix` condition so only
- * the table's own prefix can be listed, and S3 object-level actions
- * on the `bucket/prefix*` ARN. Returns the table-actions grant
- * (any of the three is sufficient for the `Grant` API contract; the
- * other two are attached as side effects).
+ * Issue the four policy statements that scope an Iceberg-table grant
+ * correctly: Glue actions on the table ARN, S3 list-bucket actions
+ * on the bucket ARN with an `s3:prefix` condition so only the
+ * table's own prefix can be listed, S3 bucket-level actions that DO
+ * NOT support the `s3:prefix` condition (e.g. `GetBucketLocation`,
+ * `ListBucketMultipartUploads`) on the bucket ARN with no condition
+ * — including them in the conditioned statement would silently deny
+ * them at runtime — and S3 object-level actions on the
+ * `bucket/prefix*` ARN. Returns the table-actions grant (any of the
+ * four is sufficient for the `Grant` API contract; the rest attach
+ * as side effects).
  *
  * @internal
  */
@@ -773,6 +794,7 @@ function grantSplit(
         objectArn: string;
         prefixGlob: string;
         tableActions: string[];
+        listActions: string[];
         bucketActions: string[];
         objectActions: string[];
     },
@@ -784,10 +806,10 @@ function grantSplit(
             args.tableArn,
         ],
     });
-    if (args.bucketActions.length > 0) {
+    if (args.listActions.length > 0) {
         Grant.addToPrincipal({
             grantee,
-            actions: args.bucketActions,
+            actions: args.listActions,
             resourceArns: [
                 args.bucketArn,
             ],
@@ -799,6 +821,15 @@ function grantSplit(
                     ],
                 },
             },
+        });
+    }
+    if (args.bucketActions.length > 0) {
+        Grant.addToPrincipal({
+            grantee,
+            actions: args.bucketActions,
+            resourceArns: [
+                args.bucketArn,
+            ],
         });
     }
     Grant.addToPrincipal({

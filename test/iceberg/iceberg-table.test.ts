@@ -1065,7 +1065,7 @@ describe('IcebergTable — grants', () => {
         return JSON.stringify(stack.resolve(statement.Resource));
     }
 
-    it('grantRead emits separate statements for Glue (table ARN), S3 bucket (with s3:prefix condition), and S3 object', () => {
+    it('grantRead emits four statements: Glue, list-with-s3:prefix, bucket-no-condition, and object', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1082,20 +1082,21 @@ describe('IcebergTable — grants', () => {
         const statements = resolvedStatements(Template.fromStack(stack));
 
         /// Glue statement: scoped to the Glue table ARN (a CFN
-        /// intrinsic). `s3:ListBucket` must NOT appear on it.
+        /// intrinsic). No S3 actions on it.
         const glueStatements = statementsByAction(statements, 'glue:GetTable');
         expect(glueStatements).toHaveLength(1);
         expect(actionListOf(glueStatements[0])).not.toContain('s3:ListBucket');
+        expect(actionListOf(glueStatements[0])).not.toContain('s3:GetBucketLocation');
         expect(resolvedResourceString(stack, glueStatements[0])).toContain(':glue:');
 
-        /// Bucket statement: scoped to the bucket ARN, with a
-        /// `StringLike` `s3:prefix` condition limiting the
-        /// developer to listing the table's own prefix.
+        /// `s3:ListBucket` statement: scoped to bucket ARN with the
+        /// `s3:prefix` condition limiting visibility to this table.
         const listStatements = statementsByAction(statements, 's3:ListBucket');
         expect(listStatements).toHaveLength(1);
-        const bucketArn = resolvedResourceString(stack, listStatements[0]);
-        expect(bucketArn).toContain('my-bucket');
-        expect(bucketArn).not.toContain('/path/');
+        expect(actionListOf(listStatements[0])).toEqual([
+            's3:ListBucket',
+        ]);
+        expect(resolvedResourceString(stack, listStatements[0])).toContain('my-bucket');
         expect(listStatements[0].Condition).toEqual({
             StringLike: {
                 's3:prefix': [
@@ -1104,6 +1105,15 @@ describe('IcebergTable — grants', () => {
                 ],
             },
         });
+
+        /// Unconditional bucket statement for actions that DO NOT
+        /// support `s3:prefix` — putting `GetBucketLocation` under
+        /// the conditioned statement above would silently deny it.
+        const getBucketLocationStatements = statementsByAction(statements, 's3:GetBucketLocation');
+        expect(getBucketLocationStatements).toHaveLength(1);
+        expect(getBucketLocationStatements[0].Condition).toBeUndefined();
+        expect(resolvedResourceString(stack, getBucketLocationStatements[0])).toContain('my-bucket');
+        expect(actionListOf(getBucketLocationStatements[0])).not.toContain('s3:ListBucket');
 
         /// Object statement: scoped to bucket/prefix*.
         const objectStatements = statementsByAction(statements, 's3:GetObject');
@@ -1114,7 +1124,7 @@ describe('IcebergTable — grants', () => {
         expect(objectActions).not.toContain('s3:GetBucketLocation');
     });
 
-    it('grantWrite emits the same three-statement shape with write actions', () => {
+    it('grantWrite emits Glue, unconditional bucket (for ListBucketMultipartUploads), and object statements', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1133,17 +1143,24 @@ describe('IcebergTable — grants', () => {
         const glueStatements = statementsByAction(statements, 'glue:UpdateTable');
         expect(glueStatements).toHaveLength(1);
 
-        const bucketStatements = statementsByAction(statements, 's3:ListBucketMultipartUploads');
-        expect(bucketStatements).toHaveLength(1);
-        expect(resolvedResourceString(stack, bucketStatements[0])).toContain('my-bucket');
-        expect(bucketStatements[0].Condition).toBeDefined();
+        /// `s3:ListBucketMultipartUploads` must NOT carry an
+        /// `s3:prefix` condition (the action does not support that
+        /// condition key).
+        const mpuStatements = statementsByAction(statements, 's3:ListBucketMultipartUploads');
+        expect(mpuStatements).toHaveLength(1);
+        expect(mpuStatements[0].Condition).toBeUndefined();
+        expect(resolvedResourceString(stack, mpuStatements[0])).toContain('my-bucket');
+
+        /// grantWrite alone never grants `s3:ListBucket` — that is
+        /// a read-time action.
+        expect(statementsByAction(statements, 's3:ListBucket')).toHaveLength(0);
 
         const objectStatements = statementsByAction(statements, 's3:PutObject');
         expect(objectStatements).toHaveLength(1);
         expect(resolvedResourceString(stack, objectStatements[0])).toContain('my-bucket/simple/*');
     });
 
-    it('grantReadWrite combines read + write actions across the same three-statement shape', () => {
+    it('grantReadWrite combines all four statement shapes', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1165,10 +1182,17 @@ describe('IcebergTable — grants', () => {
             'glue:UpdateTable',
         ]));
 
-        const bucketStatements = statementsByAction(statements, 's3:ListBucket');
-        expect(bucketStatements).toHaveLength(1);
-        expect(actionListOf(bucketStatements[0])).toEqual(expect.arrayContaining([
+        const listStatements = statementsByAction(statements, 's3:ListBucket');
+        expect(listStatements).toHaveLength(1);
+        expect(actionListOf(listStatements[0])).toEqual([
             's3:ListBucket',
+        ]);
+        expect(listStatements[0].Condition).toBeDefined();
+
+        const unconditionedBucketStatements = statementsByAction(statements, 's3:GetBucketLocation');
+        expect(unconditionedBucketStatements).toHaveLength(1);
+        expect(unconditionedBucketStatements[0].Condition).toBeUndefined();
+        expect(actionListOf(unconditionedBucketStatements[0])).toEqual(expect.arrayContaining([
             's3:GetBucketLocation',
             's3:ListBucketMultipartUploads',
         ]));
