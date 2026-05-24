@@ -61,7 +61,7 @@ export class IcebergPartitionTransform {
                 if (!isBucketLegal(type)) {
                     throw new Error(
                         `partition transform 'bucket[${numBuckets}]' on column '${columnName}' requires `
-                        + 'an int/long/decimal/date/time/timestamp/timestamptz/string/uuid/binary column',
+                        + 'an int/long/decimal/date/time/timestamp/timestamptz/string/uuid/fixed/binary column',
                     );
                 }
                 return undefined;

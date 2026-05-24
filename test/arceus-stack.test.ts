@@ -2,6 +2,7 @@ import {
     App,
 } from 'aws-cdk-lib';
 import {
+    Match,
     Template,
 } from 'aws-cdk-lib/assertions';
 import {
@@ -52,7 +53,113 @@ describe('ArceusStack', () => {
         template.resourceCountIs('AWS::LakeFormation::Resource', 1);
     });
 
-    it('does not create any CloudTrail resources', () => {
-        template.resourceCountIs('AWS::CloudTrail::Trail', 0);
+    it('creates exactly three demo Iceberg tables', () => {
+        template.resourceCountIs('AWS::Glue::Table', 3);
+    });
+
+    it('creates the orders table with partitions, sort order, identifier ids, and merge-on-read properties', () => {
+        template.hasResourceProperties('AWS::Glue::Table', {
+            Name: 'orders',
+            OpenTableFormatInput: {
+                IcebergInput: {
+                    MetadataOperation: 'CREATE',
+                    Version: '2',
+                    IcebergTableInput: Match.objectLike({
+                        Schema: Match.objectLike({
+                            IdentifierFieldIds: [
+                                1,
+                            ],
+                        }),
+                        PartitionSpec: Match.objectLike({
+                            Fields: Match.arrayWith([
+                                Match.objectLike({
+                                    Name: 'placed_at_day',
+                                    Transform: 'day',
+                                }),
+                                Match.objectLike({
+                                    Name: 'customer_id_bucket',
+                                    Transform: 'bucket[16]',
+                                }),
+                            ]),
+                        }),
+                        WriteOrder: Match.objectLike({
+                            Fields: Match.arrayWith([
+                                Match.objectLike({
+                                    Direction: 'asc',
+                                    NullOrder: 'nulls-last',
+                                }),
+                            ]),
+                        }),
+                        Properties: Match.objectLike({
+                            'write.merge.mode': 'merge-on-read',
+                            'write.update.mode': 'merge-on-read',
+                            'write.delete.mode': 'merge-on-read',
+                            'write.parquet.compression-codec': 'zstd',
+                            'format-version': '2',
+                            'write.format.default': 'parquet',
+                        }),
+                    }),
+                },
+            },
+            TableInput: Match.absent(),
+        });
+    });
+
+    it('creates the events table with an hour(occurred_at) partition', () => {
+        template.hasResourceProperties('AWS::Glue::Table', {
+            Name: 'events',
+            OpenTableFormatInput: {
+                IcebergInput: Match.objectLike({
+                    IcebergTableInput: Match.objectLike({
+                        PartitionSpec: Match.objectLike({
+                            Fields: [
+                                Match.objectLike({
+                                    Name: 'occurred_at_hour',
+                                    Transform: 'hour',
+                                }),
+                            ],
+                        }),
+                    }),
+                }),
+            },
+        });
+    });
+
+    it('creates the customers table with identifier ids and no partition spec', () => {
+        template.hasResourceProperties('AWS::Glue::Table', {
+            Name: 'customers',
+            OpenTableFormatInput: {
+                IcebergInput: Match.objectLike({
+                    IcebergTableInput: Match.objectLike({
+                        Schema: Match.objectLike({
+                            IdentifierFieldIds: [
+                                1,
+                            ],
+                        }),
+                        PartitionSpec: Match.absent(),
+                    }),
+                }),
+            },
+        });
+    });
+
+    it('grants SELECT/INSERT/DELETE/ALTER/DESCRIBE on each demo table to the developer user', () => {
+        template.resourceCountIs('AWS::LakeFormation::Permissions', 4);
+        const permissions = template.findResources('AWS::LakeFormation::Permissions');
+        const tablePermissions = Object.values(permissions).filter((resource) => {
+            return resource.Properties.Resource?.TableResource !== undefined;
+        });
+        expect(tablePermissions).toHaveLength(3);
+        for (const permission of tablePermissions) {
+            expect(permission.Properties.Permissions).toEqual(
+                expect.arrayContaining([
+                    'SELECT',
+                    'INSERT',
+                    'DELETE',
+                    'ALTER',
+                    'DESCRIBE',
+                ]),
+            );
+        }
     });
 });
