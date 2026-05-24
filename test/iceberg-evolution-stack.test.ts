@@ -1,20 +1,9 @@
 import {
     App,
-    Stack,
 } from 'aws-cdk-lib';
 import {
-    Match,
     Template,
 } from 'aws-cdk-lib/assertions';
-import {
-    Bucket,
-} from 'aws-cdk-lib/aws-s3';
-import {
-    Database,
-} from '@aws-cdk/aws-glue-alpha';
-import {
-    ArnPrincipal,
-} from 'aws-cdk-lib/aws-iam';
 import {
     IcebergEvolutionStack,
 } from '../lib/iceberg-evolution-stack';
@@ -25,24 +14,14 @@ function synthAt(step: number | string): Template {
             evolutionStep: step,
         },
     });
-    const supportStack = new Stack(app, 'Support', {
-        env: {
-            account: '123456789012',
-            region: 'us-east-1',
-        },
-    });
-    const database = new Database(supportStack, 'DB', {
-        databaseName: 'sample_database',
-    });
-    const bucket = Bucket.fromBucketName(supportStack, 'Bucket', 'data-lake-bucket-123456789012');
     const stack = new IcebergEvolutionStack(app, 'Evo', {
         env: {
             account: '123456789012',
             region: 'us-east-1',
         },
-        database,
-        dataLakeBucket: bucket,
-        developerPrincipal: new ArnPrincipal('arn:aws:iam::123456789012:user/me'),
+        importedDataLakeBucketName: 'data-lake-bucket-123456789012',
+        importedDatabaseName: 'sample_database',
+        developerIamUserName: 'me',
     });
     return Template.fromStack(stack);
 }
@@ -167,24 +146,14 @@ describe('IcebergEvolutionStack — partition evolution', () => {
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
-        const supportStack = new Stack(app, 'Support', {
-            env: {
-                account: '123456789012',
-                region: 'us-east-1',
-            },
-        });
-        const database = new Database(supportStack, 'DB', {
-            databaseName: 'sample_database',
-        });
-        const bucket = Bucket.fromBucketName(supportStack, 'Bucket', 'data-lake-bucket-123456789012');
         const stack = new IcebergEvolutionStack(app, 'Evo', {
             env: {
                 account: '123456789012',
                 region: 'us-east-1',
             },
-            database,
-            dataLakeBucket: bucket,
-            developerPrincipal: new ArnPrincipal('arn:aws:iam::123456789012:user/me'),
+            importedDataLakeBucketName: 'data-lake-bucket-123456789012',
+            importedDatabaseName: 'sample_database',
+            developerIamUserName: 'me',
         });
         const template = Template.fromStack(stack);
         template.hasOutput('EvolutionStepOutput', {
@@ -196,19 +165,20 @@ describe('IcebergEvolutionStack — wiring', () => {
         expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, or 4/);
     });
 
-    it('grants the developer principal SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {
+    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {
         const template = synthAt(1);
-        template.hasResourceProperties('AWS::LakeFormation::Permissions', {
-            Permissions: Match.arrayWith([
-                'SELECT',
-                'INSERT',
-                'DELETE',
-                'ALTER',
-                'DESCRIBE',
-            ]),
-            DataLakePrincipal: {
-                DataLakePrincipalIdentifier: 'arn:aws:iam::123456789012:user/me',
-            },
-        });
+        const permissions = template.findResources('AWS::LakeFormation::Permissions');
+        const permission = Object.values(permissions)[0];
+        expect(permission.Properties.Permissions).toEqual(expect.arrayContaining([
+            'SELECT',
+            'INSERT',
+            'DELETE',
+            'ALTER',
+            'DESCRIBE',
+        ]));
+        /// Partition is a CFN intrinsic; resolve to JSON and assert
+        /// the user-name + account literals end up in the identifier.
+        const identifier = JSON.stringify(permission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier);
+        expect(identifier).toContain('iam::123456789012:user/me');
     });
 });

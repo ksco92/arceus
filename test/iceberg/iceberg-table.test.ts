@@ -1041,7 +1041,31 @@ describe('IcebergTable — validation', () => {
 });
 
 describe('IcebergTable — grants', () => {
-    it('grantRead attaches Glue read + S3 read actions', () => {
+    function resolvedStatements(template: Template): Array<Record<string, unknown>> {
+        const policies = template.findResources('AWS::IAM::Policy');
+        const policy = Object.values(policies)[0];
+        return policy.Properties.PolicyDocument.Statement;
+    }
+
+    function actionListOf(statement: Record<string, unknown>): string[] {
+        const actions = statement.Action as string | string[];
+        return Array.isArray(actions) ? actions : [
+            actions,
+        ];
+    }
+
+    function statementsByAction(
+        statements: Array<Record<string, unknown>>,
+        action: string,
+    ): Array<Record<string, unknown>> {
+        return statements.filter((statement) => actionListOf(statement).includes(action));
+    }
+
+    function resolvedResourceString(stack: Stack, statement: Record<string, unknown>): string {
+        return JSON.stringify(stack.resolve(statement.Resource));
+    }
+
+    it('grantRead emits separate statements for Glue (table ARN), S3 bucket (with s3:prefix condition), and S3 object', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1049,29 +1073,48 @@ describe('IcebergTable — grants', () => {
             database,
             tableName: 'simple',
             columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+            location: 's3://my-bucket/path/simple/',
         });
         const role = new Role(stack, 'Reader', {
             assumedBy: new ServicePrincipal('glue.amazonaws.com'),
         });
         table.grantRead(role);
-        const template = Template.fromStack(stack);
-        template.hasResourceProperties('AWS::IAM::Policy', {
-            PolicyDocument: {
-                Statement: Match.arrayWith([
-                    Match.objectLike({
-                        Action: Match.arrayWith([
-                            'glue:GetTable',
-                            's3:GetObject',
-                            's3:ListBucket',
-                        ]),
-                    }),
-                ]),
+        const statements = resolvedStatements(Template.fromStack(stack));
+
+        /// Glue statement: scoped to the Glue table ARN (a CFN
+        /// intrinsic). `s3:ListBucket` must NOT appear on it.
+        const glueStatements = statementsByAction(statements, 'glue:GetTable');
+        expect(glueStatements).toHaveLength(1);
+        expect(actionListOf(glueStatements[0])).not.toContain('s3:ListBucket');
+        expect(resolvedResourceString(stack, glueStatements[0])).toContain(':glue:');
+
+        /// Bucket statement: scoped to the bucket ARN, with a
+        /// `StringLike` `s3:prefix` condition limiting the
+        /// developer to listing the table's own prefix.
+        const listStatements = statementsByAction(statements, 's3:ListBucket');
+        expect(listStatements).toHaveLength(1);
+        const bucketArn = resolvedResourceString(stack, listStatements[0]);
+        expect(bucketArn).toContain('my-bucket');
+        expect(bucketArn).not.toContain('/path/');
+        expect(listStatements[0].Condition).toEqual({
+            StringLike: {
+                's3:prefix': [
+                    'path/simple/*',
+                    'path/simple/',
+                ],
             },
         });
+
+        /// Object statement: scoped to bucket/prefix*.
+        const objectStatements = statementsByAction(statements, 's3:GetObject');
+        expect(objectStatements).toHaveLength(1);
+        expect(resolvedResourceString(stack, objectStatements[0])).toContain('my-bucket/path/simple/*');
+        const objectActions = actionListOf(objectStatements[0]);
+        expect(objectActions).not.toContain('s3:ListBucket');
+        expect(objectActions).not.toContain('s3:GetBucketLocation');
     });
 
-    it('grantWrite attaches Glue write + S3 write actions', () => {
+    it('grantWrite emits the same three-statement shape with write actions', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1085,23 +1128,22 @@ describe('IcebergTable — grants', () => {
             assumedBy: new ServicePrincipal('glue.amazonaws.com'),
         });
         table.grantWrite(role);
-        const template = Template.fromStack(stack);
-        template.hasResourceProperties('AWS::IAM::Policy', {
-            PolicyDocument: {
-                Statement: Match.arrayWith([
-                    Match.objectLike({
-                        Action: Match.arrayWith([
-                            'glue:UpdateTable',
-                            's3:PutObject',
-                            's3:DeleteObject',
-                        ]),
-                    }),
-                ]),
-            },
-        });
+        const statements = resolvedStatements(Template.fromStack(stack));
+
+        const glueStatements = statementsByAction(statements, 'glue:UpdateTable');
+        expect(glueStatements).toHaveLength(1);
+
+        const bucketStatements = statementsByAction(statements, 's3:ListBucketMultipartUploads');
+        expect(bucketStatements).toHaveLength(1);
+        expect(resolvedResourceString(stack, bucketStatements[0])).toContain('my-bucket');
+        expect(bucketStatements[0].Condition).toBeDefined();
+
+        const objectStatements = statementsByAction(statements, 's3:PutObject');
+        expect(objectStatements).toHaveLength(1);
+        expect(resolvedResourceString(stack, objectStatements[0])).toContain('my-bucket/simple/*');
     });
 
-    it('grantReadWrite attaches both action sets', () => {
+    it('grantReadWrite combines read + write actions across the same three-statement shape', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1115,26 +1157,59 @@ describe('IcebergTable — grants', () => {
             assumedBy: new ServicePrincipal('glue.amazonaws.com'),
         });
         table.grantReadWrite(role);
-        const template = Template.fromStack(stack);
-        template.hasResourceProperties('AWS::IAM::Policy', {
-            PolicyDocument: {
-                Statement: Match.arrayWith([
-                    Match.objectLike({
-                        Action: Match.arrayWith([
-                            'glue:GetTable',
-                            'glue:UpdateTable',
-                            's3:GetObject',
-                            's3:PutObject',
-                        ]),
-                    }),
-                ]),
+        const statements = resolvedStatements(Template.fromStack(stack));
+
+        const glueStatements = statementsByAction(statements, 'glue:GetTable');
+        expect(actionListOf(glueStatements[0])).toEqual(expect.arrayContaining([
+            'glue:GetTable',
+            'glue:UpdateTable',
+        ]));
+
+        const bucketStatements = statementsByAction(statements, 's3:ListBucket');
+        expect(bucketStatements).toHaveLength(1);
+        expect(actionListOf(bucketStatements[0])).toEqual(expect.arrayContaining([
+            's3:ListBucket',
+            's3:GetBucketLocation',
+            's3:ListBucketMultipartUploads',
+        ]));
+
+        const objectStatements = statementsByAction(statements, 's3:GetObject');
+        expect(actionListOf(objectStatements[0])).toEqual(expect.arrayContaining([
+            's3:GetObject',
+            's3:PutObject',
+            's3:DeleteObject',
+        ]));
+    });
+
+    it('handles a bucket-root location by setting prefix glob to "*"', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const table = new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'root',
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket',
+        });
+        const role = new Role(stack, 'Reader', {
+            assumedBy: new ServicePrincipal('glue.amazonaws.com'),
+        });
+        table.grantRead(role);
+        const statements = resolvedStatements(Template.fromStack(stack));
+        const listStatements = statementsByAction(statements, 's3:ListBucket');
+        expect(listStatements[0].Condition).toEqual({
+            StringLike: {
+                's3:prefix': [
+                    '*',
+                    '',
+                ],
             },
         });
     });
 });
 
 describe('IcebergTable.fromIcebergTableAttributes', () => {
-    it('reconstructs a table reference and supports grants', () => {
+    it('reconstructs a table reference and supports the same split-statement grants', () => {
         const {
             stack, database,
         } = makeStack();
@@ -1161,17 +1236,43 @@ describe('IcebergTable.fromIcebergTableAttributes', () => {
         imported.grantReadWrite(role);
 
         const template = Template.fromStack(stack);
-        template.hasResourceProperties('AWS::IAM::Policy', {
-            PolicyDocument: {
-                Statement: Match.arrayWith([
-                    Match.objectLike({
-                        Action: Match.arrayWith([
-                            'glue:GetTable',
-                        ]),
-                    }),
-                ]),
+        const policies = template.findResources('AWS::IAM::Policy');
+        const policy = Object.values(policies)[0];
+        const statements = policy.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>;
+
+        const listStatements = statements.filter((statement) => {
+            const actions = statement.Action as string | string[];
+            const list = Array.isArray(actions) ? actions : [
+                actions,
+            ];
+            return list.includes('s3:ListBucket');
+        });
+        expect(listStatements.length).toBeGreaterThan(0);
+        /// `fromIcebergTableAttributes` builds the bucket ARN with
+        /// `stack.partition` which can resolve to either a literal
+        /// (when the env's partition is known) or an `Fn::Join`
+        /// (when it isn't). Resolve before comparing so the assertion
+        /// survives both shapes.
+        const resolvedBucketArn = stack.resolve(listStatements[0].Resource);
+        expect(JSON.stringify(resolvedBucketArn)).toContain('other-bucket');
+        expect(listStatements[0].Condition).toEqual({
+            StringLike: {
+                's3:prefix': [
+                    'pre_existing/*',
+                    'pre_existing/',
+                ],
             },
         });
+
+        const objectStatements = statements.filter((statement) => {
+            const actions = statement.Action as string | string[];
+            const list = Array.isArray(actions) ? actions : [
+                actions,
+            ];
+            return list.includes('s3:GetObject');
+        });
+        const resolvedObjectArn = stack.resolve(objectStatements[0].Resource);
+        expect(JSON.stringify(resolvedObjectArn)).toContain('other-bucket/pre_existing/*');
     });
 
     it('appends a trailing slash to an imported location if missing', () => {

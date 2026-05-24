@@ -1,21 +1,20 @@
-import * as cdk from 'aws-cdk-lib';
 import {
+    CfnOutput,
     RemovalPolicy,
+    Stack,
+    StackProps,
 } from 'aws-cdk-lib';
 import {
     Construct,
 } from 'constructs';
 import {
-    ArnPrincipal,
-} from 'aws-cdk-lib/aws-iam';
-import {
     CfnPermissions,
 } from 'aws-cdk-lib/aws-lakeformation';
 import {
-    IDatabase,
+    Database,
 } from '@aws-cdk/aws-glue-alpha';
 import {
-    IBucket,
+    Bucket,
 } from 'aws-cdk-lib/aws-s3';
 import {
     IcebergColumn,
@@ -30,19 +29,24 @@ import {
  * on a single integer `step` so that integration tests can run
  * sequential `cdk deploy --context evolutionStep=N` invocations and
  * observe how the underlying Iceberg table evolves.
+ *
+ * The bucket and database are imported by name rather than passed as
+ * cross-stack references so that the test stack can be deployed and
+ * destroyed independently of `ArceusStack`.
  */
-export interface IcebergEvolutionStackProps extends cdk.StackProps {
-    /** Database to publish the test table to. */
-    readonly database: IDatabase;
+export interface IcebergEvolutionStackProps extends StackProps {
+    /** Name of the data-lake bucket that owns the table's S3 prefix. */
+    readonly importedDataLakeBucketName: string;
 
-    /** S3 bucket whose root the table's data + metadata live under. */
-    readonly dataLakeBucket: IBucket;
+    /** Name of the existing Glue database to publish the table to. */
+    readonly importedDatabaseName: string;
 
     /**
-     * Principal that should be granted SELECT/INSERT/DELETE/ALTER on
-     * the test table — typically the developer running `cdk deploy`.
+     * IAM user name (in this account) that should be granted
+     * SELECT/INSERT/DELETE/ALTER/DESCRIBE on the test table —
+     * typically the developer running `cdk deploy`.
      */
-    readonly developerPrincipal: ArnPrincipal;
+    readonly developerIamUserName: string;
 }
 
 /**
@@ -50,7 +54,7 @@ export interface IcebergEvolutionStackProps extends cdk.StackProps {
  * partition spec change based on a `--context evolutionStep=N`
  * value. Used as the target of `scripts/integration-test-evolution.sh`.
  */
-export class IcebergEvolutionStack extends cdk.Stack {
+export class IcebergEvolutionStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergEvolutionStackProps) {
         super(scope, id, props);
 
@@ -65,15 +69,27 @@ export class IcebergEvolutionStack extends cdk.Stack {
             throw new Error(`evolutionStep must be 1, 2, 3, or 4, got '${stepRaw}'`);
         }
 
+        const importedBucket = Bucket.fromBucketName(
+            this,
+            'ImportedDataLakeBucket',
+            props.importedDataLakeBucketName,
+        );
+        const importedDatabase = Database.fromDatabaseArn(
+            this,
+            'ImportedDatabase',
+            `arn:${this.partition}:glue:${this.region}:${this.account}:database/${props.importedDatabaseName}`,
+        );
+        const developerArn = `arn:${this.partition}:iam::${this.account}:user/${props.developerIamUserName}`;
+
         const columns: IcebergColumn[] = buildColumns(step);
         const partitionSpec: IcebergPartitionField[] = buildPartitionSpec(step);
 
         const table = new IcebergTable(this, 'EvolutionTable', {
-            database: props.database,
+            database: importedDatabase,
             tableName: 'evolution_test',
             comment: `Integration-test target — evolution step ${step}.`,
             columns,
-            location: `s3://${props.dataLakeBucket.bucketName}/${props.database.databaseName}/evolution_test/`,
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
             identifierFieldNames: [
                 'customer_id',
@@ -96,21 +112,21 @@ export class IcebergEvolutionStack extends cdk.Stack {
                 tableResource: {
                     catalogId: this.account,
                     name: table.tableName,
-                    databaseName: props.database.databaseName,
+                    databaseName: importedDatabase.databaseName,
                 },
             },
             dataLakePrincipal: {
-                dataLakePrincipalIdentifier: props.developerPrincipal.arn,
+                dataLakePrincipalIdentifier: developerArn,
             },
         });
         permission.addDependency(table.resource);
 
-        new cdk.CfnOutput(this, 'EvolutionStepOutput', {
+        new CfnOutput(this, 'EvolutionStepOutput', {
             value: String(step),
             description: 'Evolution step this stack was last deployed with.',
         });
 
-        new cdk.CfnOutput(this, 'EvolutionTableNameOutput', {
+        new CfnOutput(this, 'EvolutionTableNameOutput', {
             value: table.tableName,
         });
     }
@@ -183,12 +199,9 @@ function buildColumns(step: number): IcebergColumn[] {
     if (step === 3) {
         return renamed;
     }
-    /// Step 4: DROP `region`. Id 4 stays retired.
-    return [
-        renamed[0],
-        renamed[1],
-        renamed[2],
-    ];
+    /// Step 4: DROP `region`. Id 4 stays retired — filter it out
+    /// rather than index-slicing so the intent is explicit.
+    return renamed.filter((column) => column.name !== 'region');
 }
 
 function buildPartitionSpec(step: number): IcebergPartitionField[] {

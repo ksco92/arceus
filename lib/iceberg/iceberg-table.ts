@@ -221,17 +221,29 @@ const WRITE_TABLE_ACTIONS = [
     'glue:UpdateTable',
 ];
 
-const READ_S3_ACTIONS = [
-    's3:GetObject',
+/// S3 actions that operate at the bucket level (no object in the
+/// resource ARN). Must be granted on the bucket ARN with an
+/// `s3:prefix` condition so the grantee can only list the table's
+/// prefix, not the whole bucket.
+const READ_S3_BUCKET_ACTIONS = [
     's3:ListBucket',
     's3:GetBucketLocation',
 ];
 
-const WRITE_S3_ACTIONS = [
+const WRITE_S3_BUCKET_ACTIONS = [
+    's3:ListBucketMultipartUploads',
+];
+
+/// S3 actions that operate at the object level. Must be granted on
+/// the `bucket/prefix*` ARN.
+const READ_S3_OBJECT_ACTIONS = [
+    's3:GetObject',
+];
+
+const WRITE_S3_OBJECT_ACTIONS = [
     's3:PutObject',
     's3:DeleteObject',
     's3:AbortMultipartUpload',
-    's3:ListBucketMultipartUploads',
     's3:ListMultipartUploadParts',
 ];
 
@@ -273,6 +285,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
 
     private readonly bucketArn: string;
     private readonly objectArn: string;
+    private readonly s3PrefixGlob: string;
 
     constructor(scope: Construct, id: string, props: IcebergTableProps) {
         super(scope, id, {
@@ -290,6 +303,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const parsed = parseS3Uri(this.location);
         this.bucketArn = `arn:${Stack.of(this).partition}:s3:::${parsed.bucket}`;
         this.objectArn = `${this.bucketArn}/${parsed.key}*`;
+        this.s3PrefixGlob = `${parsed.key}*`;
 
         const mergedProperties = mergeProperties(
             this.dataFormat,
@@ -356,6 +370,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const parsed = parseS3Uri(location);
         const bucketArn = `arn:${stack.partition}:s3:::${parsed.bucket}`;
         const objectArn = `${bucketArn}/${parsed.key}*`;
+        const prefixGlob = `${parsed.key}*`;
         const tableArn = stack.formatArn({
             service: 'glue',
             resource: 'table',
@@ -369,38 +384,48 @@ export class IcebergTable extends Resource implements IIcebergTable {
             public readonly location = location;
 
             public grantRead(grantee: IGrantable): Grant {
-                return grantOnArns(grantee, [
+                return grantSplit(grantee, {
                     tableArn,
                     bucketArn,
                     objectArn,
-                ], [
-                    ...READ_TABLE_ACTIONS,
-                    ...READ_S3_ACTIONS,
-                ]);
+                    prefixGlob,
+                    tableActions: READ_TABLE_ACTIONS,
+                    bucketActions: READ_S3_BUCKET_ACTIONS,
+                    objectActions: READ_S3_OBJECT_ACTIONS,
+                });
             }
 
             public grantWrite(grantee: IGrantable): Grant {
-                return grantOnArns(grantee, [
+                return grantSplit(grantee, {
                     tableArn,
                     bucketArn,
                     objectArn,
-                ], [
-                    ...WRITE_TABLE_ACTIONS,
-                    ...WRITE_S3_ACTIONS,
-                ]);
+                    prefixGlob,
+                    tableActions: WRITE_TABLE_ACTIONS,
+                    bucketActions: WRITE_S3_BUCKET_ACTIONS,
+                    objectActions: WRITE_S3_OBJECT_ACTIONS,
+                });
             }
 
             public grantReadWrite(grantee: IGrantable): Grant {
-                return grantOnArns(grantee, [
+                return grantSplit(grantee, {
                     tableArn,
                     bucketArn,
                     objectArn,
-                ], [
-                    ...READ_TABLE_ACTIONS,
-                    ...WRITE_TABLE_ACTIONS,
-                    ...READ_S3_ACTIONS,
-                    ...WRITE_S3_ACTIONS,
-                ]);
+                    prefixGlob,
+                    tableActions: [
+                        ...READ_TABLE_ACTIONS,
+                        ...WRITE_TABLE_ACTIONS,
+                    ],
+                    bucketActions: [
+                        ...READ_S3_BUCKET_ACTIONS,
+                        ...WRITE_S3_BUCKET_ACTIONS,
+                    ],
+                    objectActions: [
+                        ...READ_S3_OBJECT_ACTIONS,
+                        ...WRITE_S3_OBJECT_ACTIONS,
+                    ],
+                });
             }
         }
 
@@ -409,40 +434,50 @@ export class IcebergTable extends Resource implements IIcebergTable {
 
     /** Grant Glue read + S3 read on this table. */
     public grantRead(grantee: IGrantable): Grant {
-        return grantOnArns(grantee, [
-            this.tableArn,
-            this.bucketArn,
-            this.objectArn,
-        ], [
-            ...READ_TABLE_ACTIONS,
-            ...READ_S3_ACTIONS,
-        ]);
+        return grantSplit(grantee, {
+            tableArn: this.tableArn,
+            bucketArn: this.bucketArn,
+            objectArn: this.objectArn,
+            prefixGlob: this.s3PrefixGlob,
+            tableActions: READ_TABLE_ACTIONS,
+            bucketActions: READ_S3_BUCKET_ACTIONS,
+            objectActions: READ_S3_OBJECT_ACTIONS,
+        });
     }
 
     /** Grant Glue write + S3 write on this table. */
     public grantWrite(grantee: IGrantable): Grant {
-        return grantOnArns(grantee, [
-            this.tableArn,
-            this.bucketArn,
-            this.objectArn,
-        ], [
-            ...WRITE_TABLE_ACTIONS,
-            ...WRITE_S3_ACTIONS,
-        ]);
+        return grantSplit(grantee, {
+            tableArn: this.tableArn,
+            bucketArn: this.bucketArn,
+            objectArn: this.objectArn,
+            prefixGlob: this.s3PrefixGlob,
+            tableActions: WRITE_TABLE_ACTIONS,
+            bucketActions: WRITE_S3_BUCKET_ACTIONS,
+            objectActions: WRITE_S3_OBJECT_ACTIONS,
+        });
     }
 
     /** Grant Glue + S3 read + write on this table. */
     public grantReadWrite(grantee: IGrantable): Grant {
-        return grantOnArns(grantee, [
-            this.tableArn,
-            this.bucketArn,
-            this.objectArn,
-        ], [
-            ...READ_TABLE_ACTIONS,
-            ...WRITE_TABLE_ACTIONS,
-            ...READ_S3_ACTIONS,
-            ...WRITE_S3_ACTIONS,
-        ]);
+        return grantSplit(grantee, {
+            tableArn: this.tableArn,
+            bucketArn: this.bucketArn,
+            objectArn: this.objectArn,
+            prefixGlob: this.s3PrefixGlob,
+            tableActions: [
+                ...READ_TABLE_ACTIONS,
+                ...WRITE_TABLE_ACTIONS,
+            ],
+            bucketActions: [
+                ...READ_S3_BUCKET_ACTIONS,
+                ...WRITE_S3_BUCKET_ACTIONS,
+            ],
+            objectActions: [
+                ...READ_S3_OBJECT_ACTIONS,
+                ...WRITE_S3_OBJECT_ACTIONS,
+            ],
+        });
     }
 }
 
@@ -719,14 +754,59 @@ function mergeProperties(
     return merged;
 }
 
-function grantOnArns(
+/**
+ * Issue the three policy statements that scope an Iceberg-table
+ * grant correctly: Glue actions on the table ARN, S3 bucket-level
+ * actions on the bucket ARN with an `s3:prefix` condition so only
+ * the table's own prefix can be listed, and S3 object-level actions
+ * on the `bucket/prefix*` ARN. Returns the table-actions grant
+ * (any of the three is sufficient for the `Grant` API contract; the
+ * other two are attached as side effects).
+ *
+ * @internal
+ */
+function grantSplit(
     grantee: IGrantable,
-    resourceArns: string[],
-    actions: string[],
+    args: {
+        tableArn: string;
+        bucketArn: string;
+        objectArn: string;
+        prefixGlob: string;
+        tableActions: string[];
+        bucketActions: string[];
+        objectActions: string[];
+    },
 ): Grant {
-    return Grant.addToPrincipal({
+    const tableGrant = Grant.addToPrincipal({
         grantee,
-        actions,
-        resourceArns,
+        actions: args.tableActions,
+        resourceArns: [
+            args.tableArn,
+        ],
     });
+    if (args.bucketActions.length > 0) {
+        Grant.addToPrincipal({
+            grantee,
+            actions: args.bucketActions,
+            resourceArns: [
+                args.bucketArn,
+            ],
+            conditions: {
+                StringLike: {
+                    's3:prefix': [
+                        args.prefixGlob,
+                        args.prefixGlob.replace(/\*$/, ''),
+                    ],
+                },
+            },
+        });
+    }
+    Grant.addToPrincipal({
+        grantee,
+        actions: args.objectActions,
+        resourceArns: [
+            args.objectArn,
+        ],
+    });
+    return tableGrant;
 }

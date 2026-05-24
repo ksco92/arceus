@@ -25,7 +25,7 @@ emit the unsafe alternatives.
 
 ```bash
 npm install
-npx jest                         # 162 tests, 100% line coverage
+npx jest                         # 167 tests, 100% line coverage
 npx cdk deploy ArceusStack --require-approval=never
 ./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
 ```
@@ -75,13 +75,32 @@ new IcebergTable(this, 'Users', {
 ```
 
 A table that exercises most of the surface — partitions, sort order,
-nested types, identifier fields, table properties, removal policy:
+nested types, identifier fields, table properties, removal policy.
+This is the exact shape `ArceusStack` uses for the `orders` demo
+table, so the column list / partition spec / properties round-trip
+straight to the live metadata.json below.
 
 ```typescript
-new IcebergTable(this, 'Orders', {
+import {
+    RemovalPolicy,
+} from 'aws-cdk-lib';
+import {
+    Database,
+} from '@aws-cdk/aws-glue-alpha';
+import {
+    IcebergDataFormat,
+    IcebergFormatVersion,
+    IcebergNullOrder,
+    IcebergPartitionTransform,
+    IcebergSortDirection,
+    IcebergTable,
+    IcebergType,
+} from './iceberg';
+
+new IcebergTable(this, 'OrdersTable', {
     database: db,
     tableName: 'orders',
-    comment: 'Order events.',
+    comment: 'Demo Iceberg orders table — exercises partitions, sort order, and merge-on-read.',
     columns: [
         {
             name: 'order_id',
@@ -102,19 +121,30 @@ new IcebergTable(this, 'Orders', {
             id: 3,
         },
         {
-            name: 'placed_at',
-            type: IcebergType.TIMESTAMPTZ,
+            name: 'currency',
+            type: IcebergType.STRING,
             required: true,
             id: 4,
         },
         {
+            name: 'placed_at',
+            type: IcebergType.TIMESTAMPTZ,
+            required: true,
+            id: 5,
+        },
+        {
             name: 'tags',
             type: IcebergType.list(IcebergType.STRING),
-            id: 5,
+            id: 6,
         },
         {
             name: 'shipping_address',
             type: IcebergType.struct([
+                {
+                    name: 'line1',
+                    type: IcebergType.STRING,
+                    required: true,
+                },
                 {
                     name: 'city',
                     type: IcebergType.STRING,
@@ -125,13 +155,17 @@ new IcebergTable(this, 'Orders', {
                     type: IcebergType.STRING,
                     required: true,
                 },
+                {
+                    name: 'postal_code',
+                    type: IcebergType.STRING,
+                },
             ]),
-            id: 6,
+            id: 7,
         },
         {
             name: 'metadata',
             type: IcebergType.map(IcebergType.STRING, IcebergType.STRING, false),
-            id: 7,
+            id: 8,
         },
     ],
     location: `s3://${bucket.bucketName}/analytics/orders/`,
@@ -150,6 +184,10 @@ new IcebergTable(this, 'Orders', {
             sourceColumn: 'placed_at',
             direction: IcebergSortDirection.ASC,
             nullOrder: IcebergNullOrder.NULLS_LAST,
+        },
+        {
+            sourceColumn: 'order_id',
+            direction: IcebergSortDirection.ASC,
         },
     ],
     identifierFieldNames: [
@@ -309,7 +347,9 @@ underlying Iceberg `metadata.json` after each:
 | 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` |
 | 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` |
 
-Last script run output:
+Last script run output (abridged — `cdk deploy` chatter and the
+per-Athena-query state polling lines are omitted; the assertion
+output is verbatim):
 
 ```
 === STEP 1 — cdk deploy ===
@@ -327,6 +367,10 @@ Last script run output:
   columns ✓ (1:customer_id,2:email,3:signed_up_at,4:region)
   partitions ✓ (signed_up_at_day)
 
+=== VERIFY old rows are preserved with region=NULL ===
+  pre-existing rows readable ✓
+  inserted 1 row carrying region='us-east-1'
+
 === STEP 3 — cdk deploy ===
 === VERIFY step 3 (RENAME column + ADD partition) ===
   columns ✓ (1:customer_id,2:contact_email,3:signed_up_at,4:region)
@@ -339,6 +383,10 @@ Last script run output:
   partitions ✓ (signed_up_at_day)
   last-column-id stays at 4 — id reuse protection ✓
   all 4 pre-existing rows queryable after drop ✓
+
+=== TEARDOWN ===
+IcebergEvolutionStack |   4 | DELETE_COMPLETE      | AWS::CloudFormation::Stack
+ ✅  IcebergEvolutionStack: destroyed
 
 === ALL EVOLUTION STEPS PASSED ===
 ```
@@ -415,13 +463,13 @@ the construct does **not** prevent. See the next section.)
 ```
 $ npx jest
 Test Suites: 6 passed, 6 total
-Tests:       162 passed, 162 total
+Tests:       167 passed, 167 total
 
 Coverage summary
-Statements   : 100% ( 354/354 )
-Branches     : 100% ( 130/130 )
-Functions    : 98.79% ( 82/83 )
-Lines        : 100% ( 352/352 )
+Statements   : 100% ( 408/408 )
+Branches     : 100% ( 145/145 )
+Functions    : 98.8% ( 83/84 )
+Lines        : 100% ( 405/405 )
 ```
 
 The 95% coverage floor is enforced in `jest.config.js`.

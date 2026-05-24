@@ -1,8 +1,10 @@
-import * as cdk from 'aws-cdk-lib';
 import {
+    CfnOutput,
     DefaultStackSynthesizer,
     Fn,
     RemovalPolicy,
+    Stack,
+    StackProps,
 } from 'aws-cdk-lib';
 import {
     Construct,
@@ -42,8 +44,8 @@ import {
     IcebergType,
 } from './iceberg';
 
-export class ArceusStack extends cdk.Stack {
-    constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+export class ArceusStack extends Stack {
+    constructor(scope: Construct, id: string, props?: StackProps) {
         super(scope, id, props);
 
         /// /////////////////////////////////////////////////
@@ -52,7 +54,7 @@ export class ArceusStack extends cdk.Stack {
         /// /////////////////////////////////////////////////
         // Security
 
-        const myUser = new ArnPrincipal(`arn:aws:iam::${this.account}:user/rodrigo`);
+        const myUser = new ArnPrincipal(`arn:${this.partition}:iam::${this.account}:user/rodrigo`);
 
         const dataLakeBucketKmsKey = new Key(this, 'DataLakeBucketKmsKey', {
             enableKeyRotation: true,
@@ -466,32 +468,32 @@ export class ArceusStack extends cdk.Stack {
         /// /////////////////////////////////////////////////
         // Outputs
 
-        new cdk.CfnOutput(this, 'DataLakeBucketNameOutput', {
+        new CfnOutput(this, 'DataLakeBucketNameOutput', {
             value: dataLakeBucket.bucketName,
             description: 'Data lake bucket where Iceberg tables will be stored.',
         });
 
-        new cdk.CfnOutput(this, 'AthenaResultsBucketNameOutput', {
+        new CfnOutput(this, 'AthenaResultsBucketNameOutput', {
             value: athenaResultsBucket.bucketName,
             description: 'Athena query results bucket.',
         });
 
-        new cdk.CfnOutput(this, 'DatabaseNameOutput', {
+        new CfnOutput(this, 'DatabaseNameOutput', {
             value: glueDatabase.databaseName,
             description: 'Glue database for Iceberg tables.',
         });
 
-        new cdk.CfnOutput(this, 'OrdersTableNameOutput', {
+        new CfnOutput(this, 'OrdersTableNameOutput', {
             value: ordersTable.tableName,
             description: 'Iceberg orders table name.',
         });
 
-        new cdk.CfnOutput(this, 'EventsTableNameOutput', {
+        new CfnOutput(this, 'EventsTableNameOutput', {
             value: eventsTable.tableName,
             description: 'Iceberg events table name.',
         });
 
-        new cdk.CfnOutput(this, 'CustomersTableNameOutput', {
+        new CfnOutput(this, 'CustomersTableNameOutput', {
             value: customersTable.tableName,
             description: 'Iceberg customers table name (schema-evolution demo).',
         });

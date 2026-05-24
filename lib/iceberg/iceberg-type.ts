@@ -110,7 +110,7 @@ export class IcebergType {
     /**
      * Ordered list of values.
      * @param element Element type.
-     * @param elementRequired Whether elements may be null. Defaults to `true`.
+     * @param elementRequired Whether elements are non-nullable. Defaults to `true` (non-null).
      */
     public static list(element: IcebergType, elementRequired = true): IcebergType {
         return new IcebergType('list', (ctx) => {
@@ -129,7 +129,7 @@ export class IcebergType {
      * Key/value map. Keys are always required per the Iceberg spec.
      * @param key Key type.
      * @param value Value type.
-     * @param valueRequired Whether values may be null. Defaults to `true`.
+     * @param valueRequired Whether values are non-nullable. Defaults to `true` (non-null).
      */
     public static map(key: IcebergType, value: IcebergType, valueRequired = true): IcebergType {
         return new IcebergType('map', (ctx) => {
