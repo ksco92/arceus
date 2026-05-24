@@ -410,9 +410,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                     objectArn,
                     prefixGlob,
                     tableActions: WRITE_TABLE_ACTIONS,
-                    listActions: [
-
-                    ],
+                    listActions: [],
                     bucketActions: WRITE_S3_BUCKET_ACTIONS,
                     objectActions: WRITE_S3_OBJECT_ACTIONS,
                 });
@@ -466,9 +464,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
             objectArn: this.objectArn,
             prefixGlob: this.s3PrefixGlob,
             tableActions: WRITE_TABLE_ACTIONS,
-            listActions: [
-
-            ],
+            listActions: [],
             bucketActions: WRITE_S3_BUCKET_ACTIONS,
             objectActions: WRITE_S3_OBJECT_ACTIONS,
         });

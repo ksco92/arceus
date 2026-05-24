@@ -7,6 +7,8 @@
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
+#   - `DEVELOPER_IAM_USER` env var set to an existing IAM user
+#     (passed through to bin/arceus.ts).
 #   - ArceusStack already deployed (provides the data lake bucket,
 #     Glue database, and Athena workgroup).
 #

@@ -180,12 +180,8 @@ export class ArceusStack extends Stack {
                 CROSS_ACCOUNT_VERSION: 4,
             },
             mutationType: 'REPLACE',
-            createDatabaseDefaultPermissions: [
-
-            ],
-            createTableDefaultPermissions: [
-
-            ],
+            createDatabaseDefaultPermissions: [],
+            createTableDefaultPermissions: [],
         });
 
         new CfnResource(this, 'DataLakeRegisteredLocation', {
@@ -236,9 +232,7 @@ export class ArceusStack extends Stack {
             permissions: [
                 'DESCRIBE',
             ],
-            permissionsWithGrantOption: [
-
-            ],
+            permissionsWithGrantOption: [],
             resource: {
                 databaseResource: {
                     catalogId: this.account,
@@ -537,9 +531,7 @@ export class ArceusStack extends Stack {
                     'ALTER',
                     'DESCRIBE',
                 ],
-                permissionsWithGrantOption: [
-
-                ],
+                permissionsWithGrantOption: [],
                 resource: {
                     tableResource: {
                         catalogId: this.account,

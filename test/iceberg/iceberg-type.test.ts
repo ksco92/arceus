@@ -221,8 +221,7 @@ describe('IcebergType — struct', () => {
     });
 
     it('rejects empty struct', () => {
-        expect(() => IcebergType.struct([
-        ])).toThrow(/at least one field/);
+        expect(() => IcebergType.struct([])).toThrow(/at least one field/);
     });
 
     it('rejects duplicate field names', () => {

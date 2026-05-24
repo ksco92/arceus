@@ -50,11 +50,15 @@ module.exports = [
             ],
             'array-bracket-newline': [
                 'error',
-                'always',
+                {
+                    minItems: 1,
+                },
             ],
             'array-element-newline': [
                 'error',
-                'always',
+                {
+                    minItems: 2,
+                },
             ],
             'object-curly-newline': [
                 'error',
@@ -105,11 +109,15 @@ module.exports = [
             ],
             'array-bracket-newline': [
                 'error',
-                'always',
+                {
+                    minItems: 1,
+                },
             ],
             'array-element-newline': [
                 'error',
-                'always',
+                {
+                    minItems: 2,
+                },
             ],
             'object-curly-newline': [
                 'error',
