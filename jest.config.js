@@ -9,7 +9,20 @@ module.exports = {
     ],
 
     transform: {
-        '^.+\\.tsx?$': 'ts-jest',
+        '^.+\\.tsx?$': [
+            'ts-jest',
+            {
+                /// TS151002 fires once per test file when ts-jest is
+                /// used with `module: "NodeNext"` and isolatedModules
+                /// is off; the warning is informational and unrelated
+                /// to test correctness.
+                diagnostics: {
+                    ignoreCodes: [
+                        151002,
+                    ],
+                },
+            },
+        ],
     },
 
     collectCoverage: true,
