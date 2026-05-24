@@ -1,5 +1,6 @@
 import {
     IcebergPartitionTransform,
+    IcebergPartitionTransformKind,
 } from '../../lib/iceberg/iceberg-partition-transform';
 import {
     IcebergType,
@@ -41,6 +42,20 @@ describe('IcebergPartitionTransform — strings', () => {
 
     it('truncate renders as truncate[W]', () => {
         expect(IcebergPartitionTransform.truncate(64).toTransformString()).toBe('truncate[64]');
+    });
+});
+
+describe('IcebergPartitionTransform — direct constructor', () => {
+    it('rejects bucket kind without bucketCount', () => {
+        expect(() => new IcebergPartitionTransform({
+            kind: IcebergPartitionTransformKind.BUCKET,
+        })).toThrow(/bucketCount/);
+    });
+
+    it('rejects truncate kind without truncateWidth', () => {
+        expect(() => new IcebergPartitionTransform({
+            kind: IcebergPartitionTransformKind.TRUNCATE,
+        })).toThrow(/truncateWidth/);
     });
 });
 
