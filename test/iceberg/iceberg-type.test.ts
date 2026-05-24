@@ -1,6 +1,7 @@
 import {
     IcebergRenderContext,
     IcebergType,
+    IcebergTypeKind,
 } from '../../lib/iceberg/iceberg-type';
 
 function makeContext(start = 1): IcebergRenderContext {
@@ -13,6 +14,87 @@ function makeContext(start = 1): IcebergRenderContext {
         },
     };
 }
+
+describe('IcebergType — direct constructor', () => {
+    it('rejects decimal without precision + scale', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.DECIMAL,
+        })).toThrow(/decimalPrecision and decimalScale/);
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.DECIMAL,
+            decimalPrecision: 5,
+        })).toThrow(/decimalPrecision and decimalScale/);
+    });
+
+    it('rejects decimal with invalid precision or scale', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.DECIMAL,
+            decimalPrecision: 0,
+            decimalScale: 0,
+        })).toThrow(/decimal precision/);
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.DECIMAL,
+            decimalPrecision: 10,
+            decimalScale: 11,
+        })).toThrow(/decimal scale/);
+    });
+
+    it('rejects fixed without length', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.FIXED,
+        })).toThrow(/fixedLength/);
+    });
+
+    it('rejects fixed with non-positive length', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.FIXED,
+            fixedLength: 0,
+        })).toThrow(/positive integer/);
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.FIXED,
+            fixedLength: 1.5,
+        })).toThrow(/positive integer/);
+    });
+
+    it('rejects list without listElement', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.LIST,
+        })).toThrow(/listElement/);
+    });
+
+    it('defaults listElementRequired to true when omitted', () => {
+        const type = new IcebergType({
+            kind: IcebergTypeKind.LIST,
+            listElement: IcebergType.STRING,
+        });
+        expect(type.listElementRequired).toBe(true);
+    });
+
+    it('rejects map without mapKey or mapValue', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.MAP,
+        })).toThrow(/mapKey and mapValue/);
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.MAP,
+            mapKey: IcebergType.STRING,
+        })).toThrow(/mapKey and mapValue/);
+    });
+
+    it('defaults mapValueRequired to true when omitted', () => {
+        const type = new IcebergType({
+            kind: IcebergTypeKind.MAP,
+            mapKey: IcebergType.STRING,
+            mapValue: IcebergType.INT,
+        });
+        expect(type.mapValueRequired).toBe(true);
+    });
+
+    it('rejects struct without fields', () => {
+        expect(() => new IcebergType({
+            kind: IcebergTypeKind.STRUCT,
+        })).toThrow(/at least one structField/);
+    });
+});
 
 describe('IcebergType — primitive', () => {
     it.each([
@@ -221,7 +303,7 @@ describe('IcebergType — struct', () => {
     });
 
     it('rejects empty struct', () => {
-        expect(() => IcebergType.struct([])).toThrow(/at least one field/);
+        expect(() => IcebergType.struct([])).toThrow(/at least one structField/);
     });
 
     it('rejects duplicate field names', () => {
