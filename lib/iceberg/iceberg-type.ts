@@ -12,6 +12,14 @@
  * globally unique inside one Iceberg table — so when `IcebergTable`
  * walks its columns it threads a single monotonically-increasing
  * counter through every type to assign them.
+ *
+ * The type model is intentionally jsii-compatible — no private
+ * constructors, no function types stored as fields. `IcebergType` is
+ * a single concrete class discriminated by `kind` plus optional data
+ * fields for the nested-type variants. Users construct instances via
+ * the static factories on the class (or the `IcebergType.BOOLEAN` etc.
+ * primitive instances); the public constructor exists so that
+ * non-TypeScript bindings can reach the same surface.
  */
 
 /** @internal Render-time state — currently just a monotonic id generator. */
@@ -35,51 +43,105 @@ export interface IcebergStructFieldDefinition {
     readonly doc?: string;
 }
 
-type RenderFn = (ctx: IcebergRenderContext) => string;
+/**
+ * Construction options for an `IcebergType`.
+ *
+ * Most callers should use the static factories (`IcebergType.BOOLEAN`,
+ * `IcebergType.list(...)`, etc.) rather than instantiate directly.
+ * The constructor is public only because jsii reflection requires it.
+ */
+export interface IcebergTypeOptions {
+    /**
+     * Canonical Iceberg-spec name for the type (e.g. `boolean`, `int`,
+     * `decimal(10,2)`, `list`, `map`, `struct`).
+     */
+    readonly kind: string;
+
+    /** Element type. Set when `kind === 'list'`. */
+    readonly listElement?: IcebergType;
+
+    /** Whether list elements are non-nullable. Set when `kind === 'list'`. */
+    readonly listElementRequired?: boolean;
+
+    /** Map key type. Set when `kind === 'map'`. */
+    readonly mapKey?: IcebergType;
+
+    /** Map value type. Set when `kind === 'map'`. */
+    readonly mapValue?: IcebergType;
+
+    /** Whether map values are non-nullable. Set when `kind === 'map'`. */
+    readonly mapValueRequired?: boolean;
+
+    /** Struct fields. Set when `kind === 'struct'`. */
+    readonly structFields?: IcebergStructFieldDefinition[];
+}
 
 /**
- * Iceberg type. Use the static factories on this class — the
- * constructor is `private` so users can't introduce arbitrary types
- * that bypass validation.
+ * Iceberg type. Use the static factories on this class to construct
+ * primitives, decimals, fixed, lists, maps, and structs.
  */
 export class IcebergType {
     /// Primitives — values from https://iceberg.apache.org/spec/#schemas-and-data-types
 
     /** Boolean. */
-    public static readonly BOOLEAN: IcebergType = IcebergType.primitive('boolean');
+    public static readonly BOOLEAN: IcebergType = new IcebergType({
+        kind: 'boolean',
+    });
 
     /** 32-bit signed integer. */
-    public static readonly INT: IcebergType = IcebergType.primitive('int');
+    public static readonly INT: IcebergType = new IcebergType({
+        kind: 'int',
+    });
 
     /** 64-bit signed integer. */
-    public static readonly LONG: IcebergType = IcebergType.primitive('long');
+    public static readonly LONG: IcebergType = new IcebergType({
+        kind: 'long',
+    });
 
     /** 32-bit IEEE 754 floating point. */
-    public static readonly FLOAT: IcebergType = IcebergType.primitive('float');
+    public static readonly FLOAT: IcebergType = new IcebergType({
+        kind: 'float',
+    });
 
     /** 64-bit IEEE 754 floating point. */
-    public static readonly DOUBLE: IcebergType = IcebergType.primitive('double');
+    public static readonly DOUBLE: IcebergType = new IcebergType({
+        kind: 'double',
+    });
 
     /** Calendar date with no time of day. */
-    public static readonly DATE: IcebergType = IcebergType.primitive('date');
+    public static readonly DATE: IcebergType = new IcebergType({
+        kind: 'date',
+    });
 
     /** Microsecond-precision time of day, no date, no zone. */
-    public static readonly TIME: IcebergType = IcebergType.primitive('time');
+    public static readonly TIME: IcebergType = new IcebergType({
+        kind: 'time',
+    });
 
     /** Microsecond-precision timestamp without zone. */
-    public static readonly TIMESTAMP: IcebergType = IcebergType.primitive('timestamp');
+    public static readonly TIMESTAMP: IcebergType = new IcebergType({
+        kind: 'timestamp',
+    });
 
     /** Microsecond-precision timestamp stored as UTC. */
-    public static readonly TIMESTAMPTZ: IcebergType = IcebergType.primitive('timestamptz');
+    public static readonly TIMESTAMPTZ: IcebergType = new IcebergType({
+        kind: 'timestamptz',
+    });
 
     /** UTF-8 string of arbitrary length. */
-    public static readonly STRING: IcebergType = IcebergType.primitive('string');
+    public static readonly STRING: IcebergType = new IcebergType({
+        kind: 'string',
+    });
 
     /** RFC-4122 UUID. */
-    public static readonly UUID: IcebergType = IcebergType.primitive('uuid');
+    public static readonly UUID: IcebergType = new IcebergType({
+        kind: 'uuid',
+    });
 
     /** Variable-length byte sequence. */
-    public static readonly BINARY: IcebergType = IcebergType.primitive('binary');
+    public static readonly BINARY: IcebergType = new IcebergType({
+        kind: 'binary',
+    });
 
     /**
      * Fixed-precision decimal.
@@ -93,7 +155,9 @@ export class IcebergType {
         if (!Number.isInteger(scale) || scale < 0 || scale > precision) {
             throw new Error(`decimal scale must be an integer in [0, ${precision}], got ${scale}`);
         }
-        return IcebergType.primitive(`decimal(${precision},${scale})`);
+        return new IcebergType({
+            kind: `decimal(${precision},${scale})`,
+        });
     }
 
     /**
@@ -104,7 +168,9 @@ export class IcebergType {
         if (!Number.isInteger(length) || length < 1) {
             throw new Error(`fixed length must be a positive integer, got ${length}`);
         }
-        return IcebergType.primitive(`fixed[${length}]`);
+        return new IcebergType({
+            kind: `fixed[${length}]`,
+        });
     }
 
     /**
@@ -113,15 +179,10 @@ export class IcebergType {
      * @param elementRequired Whether elements are non-nullable. Defaults to `true` (non-null).
      */
     public static list(element: IcebergType, elementRequired = true): IcebergType {
-        return new IcebergType('list', (ctx) => {
-            const elementId = ctx.nextId();
-            const elementRepr = element._render(ctx);
-            return JSON.stringify({
-                type: 'list',
-                'element-id': elementId,
-                'element-required': elementRequired,
-                element: tryParseObject(elementRepr),
-            });
+        return new IcebergType({
+            kind: 'list',
+            listElement: element,
+            listElementRequired: elementRequired,
         });
     }
 
@@ -132,19 +193,11 @@ export class IcebergType {
      * @param valueRequired Whether values are non-nullable. Defaults to `true` (non-null).
      */
     public static map(key: IcebergType, value: IcebergType, valueRequired = true): IcebergType {
-        return new IcebergType('map', (ctx) => {
-            const keyId = ctx.nextId();
-            const valueId = ctx.nextId();
-            const keyRepr = key._render(ctx);
-            const valueRepr = value._render(ctx);
-            return JSON.stringify({
-                type: 'map',
-                'key-id': keyId,
-                key: tryParseObject(keyRepr),
-                'value-id': valueId,
-                'value-required': valueRequired,
-                value: tryParseObject(valueRepr),
-            });
+        return new IcebergType({
+            kind: 'map',
+            mapKey: key,
+            mapValue: value,
+            mapValueRequired: valueRequired,
         });
     }
 
@@ -163,8 +216,77 @@ export class IcebergType {
             }
             seen.add(field.name);
         }
-        return new IcebergType('struct', (ctx) => {
-            const rendered = fields.map((field) => {
+        return new IcebergType({
+            kind: 'struct',
+            structFields: fields,
+        });
+    }
+
+    /** Canonical Iceberg-spec name of the type. */
+    public readonly kind: string;
+
+    /** @internal */
+    public readonly _listElement?: IcebergType;
+
+    /** @internal */
+    public readonly _listElementRequired?: boolean;
+
+    /** @internal */
+    public readonly _mapKey?: IcebergType;
+
+    /** @internal */
+    public readonly _mapValue?: IcebergType;
+
+    /** @internal */
+    public readonly _mapValueRequired?: boolean;
+
+    /** @internal */
+    public readonly _structFields?: IcebergStructFieldDefinition[];
+
+    public constructor(options: IcebergTypeOptions) {
+        this.kind = options.kind;
+        this._listElement = options.listElement;
+        this._listElementRequired = options.listElementRequired;
+        this._mapKey = options.mapKey;
+        this._mapValue = options.mapValue;
+        this._mapValueRequired = options.mapValueRequired;
+        this._structFields = options.structFields;
+    }
+
+    /**
+     * Render the type as the string Glue's `IcebergStructField.type`
+     * expects. Primitives return their canonical name; nested types
+     * return a JSON-encoded object.
+     *
+     * @internal
+     */
+    public _render(ctx: IcebergRenderContext): string {
+        if (this._listElement !== undefined) {
+            const elementId = ctx.nextId();
+            const elementRepr = this._listElement._render(ctx);
+            return JSON.stringify({
+                type: 'list',
+                'element-id': elementId,
+                'element-required': this._listElementRequired,
+                element: tryParseObject(elementRepr),
+            });
+        }
+        if (this._mapKey !== undefined && this._mapValue !== undefined) {
+            const keyId = ctx.nextId();
+            const valueId = ctx.nextId();
+            const keyRepr = this._mapKey._render(ctx);
+            const valueRepr = this._mapValue._render(ctx);
+            return JSON.stringify({
+                type: 'map',
+                'key-id': keyId,
+                key: tryParseObject(keyRepr),
+                'value-id': valueId,
+                'value-required': this._mapValueRequired,
+                value: tryParseObject(valueRepr),
+            });
+        }
+        if (this._structFields !== undefined) {
+            const rendered = this._structFields.map((field) => {
                 const id = ctx.nextId();
                 const required = field.required ?? false;
                 const typeRepr = field.type._render(ctx);
@@ -183,32 +305,8 @@ export class IcebergType {
                 type: 'struct',
                 fields: rendered,
             });
-        });
-    }
-
-    private static primitive(canonical: string): IcebergType {
-        return new IcebergType(canonical, () => canonical);
-    }
-
-    /** Stable identifier used by partition / sort transform validators. */
-    public readonly kind: string;
-
-    private readonly renderFn: RenderFn;
-
-    private constructor(kind: string, renderFn: RenderFn) {
-        this.kind = kind;
-        this.renderFn = renderFn;
-    }
-
-    /**
-     * Render the type as the string Glue's `IcebergStructField.type`
-     * expects. Primitives return their canonical name; nested types
-     * return a JSON-encoded object.
-     *
-     * @internal
-     */
-    public _render(ctx: IcebergRenderContext): string {
-        return this.renderFn(ctx);
+        }
+        return this.kind;
     }
 
     /** Whether this type is the Iceberg primitive of the given canonical name. */
