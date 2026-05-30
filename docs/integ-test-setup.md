@@ -11,7 +11,7 @@
 
 ## Security note
 
-The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `bash scripts/integration-test-evolution.sh`) with **cloud-admin AWS credentials**. Same-repo PRs are auto-trusted because only collaborators can push to them. Fork PRs are refused at the gate; if you want to run the workflow against a fork PR, manually `workflow_dispatch` after auditing every file in the diff — especially `package.json` (postinstall scripts), `scripts/integration-test-evolution.sh`, and `bin/arceus.ts`.
+The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `bash scripts/integration-test-evolution.sh`) with **cloud-admin AWS credentials**. Same-repo PRs are auto-trusted because only collaborators can push to them. Fork PRs are refused at the gate on both the label-trigger path and the `/run-integ-test`-comment path: the gate fetches `head.repo.full_name` from the API and refuses to run unless it equals the workflow's own repo. If you want to run the workflow against a fork PR, manually `workflow_dispatch` after auditing every file in the diff — especially `package.json` (postinstall scripts), `scripts/integration-test-evolution.sh`, and `bin/arceus.ts`.
 
 ## Prerequisites
 

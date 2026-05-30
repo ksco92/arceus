@@ -65,6 +65,7 @@ jobs:
     steps:
       - id: decide
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT: ${{ github.event_name }}
           LABEL: ${{ github.event.label.name }}
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -90,8 +91,18 @@ jobs:
             && [ "$IS_PR" = "true" ] \
             && [ "$trimmed_comment" = "/run-integ-test" ] \
             && { [ "$COMMENT_ASSOC" = "OWNER" ] || [ "$COMMENT_ASSOC" = "MEMBER" ] || [ "$COMMENT_ASSOC" = "COLLABORATOR" ]; }; then
-            echo "::notice::collaborator comment trigger — running."
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            # `github.event.pull_request` is unpopulated on issue_comment
+            # events, so `PR_REPO_FULL` is empty here. Fetch the head-repo
+            # full name from the API and gate on same-repo to close the
+            # pwn-request hole the label branch already closes above.
+            pr_repo=$(gh api "repos/$REPO_FULL/pulls/$PR_NUMBER" --jq .head.repo.full_name)
+            if [ "$pr_repo" = "$REPO_FULL" ]; then
+              echo "::notice::collaborator comment trigger from same-repo PR — running."
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::collaborator comment trigger from fork PR ($pr_repo) — refusing. Use workflow_dispatch after review."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
           elif [ "$EVENT" = "issue_comment" ] && [ "$IS_PR" = "true" ]; then
             echo "::warning::comment trigger ignored — body='$trimmed_comment', assoc=$COMMENT_ASSOC. Expected exact '/run-integ-test' from OWNER/MEMBER/COLLABORATOR."
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -128,18 +139,31 @@ jobs:
       - run: npm run build
       - run: npm test
       - name: Run integration test (4 deploys + verify)
-        run: bash scripts/integration-test-evolution.sh
+        run: |
+          set -o pipefail
+          bash scripts/integration-test-evolution.sh 2>&1 | tee /tmp/integ-test.log
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const status = '${{ job.status }}';
             const pr = ${{ needs.gate.outputs.pr_number }};
             const run = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let tail = '';
+            try {
+              const log = fs.readFileSync('/tmp/integ-test.log', 'utf8');
+              tail = log.split('\n').slice(-40).join('\n').slice(-3500);
+            } catch (e) {
+              // Log file may not exist if the run failed before the script started.
+            }
+            const tailBlock = tail
+              ? `\n\n<details><summary>Last lines of script output</summary>\n\n\`\`\`\n${tail}\n\`\`\`\n</details>`
+              : '';
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: pr,
-              body: `Integration test: **${status}**. [Run log](${run}).`,
+              body: `Integration test: **${status}**. [Run log](${run}).${tailBlock}`,
             });

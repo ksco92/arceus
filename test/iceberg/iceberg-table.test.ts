@@ -448,6 +448,24 @@ describe('IcebergTable — happy path', () => {
         });
     });
 
+    it('rejects setting comment both at top level and inside tableProperties', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => {
+            new IcebergTable(stack, 'Tbl', {
+                database,
+                tableName: 'conflict',
+                columns: MINIMAL_COLUMNS,
+                location: 's3://my-bucket/conflict/',
+                comment: 'from prop',
+                tableProperties: {
+                    comment: 'from props map',
+                },
+            });
+        }).toThrow(/comment is set both as the top-level `comment` prop and as `tableProperties.comment`/);
+    });
+
     it('never emits a TableInput sibling alongside openTableFormatInput', () => {
         const {
             stack, database,
@@ -1305,5 +1323,18 @@ describe('IcebergTable.fromIcebergTableAttributes', () => {
             location: 's3://other-bucket/pre',
         });
         expect(imported.location).toBe('s3://other-bucket/pre/');
+    });
+
+    it('rejects an imported location that does not start with s3://', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => {
+            IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+                database,
+                tableName: 'pre',
+                location: 'gs://other-bucket/pre/',
+            });
+        }).toThrow("location must start with 's3://', got 'gs://other-bucket/pre/'");
     });
 });

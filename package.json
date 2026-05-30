@@ -1,6 +1,6 @@
 {
     "name": "cdk-glue-iceberg-table",
-    "version": "0.1.7",
+    "version": "0.1.8",
     "license": "MIT",
     "description": "CDK L2 construct for Apache Iceberg tables in the AWS Glue Data Catalog.",
     "author": "Rodrigo Carvajal",
