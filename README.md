@@ -7,10 +7,15 @@ tables in the AWS Glue Data Catalog. The construct emits the
 way it handles any other resource).
 
 The motivating issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
-the last comment on that issue (May 2026) documents the only working
-shape and the silent-corruption traps you can hit by getting it
-slightly wrong. This construct implements that shape and refuses to
-emit the unsafe alternatives.
+[`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-3243988858)
+documents the only working CFN shape and the silent-corruption traps
+you can hit by getting it slightly wrong. This construct implements
+that shape and refuses to emit the unsafe alternatives.
+
+The upstream CDK PR landing this construct in
+`@aws-cdk/aws-glue-alpha` is [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988);
+until that merges, this repo is the most current reference
+implementation.
 
 > **Repo shape:** this is a self-contained CDK **app + demo**, not an
 > npm-publishable library. The `IcebergTable` construct itself is
@@ -61,7 +66,7 @@ Before running the quickstart you need:
 export DEVELOPER_IAM_USER="$(aws iam get-user --query 'User.UserName' --output text)"
 
 npm install
-npx jest                         # 167 tests, 100% line coverage
+npx jest                         # 100% line + branch coverage, 95% gate
 npx cdk deploy ArceusStack --require-approval=never
 ./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
 ```
@@ -503,18 +508,14 @@ the construct does **not** prevent. See the next section.)
 ## Tests
 
 ```
-$ npx jest
-Test Suites: 6 passed, 6 total
-Tests:       167 passed, 167 total
-
-Coverage summary
-Statements   : 100% ( 411/411 )
-Branches     : 100% ( 146/146 )
-Functions    : 98.8% ( 83/84 )
-Lines        : 100% ( 408/408 )
+npx jest          # runs every suite under test/, prints coverage at the end
 ```
 
-The 95% coverage floor is enforced in `jest.config.js`.
+Coverage is gated at 95% statements / 95% branches / 95% lines / 95% functions
+on `lib/**/*.ts` via the `coverageThreshold.global` block in `jest.config.js`.
+A failing gate fails the suite, so the README does not paste a transcript that
+would drift after the next refactor — run the command locally for the live
+numbers.
 
 ## Project layout
 
