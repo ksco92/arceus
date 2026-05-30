@@ -1,0 +1,19 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "outDir": "dist",
+        "rootDir": "."
+    },
+    "include": [
+        "lib/iceberg/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "cdk.out",
+        "dist",
+        "test",
+        "bin",
+        "lib/arceus-stack.ts",
+        "lib/iceberg-evolution-stack.ts"
+    ]
+}

@@ -8,6 +8,9 @@ node_modules
 .cdk.staging
 cdk.out
 
+# npm publish output
+dist
+
 .idea
 build
 CLAUDE.md
