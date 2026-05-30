@@ -6,10 +6,11 @@ name: Publish to npm
 # to bump `version` become no-ops here — per CLAUDE.md, the policy is
 # "always bump", and a missing bump should be caught at review time.
 #
-# Setup: add an `NPM_TOKEN` repository secret with a granular token
-# from npmjs.com that has (a) read+write access to
-# `cdk-glue-iceberg-table` and (b) the "Bypass two-factor
-# authentication when publishing" checkbox enabled.
+# Authentication uses npm trusted publishing — the workflow exchanges
+# its GitHub OIDC token for a short-lived npm credential. No long-lived
+# `NPM_TOKEN` secret is needed; the trust is configured on the package
+# at https://www.npmjs.com/package/cdk-glue-iceberg-table/access (the
+# repo, workflow filename, and branch must match).
 
 on:
   push:
@@ -57,5 +58,3 @@ jobs:
       - name: Publish
         if: steps.check.outputs.skip == 'false'
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -21,12 +21,6 @@ implementation. Once `@aws-cdk/aws-glue-alpha` ships its own
 `IcebergTable`, prefer the official one and treat this package as a
 stopgap.
 
-> **Status: pre-release.** `0.1.0` has not been published to npm yet
-> — the `npm install` command below will 404 until the first
-> `v*.*.*` tag is pushed (which triggers the publish workflow). To
-> use the construct today, install directly from this repo:
-> `npm install github:ksco92/arceus#main`.
-
 ## Install
 
 ```bash
