@@ -1,10 +1,12 @@
-# arceus
+# cdk-glue-iceberg-table
 
-A CDK app + `IcebergTable` L2 construct for managing Apache Iceberg
-tables in the AWS Glue Data Catalog. The construct emits the
-`AWS::Glue::Table` shape that survives CloudFormation `Update` (so
-`cdk deploy` can create, evolve, and destroy Iceberg tables the same
-way it handles any other resource).
+[![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
+[![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](LICENSE)
+
+A CDK L2 construct for Apache Iceberg tables in the AWS Glue Data
+Catalog. Emits the `AWS::Glue::Table` shape that survives
+CloudFormation `Update`, so `cdk deploy` can create, evolve, and
+destroy Iceberg tables the same way it handles any other resource.
 
 The motivating issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
 [`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)
@@ -13,14 +15,68 @@ you can hit by getting it slightly wrong. This construct implements
 that shape and refuses to emit the unsafe alternatives.
 
 The upstream CDK PR landing this construct in
-`@aws-cdk/aws-glue-alpha` is [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988);
-until that merges, this repo is the most current reference
-implementation.
+`@aws-cdk/aws-glue-alpha` is [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988).
+Until that merges, this package is the most current reference
+implementation. Once `@aws-cdk/aws-glue-alpha` ships its own
+`IcebergTable`, prefer the official one and treat this package as a
+stopgap.
 
-> **Repo shape:** this is a self-contained CDK **app + demo**, not an
-> npm-publishable library. The `IcebergTable` construct itself is
-> reusable — copy the `lib/iceberg/` directory into your own CDK
-> project. The `bin/` and stack files are demo scaffolding.
+## Install
+
+```bash
+npm install cdk-glue-iceberg-table
+```
+
+Peer dependencies (your CDK app must already have these):
+
+```bash
+npm install aws-cdk-lib constructs @aws-cdk/aws-glue-alpha
+```
+
+## Use
+
+```ts
+import { Database } from '@aws-cdk/aws-glue-alpha';
+import {
+    IcebergTable,
+    IcebergType,
+    IcebergPartitionTransform,
+} from 'cdk-glue-iceberg-table';
+
+const db = new Database(this, 'Db', { databaseName: 'analytics' });
+
+new IcebergTable(this, 'OrdersTable', {
+    database: db,
+    tableName: 'orders',
+    location: `s3://${bucket.bucketName}/analytics/orders/`,
+    columns: [
+        { name: 'order_id',    type: IcebergType.LONG,        required: true, id: 1 },
+        { name: 'customer_id', type: IcebergType.LONG,        required: true, id: 2 },
+        { name: 'placed_at',   type: IcebergType.TIMESTAMPTZ, required: true, id: 3 },
+    ],
+    partitionSpec: [
+        { sourceColumn: 'placed_at',   transform: IcebergPartitionTransform.DAY },
+        { sourceColumn: 'customer_id', transform: IcebergPartitionTransform.bucket(16) },
+    ],
+    identifierFieldNames: ['order_id'],
+});
+```
+
+See the [Using `IcebergTable`](#using-icebergtable) section below for the full API
+reference, plus [Two footguns the construct prevents](#two-footguns-the-construct-prevents)
+and [Known limitations](#known-limitations) — those are the consumer-facing parts.
+
+## Repo layout
+
+This repo is **both** the published package and a CDK demo app:
+
+- `lib/iceberg/` — the published package (`cdk-glue-iceberg-table` on npm).
+- `lib/arceus-stack.ts`, `lib/iceberg-evolution-stack.ts`, `bin/`, `scripts/` — a CDK app that dogfoods the construct against a real AWS account, plus a bash harness that drives schema + partition evolution through real `cdk deploy`s. **Repo-only, not published to npm.**
+
+The sections [Prerequisites](#prerequisites), [Quickstart](#quickstart),
+[Demo tables](#demo-tables-deployed-by-arceusstack), and
+[Schema + partition evolution](#schema--partition-evolution-via-cdk-only)
+cover the demo app. Skip them if you only want to consume the construct.
 
 ## Prerequisites
 
