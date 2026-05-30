@@ -12,9 +12,11 @@ in `package.json`. Pick the level per semver:
   refactors that don't change the public API.
 - **minor** (`0.1.0` → `0.2.0`) — additive features that don't break
   existing API.
-- **major** (`0.1.0` → `1.0.0`) — breaking changes. (Per semver, while
-  the version is below 1.0 it's also acceptable to bump minor on
-  breaks; once `1.0.0` ships, true breaks must bump major.)
+- **major** (`1.0.0` → `2.0.0`) — breaking changes after the package
+  has reached `1.0.0`. While the package is still pre-1.0 (the
+  current state), per semver it is acceptable to bump *minor* on
+  breaking changes; reserve the `0.x` → `1.0.0` jump for the
+  "graduate to stable" milestone.
 
 `.github/workflows/publish.yml` only publishes when the version on
 `main` is newer than the version on the npm registry. A PR that
