@@ -99,11 +99,15 @@ Before running the quickstart you need:
 2. `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` set in the
    environment (the AWS CLI sets these automatically for most
    profile setups; `cdk` also populates them from the active profile).
-3. `DEVELOPER_IAM_USER` set to the name of an **existing IAM user**
-   in this account. The stack adds that user as a Lake Formation
-   admin and grants it per-table `SELECT/INSERT/DELETE/ALTER/DESCRIBE`
-   on the demo Iceberg tables — without it the deploy fails when LF
-   can't resolve the principal.
+3. `PRINCIPAL_ARN` set to the **ARN of an existing IAM principal**
+   in this account — IAM user, role, or federated identity. The
+   stack adds that principal as a Lake Formation admin and grants
+   it per-table `SELECT/INSERT/DELETE/ALTER/DESCRIBE` on the demo
+   Iceberg tables. Without it the deploy fails when LF can't resolve
+   the principal. The same ARN must also be the identity running
+   `cdk deploy` and any subsequent Athena queries — local devs
+   typically set this to their IAM user ARN; CI (`integ-test.yml`)
+   sets it to the OIDC role ARN.
 4. The Lake Formation service-linked role
    `AWSServiceRoleForLakeFormationDataAccess` must exist in the
    account. Create it once with
@@ -126,13 +130,15 @@ Repo source paths (npm consumers import from the package root and get the same e
 ## Quickstart
 
 ```bash
-# DEVELOPER_IAM_USER must be the name of an existing IAM user in
-# this account. `aws iam get-user` works when you're authenticated
-# directly as an IAM user; for SSO / assumed-role / aws-vault setups
-# (the modern default) the call fails with "Must specify userName
-# when calling with non-User credentials" and you should set the
-# variable manually to whichever IAM user you want LF to grant on.
-export DEVELOPER_IAM_USER="$(aws iam get-user --query 'User.UserName' --output text)"
+# PRINCIPAL_ARN is the ARN of the IAM principal (user, role, or
+# federated identity) that the stack should make a Lake Formation
+# admin and per-table grantee. It must equal the identity running
+# `cdk deploy` and any subsequent Athena queries — otherwise the
+# integration script's INSERT/SELECT calls fail with `Principal does
+# not have any privilege on specified resource`. The line below uses
+# `aws sts get-caller-identity` so it resolves correctly for IAM
+# users, assumed roles, and SSO sessions alike.
+export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
 
 npm install
 npx jest                         # 100% line + branch coverage, 95% gate

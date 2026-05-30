@@ -7,10 +7,17 @@
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
-#   - `DEVELOPER_IAM_USER` env var set to an existing IAM user
-#     (passed through to bin/arceus.ts).
-#   - ArceusStack already deployed (provides the data lake bucket,
-#     Glue database, and Athena workgroup).
+#   - `PRINCIPAL_ARN` env var set to the ARN of an existing IAM
+#     principal in this account (user, role, or federated identity).
+#     Passed through to bin/arceus.ts and used as the Lake Formation
+#     admin + per-table grantee on the demo Iceberg tables. The same
+#     principal must also be the one running `cdk deploy` (i.e. the
+#     current AWS identity) — otherwise the Athena queries the script
+#     runs after deploy will fail with `Principal does not have any
+#     privilege on specified resource`.
+#   - ArceusStack already deployed with the SAME `PRINCIPAL_ARN` —
+#     the stack registers it as the LF admin / table grantee, and a
+#     mismatch makes the verify steps fail.
 #
 # Usage:
 #   scripts/integration-test-evolution.sh

@@ -47,12 +47,14 @@ import {
 /** Props for `ArceusStack`. */
 export interface ArceusStackProps extends StackProps {
     /**
-     * IAM user name (in this account) that should be granted Lake
-     * Formation admin + per-table SELECT/INSERT/DELETE/ALTER on the
-     * demo Iceberg tables. Required so that the stack is portable
-     * to any account, not just the author's.
+     * ARN of the IAM principal (user, role, or federated identity)
+     * that should be granted Lake Formation admin + per-table
+     * SELECT/INSERT/DELETE/ALTER on the demo Iceberg tables. Required
+     * so the stack is portable to any account, not just the author's.
+     * For CI this is the OIDC role's ARN; for local dev pass your
+     * IAM user or assumed-role ARN.
      */
-    readonly developerIamUserName: string;
+    readonly principalArn: string;
 }
 
 export class ArceusStack extends Stack {
@@ -65,7 +67,7 @@ export class ArceusStack extends Stack {
         /// /////////////////////////////////////////////////
         // Security
 
-        const myUser = new ArnPrincipal(`arn:${this.partition}:iam::${this.account}:user/${props.developerIamUserName}`);
+        const myUser = new ArnPrincipal(props.principalArn);
 
         const dataLakeBucketKmsKey = new Key(this, 'DataLakeBucketKmsKey', {
             enableKeyRotation: true,

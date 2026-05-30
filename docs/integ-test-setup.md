@@ -20,11 +20,22 @@ The integ-test workflow assumes two things already exist in the target AWS accou
 1. **`ArceusStack` is deployed.** `IcebergEvolutionStack` (the stack the workflow deploys) imports the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
 
    ```bash
-   export DEVELOPER_IAM_USER=<your-iam-user-name>
+   export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
    npm ci
    npm run build
    npx cdk bootstrap aws://<ACCOUNT_ID>/us-east-1   # one-time per account/region
    npx cdk deploy ArceusStack
+   ```
+
+   For the integ-test workflow specifically, deploy `ArceusStack`
+   one more time with `PRINCIPAL_ARN` set to the OIDC role ARN — the
+   workflow itself doesn't deploy `ArceusStack`, only
+   `IcebergEvolutionStack`, so the LF admin / table grants for the
+   role have to be installed by a prior `ArceusStack` deploy:
+
+   ```bash
+   PRINCIPAL_ARN="arn:aws:iam::<ACCOUNT_ID>:role/ArceusIntegTestRole" \
+     npx cdk deploy ArceusStack
    ```
 
 2. **The account is `cdk bootstrap`ped** (covered by the bootstrap command above). The inline IAM policy below references the five `cdk-hnb659fds-*` roles that bootstrap creates; without them, `iam:PassRole` has nothing to point at.
