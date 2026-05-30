@@ -1,0 +1,35 @@
+name: Publish to npm
+
+# Runs when a tag matching v*.*.* is pushed (e.g. `git tag v0.1.0 && git push origin v0.1.0`)
+# or when manually triggered from the Actions tab.
+#
+# Setup: add an `NPM_TOKEN` repository secret with a token from
+# https://www.npmjs.com/settings/<your-user>/tokens (granular, read-write
+# on `cdk-glue-iceberg-table`, no other scope).
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Publish
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
