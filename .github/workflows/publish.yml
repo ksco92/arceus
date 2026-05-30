@@ -35,6 +35,11 @@ jobs:
           node-version: 20
           cache: npm
           registry-url: https://registry.npmjs.org
+      # Trusted publishing (OIDC) requires npm >= 11.5.1. setup-node@v4
+      # with node-version: 20 ships an older npm; upgrade before any
+      # registry call so `npm publish` knows how to do the OIDC
+      # exchange.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run lint
       - run: npm test
