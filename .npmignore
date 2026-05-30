@@ -1,6 +1,25 @@
+# Sources — only the compiled output under dist/ ships.
 *.ts
 !*.d.ts
 
-# CDK asset staging directory
-.cdk.staging
-cdk.out
+# CDK demo + integration harness — repo-only, not for consumers.
+bin/
+scripts/
+test/
+cdk.json
+cdk.out/
+.cdk.staging/
+lib/
+
+# Dev tooling.
+.github/
+.idea/
+.vscode/
+eslint.config.js
+jest.config.js
+tsconfig.json
+build/
+coverage/
+.eslintcache
+.DS_Store
+node_modules/
