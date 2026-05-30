@@ -46,3 +46,31 @@ attribution in artifacts that survive merge is not.
 
 If a contribution was written with AI assistance, the human
 contributor is the sole credited author.
+
+## Integration test for construct-touching PRs
+
+PRs that change any file under `lib/iceberg/`, `lib/arceus-stack.ts`,
+`lib/iceberg-evolution-stack.ts`, or
+`scripts/integration-test-evolution.sh` must have the **Integration
+test** workflow (`.github/workflows/integ-test.yml`) run green on
+the PR head before merging.
+
+The workflow is gated — it does not fire on every PR because it runs
+real `cdk deploy`s against a sandbox AWS account and takes ~5 min.
+Trigger it on a same-repo PR by either:
+
+- adding the label `run-integ-test` to the PR, or
+- commenting `/run-integ-test` on the PR (collaborator-only).
+
+It comments back on the PR with success / failure plus a link to the
+run log. Reviewers should refuse to merge a construct-touching PR
+without seeing that success comment, even if all unit tests are
+green and pr-reviewer returns PASS.
+
+PRs that touch only the README, the demo's `bin/`, the workflows
+under `.github/workflows/`, or unrelated paths do not need the integ
+test. The list above is the trigger set — when in doubt, run it.
+
+See `docs/integ-test-setup.md` for the AWS-side prerequisites
+(`ArceusStack` deployed, account `cdk bootstrap`ped, IAM role +
+`AWS_INTEG_ROLE_ARN` repo variable set).
