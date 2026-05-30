@@ -76,6 +76,13 @@ This repo is **both** the published package and a CDK demo app:
 
 - `lib/iceberg/` — the published package (`cdk-glue-iceberg-table` on npm).
 - `lib/arceus-stack.ts`, `lib/iceberg-evolution-stack.ts`, `bin/`, `scripts/` — a CDK app that dogfoods the construct against a real AWS account, plus a bash harness that drives schema + partition evolution through real `cdk deploy`s. **Repo-only, not published to npm.**
+- `e2e-consumer/` — a standalone CDK app that depends on the **published** `cdk-glue-iceberg-table` from npm. Proves that a fresh install + import + `cdk synth` works for downstream consumers. Runs on every PR via the `e2e-consumer` job in `.github/workflows/ci.yml`. Its `lib/surface-reference.ts` touches every exported symbol so that a rename anywhere in the published surface breaks CI.
+
+How the test gates fit together:
+
+- **`ci.yml`** runs on every PR — lint, unit tests with 95% coverage gate, `npm pack`, and the `e2e-consumer` synth against the latest npm version.
+- **`integ-test.yml`** is the real-AWS gate (`scripts/integration-test-evolution.sh` driving four `cdk deploy`s). Gated by `run-integ-test` label or `/run-integ-test` collaborator comment. PRs that touch any file under `lib/`, `bin/arceus.ts`, `cdk.json`, or the script must show a green run before merging (see CLAUDE.md §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`publish.yml`** runs on push to `main` — trusted-publish to npm when `package.json`'s `version` is newer than the registry.
 
 The sections [Prerequisites](#prerequisites), [Quickstart](#quickstart),
 [Demo tables](#demo-tables-deployed-by-arceusstack), and
@@ -150,7 +157,7 @@ import {
 import {
     IcebergTable,
     IcebergType,
-} from './iceberg';
+} from 'cdk-glue-iceberg-table';
 
 const db = new Database(this, 'Db', {
     databaseName: 'analytics',
@@ -204,7 +211,7 @@ import {
     IcebergSortDirection,
     IcebergTable,
     IcebergType,
-} from './iceberg';
+} from 'cdk-glue-iceberg-table';
 
 new IcebergTable(this, 'OrdersTable', {
     database: db,
@@ -592,7 +599,7 @@ arceus/
 │       ├── iceberg-type.ts             # IcebergType + struct/list/map/decimal/fixed
 │       ├── iceberg-partition-transform.ts
 │       ├── iceberg-table-properties.ts # Format/version enums + property validation
-│       └── index.ts                    # Re-exports
+│       └── index.ts                    # Re-exports (the npm package's entry point)
 ├── test/
 │   ├── arceus-stack.test.ts
 │   ├── iceberg-evolution-stack.test.ts
@@ -601,11 +608,29 @@ arceus/
 │       ├── iceberg-table-properties.test.ts
 │       ├── iceberg-table.test.ts
 │       └── iceberg-type.test.ts
+├── e2e-consumer/                       # Standalone CDK app that consumes the
+│   │                                   # published npm package — proves a fresh
+│   │                                   # install + import + synth works. Runs
+│   │                                   # on every PR via the `e2e-consumer` job
+│   │                                   # in `.github/workflows/ci.yml`.
+│   ├── bin/app.ts
+│   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
+│   └── lib/surface-reference.ts        # Anchors every exported symbol so a
+│                                       # rename in the published surface breaks CI
 ├── scripts/
 │   └── integration-test-evolution.sh   # End-to-end evolution harness
+├── docs/
+│   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test
+│                                       # workflow (OIDC provider, IAM role, repo var)
+├── .github/workflows/
+│   ├── ci.yml                          # Lint + test + build + pack + e2e-consumer
+│   ├── publish.yml                     # Trusted-publish to npm on version bump
+│   └── integ-test.yml                  # Real-AWS evolution test (gated by label /
+│                                       # `/run-integ-test` comment)
 ├── cdk.json
-├── package.json
+├── package.json                        # The published package's manifest
+├── tsconfig.json                       # Wide include (used by ESLint and dev)
+├── tsconfig.build.json                 # Narrow include (used by `npm publish`)
 ├── jest.config.js
-├── eslint.config.js
-└── tsconfig.json
+└── eslint.config.mjs
 ```
