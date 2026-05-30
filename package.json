@@ -31,13 +31,13 @@
         "LICENSE"
     ],
     "scripts": {
-        "build": "tsc",
-        "watch": "tsc -w",
+        "build": "tsc -p tsconfig.build.json",
+        "watch": "tsc -p tsconfig.build.json -w",
         "test": "jest",
         "cdk": "cdk",
         "deploy": "cdk deploy --require-approval=never",
         "lint": "eslint . --ext .ts,.tsx --report-unused-disable-directives --max-warnings=0 --fix --ignore-pattern '**/*.d.ts'",
-        "clean": "rm -rf node_modules package-lock.json build cdk.out",
+        "clean": "rm -rf node_modules package-lock.json build cdk.out dist",
         "dev": "npm run clean && npm i && npm run lint && npm run build && npm run test",
         "prepublishOnly": "npm run build && npm test"
     },

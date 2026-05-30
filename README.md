@@ -62,9 +62,11 @@ new IcebergTable(this, 'OrdersTable', {
 });
 ```
 
-See the [Using `IcebergTable`](#using-icebergtable) section below for the full API
-reference, plus [Two footguns the construct prevents](#two-footguns-the-construct-prevents)
-and [Known limitations](#known-limitations) — those are the consumer-facing parts.
+Consumer-facing reference sections below:
+
+- [Using `IcebergTable`](#using-icebergtable) — full API reference with examples.
+- [Two footguns the construct prevents](#two-footguns-the-construct-prevents) — the silent-corruption traps that motivated this construct.
+- [Known limitations](#known-limitations) — what the construct does and doesn't enforce.
 
 ## Repo layout
 

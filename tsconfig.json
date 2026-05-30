@@ -20,23 +20,13 @@
         "inlineSources": true,
         "experimentalDecorators": true,
         "strictPropertyInitialization": false,
-        "outDir": "dist",
-        "rootDir": ".",
         "typeRoots": [
             "./node_modules/@types"
         ]
     },
-    "include": [
-        "lib/iceberg/**/*.ts"
-    ],
     "exclude": [
         "node_modules",
         "cdk.out",
-        "dist",
-        "test",
-        "bin",
-        "lib/arceus-stack.ts",
-        "lib/iceberg-evolution-stack.ts"
+        "dist"
     ]
 }
-
