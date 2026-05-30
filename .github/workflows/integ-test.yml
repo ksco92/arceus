@@ -1,0 +1,145 @@
+name: Integration test
+
+# Runs scripts/integration-test-evolution.sh against real AWS. Drives
+# four real `cdk deploy`s plus Athena queries through the IcebergTable
+# construct and verifies schema + partition evolution end-to-end.
+#
+# Triggers:
+#   - Label `run-integ-test` applied to an open PR.
+#   - Comment `/run-integ-test` on a PR (by repo collaborators).
+#   - Manual dispatch from the Actions tab.
+#
+# Not on every push: real AWS resources, ~5 min runtime, real cost.
+#
+# Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
+# trust-policied for this repo's GitHub Actions OIDC. See
+# `docs/integ-test-setup.md` for the prerequisites
+# (`ArceusStack` must already be deployed; the account must be
+# cdk-bootstrapped) and the exact trust + permissions policies.
+
+on:
+  pull_request:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+# Single global slot — the script deploys a fixed-name
+# `IcebergEvolutionStack` to one account/region, so two concurrent
+# runs would race on the same CloudFormation stack and Glue table.
+# Don't cancel in-progress: an interrupted run leaves the stack
+# partially deployed.
+concurrency:
+  group: integ-test-evolution-stack
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    # Decide whether this trigger should actually run the deploy job.
+    # Three rules:
+    #
+    # 1. Labels and comments only fire when the PR's head branch
+    #    lives in the same repo, not a fork. This is the
+    #    "pwn-request" guard — a malicious fork PR could otherwise
+    #    edit package.json's postinstall, scripts/integration-test-
+    #    evolution.sh, or bin/arceus.ts, and the workflow would run
+    #    that code with cloud-admin credentials. Fork PRs need
+    #    manual `workflow_dispatch` after a human reviews the diff.
+    #
+    # 2. Comment trigger requires both an exact `/run-integ-test`
+    #    body (trimmed whitespace) and an OWNER/MEMBER/COLLABORATOR
+    #    association.
+    #
+    # 3. Label trigger requires the label name to equal
+    #    `run-integ-test`.
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      pr_number: ${{ steps.decide.outputs.pr_number }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          LABEL: ${{ github.event.label.name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_ASSOC: ${{ github.event.comment.author_association }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          IS_PR: ${{ github.event.issue.pull_request != null }}
+          PR_REPO_FULL: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          trimmed_comment="$(echo "$COMMENT_BODY" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "::notice::workflow_dispatch — running."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "pull_request" ] \
+            && [ "$LABEL" = "run-integ-test" ] \
+            && [ "$PR_REPO_FULL" = "$REPO_FULL" ]; then
+            echo "::notice::label trigger from same-repo PR — running."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "pull_request" ] && [ "$LABEL" = "run-integ-test" ]; then
+            echo "::warning::label trigger from fork PR ($PR_REPO_FULL) — refusing. Use workflow_dispatch after review."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "issue_comment" ] \
+            && [ "$IS_PR" = "true" ] \
+            && [ "$trimmed_comment" = "/run-integ-test" ] \
+            && { [ "$COMMENT_ASSOC" = "OWNER" ] || [ "$COMMENT_ASSOC" = "MEMBER" ] || [ "$COMMENT_ASSOC" = "COLLABORATOR" ]; }; then
+            echo "::notice::collaborator comment trigger — running."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "issue_comment" ] && [ "$IS_PR" = "true" ]; then
+            echo "::warning::comment trigger ignored — body='$trimmed_comment', assoc=$COMMENT_ASSOC. Expected exact '/run-integ-test' from OWNER/MEMBER/COLLABORATOR."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_REGION: us-east-1
+      DEVELOPER_IAM_USER: rodrigo
+      DESTROY: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # For PRs triggered by label/comment, GITHUB_REF points at
+          # `main`; check out the PR head explicitly.
+          ref: ${{ github.event.pull_request.head.sha || github.event.issue.pull_request.html_url && format('refs/pull/{0}/head', needs.gate.outputs.pr_number) || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INTEG_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: aws sts get-caller-identity
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Run integration test (4 deploys + verify)
+        run: bash scripts/integration-test-evolution.sh
+      - name: Comment status on PR
+        if: always() && needs.gate.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}';
+            const pr = ${{ needs.gate.outputs.pr_number }};
+            const run = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body: `Integration test: **${status}**. [Run log](${run}).`,
+            });
