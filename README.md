@@ -216,7 +216,7 @@ new IcebergTable(this, 'Users', {
 ```
 
 A table that exercises most of the surface (partitions, sort order,
-nested types, identifier fields, table properties, removal policy.
+nested types, identifier fields, table properties, removal policy).
 This is the exact shape `ArceusStack` uses for the `orders` demo
 table, so the column list / partition spec / properties round-trip
 straight to the live metadata.json below.
