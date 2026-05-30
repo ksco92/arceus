@@ -12,9 +12,10 @@ name: Integration test
 # Not on every push: real AWS resources, ~5 min runtime, real cost.
 #
 # Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
-# trust-policied for this repo's GitHub Actions OIDC. See the
-# `Set up the IAM role` section of `e2e-consumer/README.md` for the
-# exact trust + permissions policies.
+# trust-policied for this repo's GitHub Actions OIDC. See
+# `docs/integ-test-setup.md` for the prerequisites
+# (`ArceusStack` must already be deployed; the account must be
+# cdk-bootstrapped) and the exact trust + permissions policies.
 
 on:
   pull_request:
@@ -23,8 +24,13 @@ on:
     types: [created]
   workflow_dispatch:
 
+# Single global slot — the script deploys a fixed-name
+# `IcebergEvolutionStack` to one account/region, so two concurrent
+# runs would race on the same CloudFormation stack and Glue table.
+# Don't cancel in-progress: an interrupted run leaves the stack
+# partially deployed.
 concurrency:
-  group: integ-test-${{ github.ref }}
+  group: integ-test-evolution-stack
   cancel-in-progress: false
 
 permissions:
@@ -35,9 +41,22 @@ permissions:
 jobs:
   gate:
     # Decide whether this trigger should actually run the deploy job.
-    # Labels are easy: only fire on the `run-integ-test` label. Comments
-    # fire only for `/run-integ-test` from repo collaborators
-    # (associations `OWNER`, `MEMBER`, `COLLABORATOR`).
+    # Three rules:
+    #
+    # 1. Labels and comments only fire when the PR's head branch
+    #    lives in the same repo, not a fork. This is the
+    #    "pwn-request" guard — a malicious fork PR could otherwise
+    #    edit package.json's postinstall, scripts/integration-test-
+    #    evolution.sh, or bin/arceus.ts, and the workflow would run
+    #    that code with cloud-admin credentials. Fork PRs need
+    #    manual `workflow_dispatch` after a human reviews the diff.
+    #
+    # 2. Comment trigger requires both an exact `/run-integ-test`
+    #    body (trimmed whitespace) and an OWNER/MEMBER/COLLABORATOR
+    #    association.
+    #
+    # 3. Label trigger requires the label name to equal
+    #    `run-integ-test`.
     runs-on: ubuntu-latest
     timeout-minutes: 1
     outputs:
@@ -52,16 +71,30 @@ jobs:
           COMMENT_ASSOC: ${{ github.event.comment.author_association }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           IS_PR: ${{ github.event.issue.pull_request != null }}
+          PR_REPO_FULL: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO_FULL: ${{ github.repository }}
         run: |
+          trimmed_comment="$(echo "$COMMENT_BODY" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
           if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "::notice::workflow_dispatch — running."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "pull_request" ] \
+            && [ "$LABEL" = "run-integ-test" ] \
+            && [ "$PR_REPO_FULL" = "$REPO_FULL" ]; then
+            echo "::notice::label trigger from same-repo PR — running."
             echo "run=true" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT" = "pull_request" ] && [ "$LABEL" = "run-integ-test" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::label trigger from fork PR ($PR_REPO_FULL) — refusing. Use workflow_dispatch after review."
+            echo "run=false" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT" = "issue_comment" ] \
             && [ "$IS_PR" = "true" ] \
-            && [ "$COMMENT_BODY" = "/run-integ-test" ] \
+            && [ "$trimmed_comment" = "/run-integ-test" ] \
             && { [ "$COMMENT_ASSOC" = "OWNER" ] || [ "$COMMENT_ASSOC" = "MEMBER" ] || [ "$COMMENT_ASSOC" = "COLLABORATOR" ]; }; then
+            echo "::notice::collaborator comment trigger — running."
             echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "issue_comment" ] && [ "$IS_PR" = "true" ]; then
+            echo "::warning::comment trigger ignored — body='$trimmed_comment', assoc=$COMMENT_ASSOC. Expected exact '/run-integ-test' from OWNER/MEMBER/COLLABORATOR."
+            echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi

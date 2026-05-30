@@ -5,23 +5,38 @@
 `cdk deploy`s exercising column and partition evolution through the
 `IcebergTable` construct. The workflow runs when:
 
-- a PR is labeled `run-integ-test`, OR
+- a PR is labeled `run-integ-test` **and the PR's head branch is on the same repo** (fork PRs are refused at the workflow's gate; use `workflow_dispatch` after manual review of the diff), OR
 - a repo collaborator comments `/run-integ-test` on a PR, OR
 - the workflow is manually dispatched from the Actions tab.
 
-To make this work, two things have to exist in the AWS account that
-the test deploys to (200400004453 today):
+## Security note
 
-1. A **GitHub OIDC identity provider** registered with IAM (one-time
-   per account).
-2. An **IAM role** the workflow can assume, trust-policied to this
-   repository and permission-policied for what the integ test does.
+The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `bash scripts/integration-test-evolution.sh`) with **cloud-admin AWS credentials**. Same-repo PRs are auto-trusted because only collaborators can push to them. Fork PRs are refused at the gate; if you want to run the workflow against a fork PR, manually `workflow_dispatch` after auditing every file in the diff — especially `package.json` (postinstall scripts), `scripts/integration-test-evolution.sh`, and `bin/arceus.ts`.
 
-The ARN of that role goes into the `AWS_INTEG_ROLE_ARN` **repository
-variable** (Settings → Secrets and variables → Actions → Variables →
-New repository variable). Variables, not secrets — the ARN isn't
-sensitive and putting it in `vars.` keeps it readable in logs for
-debugging.
+## Prerequisites
+
+The integ-test workflow assumes two things already exist in the target AWS account:
+
+1. **`ArceusStack` is deployed.** `IcebergEvolutionStack` (the stack the workflow deploys) imports the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
+
+   ```bash
+   export DEVELOPER_IAM_USER=<your-iam-user-name>
+   npm ci
+   npm run build
+   npx cdk bootstrap aws://<ACCOUNT_ID>/us-east-1   # one-time per account/region
+   npx cdk deploy ArceusStack
+   ```
+
+2. **The account is `cdk bootstrap`ped** (covered by the bootstrap command above). The inline IAM policy below references the five `cdk-hnb659fds-*` roles that bootstrap creates; without them, `iam:PassRole` has nothing to point at.
+
+## What needs to exist in AWS for the workflow itself
+
+In addition to the prereqs above:
+
+1. A **GitHub OIDC identity provider** registered with IAM (one-time per account).
+2. An **IAM role** the workflow can assume, trust-policied to this repository and permission-policied for what the integ test does.
+
+The ARN of that role goes into the `AWS_INTEG_ROLE_ARN` **repository variable** (Settings → Secrets and variables → Actions → Variables → New repository variable). Variables, not secrets — the ARN isn't sensitive and putting it in `vars.` keeps it readable in logs for debugging.
 
 ## 1. OIDC provider (one-time)
 
@@ -43,7 +58,7 @@ entirely — the IAM service validates against GitHub's known certs.)
 
 ### Trust policy
 
-Replace `200400004453` with the account ID you're deploying to.
+Replace `<ACCOUNT_ID>` with the account ID you're deploying to.
 `repo:ksco92/arceus:*` scopes the role to any branch or PR of this
 repo — tighten to `repo:ksco92/arceus:ref:refs/heads/main` if you
 only ever want main to assume.
@@ -55,7 +70,7 @@ only ever want main to assume.
         {
             "Effect": "Allow",
             "Principal": {
-                "Federated": "arn:aws:iam::200400004453:oidc-provider/token.actions.githubusercontent.com"
+                "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
             },
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {
@@ -110,11 +125,11 @@ Inline policy (`iam-passrole.json`):
             "Effect": "Allow",
             "Action": "iam:PassRole",
             "Resource": [
-                "arn:aws:iam::200400004453:role/cdk-hnb659fds-cfn-exec-role-200400004453-us-east-1",
-                "arn:aws:iam::200400004453:role/cdk-hnb659fds-deploy-role-200400004453-us-east-1",
-                "arn:aws:iam::200400004453:role/cdk-hnb659fds-file-publishing-role-200400004453-us-east-1",
-                "arn:aws:iam::200400004453:role/cdk-hnb659fds-image-publishing-role-200400004453-us-east-1",
-                "arn:aws:iam::200400004453:role/cdk-hnb659fds-lookup-role-200400004453-us-east-1"
+                "arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-cfn-exec-role-<ACCOUNT_ID>-us-east-1",
+                "arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-deploy-role-<ACCOUNT_ID>-us-east-1",
+                "arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-file-publishing-role-<ACCOUNT_ID>-us-east-1",
+                "arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-image-publishing-role-<ACCOUNT_ID>-us-east-1",
+                "arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-lookup-role-<ACCOUNT_ID>-us-east-1"
             ]
         }
     ]
@@ -156,7 +171,7 @@ aws iam put-role-policy \
 ### Wire it to GitHub
 
 The role ARN looks like
-`arn:aws:iam::200400004453:role/ArceusIntegTestRole`. Add it to the
+`arn:aws:iam::<ACCOUNT_ID>:role/ArceusIntegTestRole`. Add it to the
 repo:
 
 - Settings → Secrets and variables → Actions → **Variables** tab →
