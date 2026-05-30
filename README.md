@@ -7,7 +7,7 @@ tables in the AWS Glue Data Catalog. The construct emits the
 way it handles any other resource).
 
 The motivating issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
-[`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-3243988858)
+[`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)
 documents the only working CFN shape and the silent-corruption traps
 you can hit by getting it slightly wrong. This construct implements
 that shape and refuses to emit the unsafe alternatives.
