@@ -46,3 +46,48 @@ attribution in artifacts that survive merge is not.
 
 If a contribution was written with AI assistance, the human
 contributor is the sole credited author.
+
+## Integration test for construct-touching PRs
+
+PRs that change any file consumed by the workflow's `cdk deploy` must
+have the **Integration test** workflow
+(`.github/workflows/integ-test.yml`) run green on the PR head before
+merging. The trigger set is:
+
+- any file under `lib/`,
+- `bin/arceus.ts` (`cdk.json`'s `app:` entry — every `cdk` invocation
+  parses it),
+- `cdk.json` (feature flags + the `app:` declaration),
+- `scripts/integration-test-evolution.sh` (the script the workflow
+  runs).
+
+The workflow is gated — it does not fire on every PR because it runs
+real `cdk deploy`s against a sandbox AWS account and takes ~5 min.
+Trigger it on a same-repo PR by either:
+
+- adding the label `run-integ-test` to the PR, or
+- commenting `/run-integ-test` on the PR (collaborator-only).
+
+It comments back on the PR with success / failure plus a link to the
+run log. Reviewers **must** refuse to merge a trigger-set PR without
+seeing that success comment, even if all unit tests are green and
+pr-reviewer returns PASS.
+
+Exemption list (no integ-test required):
+
+- `README.md` and any other top-level doc.
+- `docs/`.
+- `e2e-consumer/` (its own job in `ci.yml` covers it).
+- `.github/workflows/ci.yml` and `.github/workflows/publish.yml`
+  (integ-irrelevant by topic).
+- `.github/workflows/integ-test.yml` itself — a broken `integ-test.yml`
+  can't validate itself; review changes to this file knowing the
+  next trigger-set PR is the first chance to confirm it still works.
+- `test/` (unit tests, exercised by `npm test` in `ci.yml`).
+- `package.json` if the only change is the `version` bump.
+
+When in doubt, run it.
+
+See `docs/integ-test-setup.md` for the AWS-side prerequisites
+(`ArceusStack` deployed, account `cdk bootstrap`ped, IAM role +
+`AWS_INTEG_ROLE_ARN` repo variable set).
