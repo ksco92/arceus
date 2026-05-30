@@ -23,13 +23,17 @@ import {
 } from 'cdk-glue-iceberg-table';
 
 /**
- * Minimal consumer stack that exercises the public surface of
- * `cdk-glue-iceberg-table` as imported from npm. Synthesizes only;
- * never deployed by CI. The point is to fail synth if a refactor
- * of the construct changes the public shape in a breaking way.
+ * Realistic consumer stack — what a typical downstream user would
+ * write. Exercises a slice of `cdk-glue-iceberg-table`'s public
+ * surface (the parts a single Iceberg table would touch). The
+ * remaining exports — every static factory, enum value, and
+ * re-exported type — are anchored in `./surface-reference.ts` so
+ * that a rename anywhere in the published surface breaks CI.
+ *
+ * Synthesizes only; never deployed by CI.
  */
 export class ConsumerStack extends Stack {
-    constructor(scope: Construct, id: string, props: StackProps) {
+    constructor(scope: Construct, id: string, props?: StackProps) {
         super(scope, id, props);
 
         const bucket = new Bucket(this, 'WarehouseBucket', {

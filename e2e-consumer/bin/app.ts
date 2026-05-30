@@ -5,6 +5,9 @@ import {
 import {
     ConsumerStack,
 } from '../lib/consumer-stack';
+import {
+    SURFACE_ANCHORS,
+} from '../lib/surface-reference';
 
 const app = new App();
 new ConsumerStack(app, 'CdkGlueIcebergTableE2EConsumer', {
@@ -13,3 +16,7 @@ new ConsumerStack(app, 'CdkGlueIcebergTableE2EConsumer', {
         region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
     },
 });
+
+// Force-import the surface-anchor file so its imports are checked at
+// synth time, not tree-shaken.
+void SURFACE_ANCHORS;
