@@ -29,6 +29,16 @@ The integ-test workflow assumes two things already exist in the target AWS accou
 
 2. **The account is `cdk bootstrap`ped** (covered by the bootstrap command above). The inline IAM policy below references the five `cdk-hnb659fds-*` roles that bootstrap creates; without them, `iam:PassRole` has nothing to point at.
 
+3. **The OIDC role is a Lake Formation data lake admin.** `ArceusStack` enables Lake Formation on the data lake, and Lake Formation gates `glue:GetTable` independently of IAM. The workflow's verify-step Athena calls need `Describe` on the table, which the OIDC role only gets implicitly by being a data lake admin. Without it, the very first verify step after the first `cdk deploy` fails with `AccessDeniedException ... Required Describe on evolution_test`. Add the role once after creating it:
+
+   ```bash
+   aws lakeformation get-data-lake-settings --region us-east-1 > /tmp/lf.json
+   # Edit /tmp/lf.json to append:
+   #   { "DataLakePrincipalIdentifier": "arn:aws:iam::<ACCOUNT_ID>:role/ArceusIntegTestRole" }
+   # to DataLakeSettings.DataLakeAdmins, then:
+   aws lakeformation put-data-lake-settings --region us-east-1 --cli-input-json file:///tmp/lf.json
+   ```
+
 ## What needs to exist in AWS for the workflow itself
 
 In addition to the prereqs above:
