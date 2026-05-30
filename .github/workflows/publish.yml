@@ -1,16 +1,19 @@
 name: Publish to npm
 
-# Runs when a tag matching v*.*.* is pushed (e.g. `git tag v0.1.0 && git push origin v0.1.0`)
-# or when manually triggered from the Actions tab.
+# Runs on every push to `main` (i.e. every PR merge) and on manual
+# dispatch. Publishes the version in package.json IF and ONLY IF it
+# is newer than what is already on the npm registry. PRs that forget
+# to bump `version` become no-ops here — per CLAUDE.md, the policy is
+# "always bump", and a missing bump should be caught at review time.
 #
-# Setup: add an `NPM_TOKEN` repository secret with a token from
-# https://www.npmjs.com/settings/<your-user>/tokens (granular, read-write
-# on `cdk-glue-iceberg-table`, no other scope).
+# Setup: add an `NPM_TOKEN` repository secret with a granular token
+# from npmjs.com that has (a) read+write access to
+# `cdk-glue-iceberg-table` and (b) the "Bypass two-factor
+# authentication when publishing" checkbox enabled.
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -35,7 +38,24 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+      - name: Compare package.json version against registry
+        id: check
+        run: |
+          local_version=$(node -p "require('./package.json').version")
+          registry_version=$(npm view cdk-glue-iceberg-table version 2>/dev/null || echo "0.0.0")
+          echo "local=$local_version"       >> "$GITHUB_OUTPUT"
+          echo "registry=$registry_version" >> "$GITHUB_OUTPUT"
+          if [ "$local_version" = "$registry_version" ]; then
+            echo "skip=true"  >> "$GITHUB_OUTPUT"
+            echo "::notice::Version $local_version already on registry — no publish."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Local $local_version differs from registry $registry_version — publishing."
+          fi
+
       - name: Publish
+        if: steps.check.outputs.skip == 'false'
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
