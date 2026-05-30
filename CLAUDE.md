@@ -88,6 +88,22 @@ Exemption list (no integ-test required):
 
 When in doubt, run it.
 
+This gate is **human-enforced**: GitHub does not require it as a
+status check for the protected branch, so a trigger-set PR can be
+merged with no integ-test ever fired. Reviewers and the
+`pr-reviewer` agent must hold the line. Until / unless the gate is
+wired into `Settings → Branches → required status checks`, the
+written policy is the only thing stopping a slip.
+
+`e2e-consumer/` consumes the **published** npm package, so every
+version bump in this repo's `package.json` should be followed by
+bumping `e2e-consumer/package-lock.json` to the same version once
+the publish workflow completes. The `^x.y.z` range in
+`e2e-consumer/package.json` will keep the spec compatible; only the
+lockfile needs updating, in a small follow-up PR. The surface-anchor
+test only catches a rename when the lock pin matches the version
+being reviewed, so a stale pin silently weakens the guarantee.
+
 See `docs/integ-test-setup.md` for the AWS-side prerequisites
 (`ArceusStack` deployed, account `cdk bootstrap`ped, IAM role +
 `AWS_INTEG_ROLE_ARN` repo variable set).

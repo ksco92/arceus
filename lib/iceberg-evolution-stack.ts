@@ -81,7 +81,6 @@ export class IcebergEvolutionStack extends Stack {
             'ImportedDatabase',
             `arn:${this.partition}:glue:${this.region}:${this.account}:database/${props.importedDatabaseName}`,
         );
-        const developerArn = props.principalArn;
 
         const columns: IcebergColumn[] = buildColumns(step);
         const partitionSpec: IcebergPartitionField[] = buildPartitionSpec(step);
@@ -116,7 +115,7 @@ export class IcebergEvolutionStack extends Stack {
                 },
             },
             dataLakePrincipal: {
-                dataLakePrincipalIdentifier: developerArn,
+                dataLakePrincipalIdentifier: props.principalArn,
             },
         });
         permission.addDependency(table.resource);

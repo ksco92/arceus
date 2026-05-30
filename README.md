@@ -76,11 +76,11 @@ This repo is **both** the published package and a CDK demo app:
 
 - `lib/iceberg/` — the published package (`cdk-glue-iceberg-table` on npm).
 - `lib/arceus-stack.ts`, `lib/iceberg-evolution-stack.ts`, `bin/`, `scripts/` — a CDK app that dogfoods the construct against a real AWS account, plus a bash harness that drives schema + partition evolution through real `cdk deploy`s. **Repo-only, not published to npm.**
-- `e2e-consumer/` — a standalone CDK app that depends on the **published** `cdk-glue-iceberg-table` from npm. Proves that a fresh install + import + `cdk synth` works for downstream consumers. Runs on every PR via the `e2e-consumer` job in `.github/workflows/ci.yml`. Its `lib/surface-reference.ts` touches every exported symbol so that a rename anywhere in the published surface breaks CI.
+- `e2e-consumer/` — a standalone CDK app that depends on the **published** `cdk-glue-iceberg-table` from npm. Proves that a fresh install + import + `cdk synth` works for downstream consumers. Runs on every PR via the `e2e-consumer` job in `.github/workflows/ci.yml`. Its `lib/surface-reference.ts` touches every exported symbol so that a rename in the published surface breaks CI. The pin in `e2e-consumer/package-lock.json` tracks the version most recently published to npm; CLAUDE.md asks for it to be bumped after each release.
 
 How the test gates fit together:
 
-- **`ci.yml`** runs on every PR — lint, unit tests with 95% coverage gate, `npm pack`, and the `e2e-consumer` synth against the latest npm version.
+- **`ci.yml`** runs on every PR — lint, unit tests with the 95% coverage gate, `npm pack`, and the `e2e-consumer` synth against the pinned published npm version.
 - **`integ-test.yml`** is the real-AWS gate (`scripts/integration-test-evolution.sh` driving four `cdk deploy`s). Gated by `run-integ-test` label or `/run-integ-test` collaborator comment. PRs that touch any file under `lib/`, `bin/arceus.ts`, `cdk.json`, or the script must show a green run before merging (see CLAUDE.md §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 - **`publish.yml`** runs on push to `main` — trusted-publish to npm when `package.json`'s `version` is newer than the registry.
 
@@ -100,12 +100,12 @@ Before running the quickstart you need:
    environment (the AWS CLI sets these automatically for most
    profile setups; `cdk` also populates them from the active profile).
 3. `PRINCIPAL_ARN` set to the **ARN of an existing IAM principal**
-   in this account — IAM user, role, or federated identity. The
+   in this account (IAM user, role, or federated identity). The
    stack adds that principal as a Lake Formation admin and grants
    it per-table `SELECT/INSERT/DELETE/ALTER/DESCRIBE` on the demo
    Iceberg tables. Without it the deploy fails when LF can't resolve
    the principal. The same ARN must also be the identity running
-   `cdk deploy` and any subsequent Athena queries — local devs
+   `cdk deploy` and any subsequent Athena queries. Local devs
    typically set this to their IAM user ARN; CI (`integ-test.yml`)
    sets it to the OIDC role ARN.
    - **Only one principal is privileged at a time.** `ArceusStack`
@@ -131,12 +131,12 @@ Before running the quickstart you need:
 
 Repo source paths (npm consumers import from the package root and get the same exports under `dist/lib/iceberg/`):
 
-- **`lib/iceberg/iceberg-table.ts`** — the `IcebergTable` L2 construct.
-- **`lib/iceberg/iceberg-type.ts`** — `IcebergType` with primitives + `list` / `map` / `struct` factories. Renders to the JSON shape Glue's `IcebergStructField.type` expects.
-- **`lib/iceberg/iceberg-partition-transform.ts`** — `IcebergPartitionTransform` (identity / bucket(N) / truncate(W) / year / month / day / hour / void). Each transform validates against the source column type at synth time.
-- **`lib/iceberg/iceberg-table-properties.ts`** — `IcebergDataFormat` (parquet/orc/avro — default parquet), `IcebergFormatVersion` (v1/v2 — default v2), and a validator that catches misconfigured `tableProperties` before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
-- **`lib/arceus-stack.ts`** — the demo stack: KMS-encrypted data lake bucket, Athena results bucket, Glue database, three demo Iceberg tables (`orders`, `events`, `customers`). Repo-only, not in the npm tarball.
-- **`lib/iceberg-evolution-stack.ts`** + **`scripts/integration-test-evolution.sh`** — a parameterized stack and a bash harness that drives four real `cdk deploy`s to prove schema/partition evolution works end-to-end. Repo-only, not in the npm tarball.
+- **`lib/iceberg/iceberg-table.ts`**: the `IcebergTable` L2 construct.
+- **`lib/iceberg/iceberg-type.ts`**: `IcebergType` with primitives + `list` / `map` / `struct` factories. Renders to the JSON shape Glue's `IcebergStructField.type` expects.
+- **`lib/iceberg/iceberg-partition-transform.ts`**: `IcebergPartitionTransform` (identity / bucket(N) / truncate(W) / year / month / day / hour / void). Each transform validates against the source column type at synth time.
+- **`lib/iceberg/iceberg-table-properties.ts`**: `IcebergDataFormat` (parquet/orc/avro, default parquet), `IcebergFormatVersion` (v1/v2, default v2), and a validator that catches misconfigured `tableProperties` before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
+- **`lib/arceus-stack.ts`**: the demo stack: KMS-encrypted data lake bucket, Athena results bucket, Glue database, three demo Iceberg tables (`orders`, `events`, `customers`). Repo-only, not in the npm tarball.
+- **`lib/iceberg-evolution-stack.ts`** + **`scripts/integration-test-evolution.sh`**: a parameterized stack and a bash harness that drives four real `cdk deploy`s to prove schema/partition evolution works end-to-end. Repo-only, not in the npm tarball.
 
 ## Quickstart
 
@@ -160,12 +160,12 @@ Repo source paths (npm consumers import from the package root and get the same e
 export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
 
 npm install
-npx jest                         # 100% line + branch coverage, 95% gate
+npx jest                         # runs the suite; coverage floor in jest.config.js
 npx cdk deploy ArceusStack --require-approval=never
 ./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
 ```
 
-`cdk ls` will show two stacks — `ArceusStack` (the demo data lake +
+`cdk ls` will show two stacks: `ArceusStack` (the demo data lake +
 three Iceberg tables) and `IcebergEvolutionStack` (the evolution
 test target driven by `scripts/integration-test-evolution.sh`).
 Deploy only `ArceusStack` for the quickstart; the evolution stack
@@ -215,7 +215,7 @@ new IcebergTable(this, 'Users', {
 });
 ```
 
-A table that exercises most of the surface — partitions, sort order,
+A table that exercises most of the surface (partitions, sort order,
 nested types, identifier fields, table properties, removal policy.
 This is the exact shape `ArceusStack` uses for the `orders` demo
 table, so the column list / partition spec / properties round-trip
@@ -488,7 +488,7 @@ underlying Iceberg `metadata.json` after each:
 | 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` |
 | 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` |
 
-Last script run output (abridged — `cdk deploy` chatter and the
+Last script run output (abridged: `cdk deploy` chatter and the
 per-Athena-query state polling lines are omitted; the assertion
 output is verbatim):
 
@@ -583,16 +583,17 @@ under `storageDescriptor`.
 Even setting just `tableInput: { name: 'foo' }` next to
 `openTableFormatInput` returns
 `"Table metadata is expected only via TableInput or via IcebergTableInputProperties inside OpenTableFormatInput"`.
-The construct never emits `tableInput` — table-level comment goes
+The construct never emits `tableInput`; the table-level comment goes
 into `tableProperties['comment']`, which lives inside
 `icebergTableInput.properties`.
 
-(There is a third footgun — field-id reuse after a column drop — that
+(There is a third footgun, field-id reuse after a column drop, that
 the construct does **not** prevent. See the next section.)
 
 ## Known limitations
 
 - **Field-id reuse is not detected across deploys.** If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate column id N` validator), but it doesn't compare against the live table state. The safe workflow is to always pin `id` explicitly and treat dropped ids as retired forever; never let CDK reassign an id that has ever been used.
+- **Partition field ids are positional and not pinnable.** The construct allocates partition `fieldId` densely from 1000 in the order partitions appear in `partitionSpec`. Reordering the array across deploys reassigns those ids for unchanged logical partitions, which is the partition-spec analog of the column-id-reuse footgun above. There is no `IcebergPartitionField.fieldId` pinning prop today. The safe workflow is append-only: add new partition fields at the end of `partitionSpec`, and only drop the trailing ones.
 - **CREATE-only metadata operation.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that. Subsequent deploys use Glue's normal `UpdateTable` path, which writes new Iceberg metadata in-place.
 - **Format version is immutable after CREATE.** The `formatVersion` prop is read once at table creation; changing it later requires a destroy + recreate.
 - **`merge-on-read` requires v2.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
@@ -608,7 +609,7 @@ npx jest          # runs every suite under test/, prints coverage at the end
 Coverage is gated at 95% statements / 95% branches / 95% lines / 95% functions
 on `lib/**/*.ts` via the `coverageThreshold.global` block in `jest.config.js`.
 A failing gate fails the suite, so the README does not paste a transcript that
-would drift after the next refactor — run the command locally for the live
+would drift after the next refactor; run the command locally for the live
 numbers.
 
 ## Project layout
@@ -657,5 +658,5 @@ arceus/
 ├── tsconfig.json                       # Wide include (used by ESLint and dev)
 ├── tsconfig.build.json                 # Narrow include (used by `npm publish`)
 ├── jest.config.js
-└── eslint.config.mjs
+└── eslint.config.js
 ```

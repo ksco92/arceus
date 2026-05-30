@@ -67,7 +67,7 @@ export class ArceusStack extends Stack {
         /// /////////////////////////////////////////////////
         // Security
 
-        const myUser = new ArnPrincipal(props.principalArn);
+        const principal = new ArnPrincipal(props.principalArn);
 
         const dataLakeBucketKmsKey = new Key(this, 'DataLakeBucketKmsKey', {
             enableKeyRotation: true,
@@ -87,7 +87,7 @@ export class ArceusStack extends Stack {
         const lfServiceRoleArn = `arn:${this.partition}:iam::${this.account}:role/aws-service-role/lakeformation.amazonaws.com/AWSServiceRoleForLakeFormationDataAccess`;
 
         const lfAdmins = [
-            myUser,
+            principal,
             new ArnPrincipal(Fn.sub((this.synthesizer as DefaultStackSynthesizer).cloudFormationExecutionRoleArn)),
         ];
 
@@ -242,7 +242,7 @@ export class ArceusStack extends Stack {
                 },
             },
             dataLakePrincipal: {
-                dataLakePrincipalIdentifier: myUser.arn,
+                dataLakePrincipalIdentifier: principal.arn,
             },
         });
 
@@ -542,7 +542,7 @@ export class ArceusStack extends Stack {
                     },
                 },
                 dataLakePrincipal: {
-                    dataLakePrincipalIdentifier: myUser.arn,
+                    dataLakePrincipalIdentifier: principal.arn,
                 },
             });
             permission.addDependency(grant.table.resource);
