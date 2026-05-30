@@ -1,0 +1,112 @@
+name: Integration test
+
+# Runs scripts/integration-test-evolution.sh against real AWS. Drives
+# four real `cdk deploy`s plus Athena queries through the IcebergTable
+# construct and verifies schema + partition evolution end-to-end.
+#
+# Triggers:
+#   - Label `run-integ-test` applied to an open PR.
+#   - Comment `/run-integ-test` on a PR (by repo collaborators).
+#   - Manual dispatch from the Actions tab.
+#
+# Not on every push: real AWS resources, ~5 min runtime, real cost.
+#
+# Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
+# trust-policied for this repo's GitHub Actions OIDC. See the
+# `Set up the IAM role` section of `e2e-consumer/README.md` for the
+# exact trust + permissions policies.
+
+on:
+  pull_request:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+concurrency:
+  group: integ-test-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    # Decide whether this trigger should actually run the deploy job.
+    # Labels are easy: only fire on the `run-integ-test` label. Comments
+    # fire only for `/run-integ-test` from repo collaborators
+    # (associations `OWNER`, `MEMBER`, `COLLABORATOR`).
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      pr_number: ${{ steps.decide.outputs.pr_number }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          LABEL: ${{ github.event.label.name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_ASSOC: ${{ github.event.comment.author_association }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          IS_PR: ${{ github.event.issue.pull_request != null }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "pull_request" ] && [ "$LABEL" = "run-integ-test" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "issue_comment" ] \
+            && [ "$IS_PR" = "true" ] \
+            && [ "$COMMENT_BODY" = "/run-integ-test" ] \
+            && { [ "$COMMENT_ASSOC" = "OWNER" ] || [ "$COMMENT_ASSOC" = "MEMBER" ] || [ "$COMMENT_ASSOC" = "COLLABORATOR" ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_REGION: us-east-1
+      DEVELOPER_IAM_USER: rodrigo
+      DESTROY: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # For PRs triggered by label/comment, GITHUB_REF points at
+          # `main`; check out the PR head explicitly.
+          ref: ${{ github.event.pull_request.head.sha || github.event.issue.pull_request.html_url && format('refs/pull/{0}/head', needs.gate.outputs.pr_number) || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INTEG_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: aws sts get-caller-identity
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Run integration test (4 deploys + verify)
+        run: bash scripts/integration-test-evolution.sh
+      - name: Comment status on PR
+        if: always() && needs.gate.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}';
+            const pr = ${{ needs.gate.outputs.pr_number }};
+            const run = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body: `Integration test: **${status}**. [Run log](${run}).`,
+            });
