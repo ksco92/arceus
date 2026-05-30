@@ -25,3 +25,26 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm pack --dry-run
+
+  e2e-consumer:
+    # Proves the published cdk-glue-iceberg-table package is importable
+    # by a downstream CDK app. Pinned to a specific version in
+    # e2e-consumer/package.json so a bad publish breaks this job on
+    # the NEXT version-bump PR, not silently.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: e2e-consumer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e-consumer/package-lock.json
+      - run: npm ci
+      - run: npx cdk synth --no-staging
+        env:
+          CDK_DEFAULT_ACCOUNT: '123456789012'
+          CDK_DEFAULT_REGION: us-east-1

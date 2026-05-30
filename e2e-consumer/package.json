@@ -1,0 +1,21 @@
+{
+    "name": "cdk-glue-iceberg-table-e2e-consumer",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Synth-only consumer that proves the published cdk-glue-iceberg-table package is importable.",
+    "scripts": {
+        "synth": "cdk synth --no-staging"
+    },
+    "dependencies": {
+        "@aws-cdk/aws-glue-alpha": "^2.210.0-alpha.0",
+        "aws-cdk-lib": "^2.210.0",
+        "cdk-glue-iceberg-table": "0.1.3",
+        "constructs": "^10.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "22.7.9",
+        "aws-cdk": "^2.1024.0",
+        "ts-node": "^10.9.2",
+        "typescript": "~5.6.3"
+    }
+}
