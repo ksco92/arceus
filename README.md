@@ -108,6 +108,17 @@ Before running the quickstart you need:
    `cdk deploy` and any subsequent Athena queries — local devs
    typically set this to their IAM user ARN; CI (`integ-test.yml`)
    sets it to the OIDC role ARN.
+   - **Only one principal is privileged at a time.** `ArceusStack`
+     writes the Lake Formation admin list with REPLACE semantics,
+     so the most recent `cdk deploy` wins. A local `cdk deploy` with
+     your user ARN revokes the OIDC role's LF grants (and breaks the
+     next integ-test run until CI redeploys), and vice versa.
+     Coordinate accordingly.
+   - **SSO / `aws-vault` users:** set `PRINCIPAL_ARN` to the
+     canonical role ARN (`arn:aws:iam::<acct>:role/<RoleName>`), not
+     the per-session `arn:aws:sts::<acct>:assumed-role/...` you'd
+     get from `aws sts get-caller-identity`. LF grants on the
+     session-suffixed ARN go stale at the next SSO refresh.
 4. The Lake Formation service-linked role
    `AWSServiceRoleForLakeFormationDataAccess` must exist in the
    account. Create it once with
@@ -135,9 +146,17 @@ Repo source paths (npm consumers import from the package root and get the same e
 # admin and per-table grantee. It must equal the identity running
 # `cdk deploy` and any subsequent Athena queries — otherwise the
 # integration script's INSERT/SELECT calls fail with `Principal does
-# not have any privilege on specified resource`. The line below uses
-# `aws sts get-caller-identity` so it resolves correctly for IAM
-# users, assumed roles, and SSO sessions alike.
+# not have any privilege on specified resource`.
+#
+# For a direct IAM-user session, the line below returns the right ARN
+# (`arn:aws:iam::<acct>:user/<name>`).
+#
+# For SSO / aws-vault / any assumed-role session this returns
+# `arn:aws:sts::<acct>:assumed-role/<RoleName>/<SessionName>`, which
+# Lake Formation accepts but stales on the next session refresh
+# because the SessionName changes. Set PRINCIPAL_ARN to the canonical
+# `arn:aws:iam::<acct>:role/<RoleName>` instead — for example:
+#   export PRINCIPAL_ARN="arn:aws:iam::123456789012:role/MyDevRole"
 export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
 
 npm install

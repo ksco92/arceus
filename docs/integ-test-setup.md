@@ -31,7 +31,14 @@ The integ-test workflow assumes two things already exist in the target AWS accou
    one more time with `PRINCIPAL_ARN` set to the OIDC role ARN — the
    workflow itself doesn't deploy `ArceusStack`, only
    `IcebergEvolutionStack`, so the LF admin / table grants for the
-   role have to be installed by a prior `ArceusStack` deploy:
+   role have to be installed by a prior `ArceusStack` deploy.
+
+   **This deploy REPLACES the LF admin / grantee installed by the
+   step above.** `ArceusStack` writes the LF admin list with REPLACE
+   semantics, so after this command only the OIDC role is privileged.
+   To restore your local user's grants for ad-hoc Athena queries,
+   re-run `cdk deploy ArceusStack` with `PRINCIPAL_ARN` set back to
+   your user ARN.
 
    ```bash
    PRINCIPAL_ARN="arn:aws:iam::<ACCOUNT_ID>:role/ArceusIntegTestRole" \
