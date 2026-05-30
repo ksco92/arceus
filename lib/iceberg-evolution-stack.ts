@@ -42,11 +42,13 @@ export interface IcebergEvolutionStackProps extends StackProps {
     readonly importedDatabaseName: string;
 
     /**
-     * IAM user name (in this account) that should be granted
-     * SELECT/INSERT/DELETE/ALTER/DESCRIBE on the test table —
-     * typically the developer running `cdk deploy`.
+     * ARN of the IAM principal (user, role, or federated identity)
+     * that should be granted SELECT/INSERT/DELETE/ALTER/DESCRIBE on
+     * the test table — typically the principal running `cdk deploy`.
+     * For CI this is the OIDC role's ARN; for local dev pass your
+     * IAM user or assumed-role ARN.
      */
-    readonly developerIamUserName: string;
+    readonly principalArn: string;
 }
 
 /**
@@ -79,7 +81,7 @@ export class IcebergEvolutionStack extends Stack {
             'ImportedDatabase',
             `arn:${this.partition}:glue:${this.region}:${this.account}:database/${props.importedDatabaseName}`,
         );
-        const developerArn = `arn:${this.partition}:iam::${this.account}:user/${props.developerIamUserName}`;
+        const developerArn = props.principalArn;
 
         const columns: IcebergColumn[] = buildColumns(step);
         const partitionSpec: IcebergPartitionField[] = buildPartitionSpec(step);

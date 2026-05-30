@@ -107,7 +107,7 @@ jobs:
     timeout-minutes: 30
     env:
       AWS_REGION: us-east-1
-      DEVELOPER_IAM_USER: rodrigo
+      PRINCIPAL_ARN: ${{ vars.AWS_INTEG_ROLE_ARN }}
       DESTROY: '1'
     steps:
       - uses: actions/checkout@v4

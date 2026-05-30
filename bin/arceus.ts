@@ -11,7 +11,7 @@ import {
 
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 const region = process.env.CDK_DEFAULT_REGION;
-const developerIamUserName = process.env.DEVELOPER_IAM_USER;
+const principalArn = process.env.PRINCIPAL_ARN;
 if (!account || !region) {
     throw new Error(
         'CDK_DEFAULT_ACCOUNT and CDK_DEFAULT_REGION must both be set. '
@@ -19,12 +19,12 @@ if (!account || !region) {
         + 'cdk normally populates these from the active AWS profile.',
     );
 }
-if (!developerIamUserName) {
+if (!principalArn) {
     throw new Error(
-        'DEVELOPER_IAM_USER must be set to an existing IAM user in this account. '
-        + 'That user is granted Lake Formation admin + per-table SELECT/INSERT/DELETE '
-        + 'on the demo Iceberg tables; without it the deploy fails when the LF principal '
-        + 'reference cannot be resolved.',
+        'PRINCIPAL_ARN must be set to the ARN of an existing IAM principal in this account '
+        + '(user, role, or federated identity). That principal is granted Lake Formation admin '
+        + '+ per-table SELECT/INSERT/DELETE on the demo Iceberg tables; without it the deploy '
+        + 'fails when the LF principal reference cannot be resolved.',
     );
 }
 const env = {
@@ -36,7 +36,7 @@ const app = new App();
 
 new ArceusStack(app, 'ArceusStack', {
     env,
-    developerIamUserName,
+    principalArn,
 });
 
 new IcebergEvolutionStack(app, 'IcebergEvolutionStack', {
@@ -47,5 +47,5 @@ new IcebergEvolutionStack(app, 'IcebergEvolutionStack', {
     /// `cdk ls` for zero CFN-side gain.
     importedDataLakeBucketName: `data-lake-bucket-${account}`,
     importedDatabaseName: 'sample_database',
-    developerIamUserName,
+    principalArn,
 });

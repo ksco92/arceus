@@ -21,7 +21,7 @@ function synthAt(step: number | string): Template {
         },
         importedDataLakeBucketName: 'data-lake-bucket-123456789012',
         importedDatabaseName: 'sample_database',
-        developerIamUserName: 'me',
+        principalArn: 'arn:aws:iam::123456789012:user/me',
     });
     return Template.fromStack(stack);
 }
@@ -153,7 +153,7 @@ describe('IcebergEvolutionStack — wiring', () => {
             },
             importedDataLakeBucketName: 'data-lake-bucket-123456789012',
             importedDatabaseName: 'sample_database',
-            developerIamUserName: 'me',
+            principalArn: 'arn:aws:iam::123456789012:user/me',
         });
         const template = Template.fromStack(stack);
         template.hasOutput('EvolutionStepOutput', {
