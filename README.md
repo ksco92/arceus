@@ -21,6 +21,12 @@ implementation. Once `@aws-cdk/aws-glue-alpha` ships its own
 `IcebergTable`, prefer the official one and treat this package as a
 stopgap.
 
+> **Status: pre-release.** `0.1.0` has not been published to npm yet
+> — the `npm install` command below will 404 until the first
+> `v*.*.*` tag is pushed (which triggers the publish workflow). To
+> use the construct today, install directly from this repo:
+> `npm install github:ksco92/arceus#main`.
+
 ## Install
 
 ```bash
@@ -36,6 +42,7 @@ npm install aws-cdk-lib constructs @aws-cdk/aws-glue-alpha
 ## Use
 
 ```ts
+import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { Database } from '@aws-cdk/aws-glue-alpha';
 import {
     IcebergTable,
@@ -43,6 +50,7 @@ import {
     IcebergPartitionTransform,
 } from 'cdk-glue-iceberg-table';
 
+const bucket = new Bucket(this, 'Warehouse');
 const db = new Database(this, 'Db', { databaseName: 'analytics' });
 
 new IcebergTable(this, 'OrdersTable', {
@@ -103,14 +111,16 @@ Before running the quickstart you need:
 5. `cdk bootstrap aws://<account>/<region>` if the account hasn't
    been bootstrapped for CDK.
 
-## What you get
+## What's in the repo
+
+Repo source paths (npm consumers import from the package root and get the same exports under `dist/lib/iceberg/`):
 
 - **`lib/iceberg/iceberg-table.ts`** — the `IcebergTable` L2 construct.
 - **`lib/iceberg/iceberg-type.ts`** — `IcebergType` with primitives + `list` / `map` / `struct` factories. Renders to the JSON shape Glue's `IcebergStructField.type` expects.
 - **`lib/iceberg/iceberg-partition-transform.ts`** — `IcebergPartitionTransform` (identity / bucket(N) / truncate(W) / year / month / day / hour / void). Each transform validates against the source column type at synth time.
 - **`lib/iceberg/iceberg-table-properties.ts`** — `IcebergDataFormat` (parquet/orc/avro — default parquet), `IcebergFormatVersion` (v1/v2 — default v2), and a validator that catches misconfigured `tableProperties` before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
-- **`lib/arceus-stack.ts`** — the demo stack: KMS-encrypted data lake bucket, Athena results bucket, Glue database, three demo Iceberg tables (`orders`, `events`, `customers`).
-- **`lib/iceberg-evolution-stack.ts`** + **`scripts/integration-test-evolution.sh`** — a parameterized stack and a bash harness that drives four real `cdk deploy`s to prove schema/partition evolution works end-to-end.
+- **`lib/arceus-stack.ts`** — the demo stack: KMS-encrypted data lake bucket, Athena results bucket, Glue database, three demo Iceberg tables (`orders`, `events`, `customers`). Repo-only, not in the npm tarball.
+- **`lib/iceberg-evolution-stack.ts`** + **`scripts/integration-test-evolution.sh`** — a parameterized stack and a bash harness that drives four real `cdk deploy`s to prove schema/partition evolution works end-to-end. Repo-only, not in the npm tarball.
 
 ## Quickstart
 
