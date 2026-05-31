@@ -28,6 +28,10 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: build/coverage/lcov.info
+          # Required because `main` is a protected branch. Codecov's
+          # tokenless-uploads-for-public-repos path is disabled on
+          # protected branches as an anti-abuse measure.
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
       - run: npm run build
       - run: npm pack --dry-run
