@@ -263,18 +263,22 @@ unset_assumed_role() {
     unset AWS_SESSION_TOKEN
 }
 
-header "TEST 5 — grantRead via the native IcebergTable (assume GranteeRole)"
+header "TEST 5 — grantRead S3 statements via the native IcebergTable (assume GranteeRole)"
+# Why only S3 here, not Glue: ArceusStack registers the data-lake bucket
+# with Lake Formation. LF gates every `glue:GetTable` call against
+# tables in registered locations, irrespective of the principal's IAM
+# permissions — so a runtime `glue:GetTable` from GranteeRole hits LF
+# DENY before the IAM grant is even consulted. The construct's
+# Glue-action grants are still validated by the unit tests in
+# `test/iceberg-surface-stack.test.ts`. S3 direct calls, on the other
+# hand, are NOT gated by LF, so they exercise the grant logic the
+# construct produces in isolation.
+
 # Wait for IAM policy attachment to propagate. Even after CFN says
 # UPDATE_COMPLETE on the role's inline policy, the policy can take a
 # few seconds to propagate to STS/IAM resolvers.
 sleep 10
 assume_role_and_export "$GRANTEE_ROLE_ARN" "surface-integ-native"
-# Glue read should succeed: READ_TABLE_ACTIONS includes glue:GetTable.
-if aws glue get-table --database-name "$DATABASE" --name "transforms_test" --region "$AWS_REGION" --query 'Table.Name' --output text 2>/dev/null | grep -q "transforms_test"; then
-    green "  glue:GetTable succeeds for transforms_test ✓"
-else
-    red "  glue:GetTable failed as GranteeRole"; unset_assumed_role; exit 1
-fi
 # S3 list with s3:prefix condition: the table's own prefix is allowed.
 if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
     green "  s3:ListBucket on the table's own prefix succeeds ✓"
@@ -296,11 +300,6 @@ unset_assumed_role
 
 header "TEST 6 — grantRead via IcebergTable.fromIcebergTableAttributes (assume ImportedGranteeRole)"
 assume_role_and_export "$IMPORTED_GRANTEE_ROLE_ARN" "surface-integ-imported"
-if aws glue get-table --database-name "$DATABASE" --name "transforms_test" --region "$AWS_REGION" --query 'Table.Name' --output text 2>/dev/null | grep -q "transforms_test"; then
-    green "  imported-path glue:GetTable succeeds ✓"
-else
-    red "  imported-path glue:GetTable failed"; unset_assumed_role; exit 1
-fi
 if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
     green "  imported-path s3:ListBucket on table prefix succeeds ✓"
 else
