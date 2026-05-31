@@ -75,13 +75,13 @@ Consumer-facing reference sections below:
 This repo is **both** the published package and a CDK demo app:
 
 - `lib/iceberg/` — the published package (`cdk-glue-iceberg-table` on npm).
-- `lib/arceus-stack.ts`, `lib/iceberg-evolution-stack.ts`, `bin/`, `scripts/` — a CDK app that dogfoods the construct against a real AWS account, plus a bash harness that drives schema + partition evolution through real `cdk deploy`s. **Repo-only, not published to npm.**
+- `lib/arceus-stack.ts`, `lib/iceberg-evolution-stack.ts`, `lib/iceberg-dml-stack.ts`, `bin/`, `scripts/` — a CDK app that dogfoods the construct against a real AWS account, plus two bash harnesses: one drives schema + partition evolution through real `cdk deploy`s, the other exercises the v2 DML surface (UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM) on a single deploy. **Repo-only, not published to npm.**
 - `e2e-consumer/` — a standalone CDK app that depends on the **published** `cdk-glue-iceberg-table` from npm. Proves that a fresh install + import + `cdk synth` works for downstream consumers. Runs on every PR via the `e2e-consumer` job in `.github/workflows/ci.yml`. Its `lib/surface-reference.ts` touches every exported symbol so that a rename in the published surface breaks CI. The pin in `e2e-consumer/package-lock.json` tracks the version most recently published to npm; CLAUDE.md asks for it to be bumped after each release.
 
 How the test gates fit together:
 
 - **`ci.yml`** runs on every PR — lint, unit tests with the 95% coverage gate, `npm pack`, and the `e2e-consumer` synth against the pinned published npm version.
-- **`integ-test.yml`** is the real-AWS gate (`scripts/integration-test-evolution.sh` driving four `cdk deploy`s). Gated by `run-integ-test` label or `/run-integ-test` collaborator comment. PRs that touch any file under `lib/`, `bin/arceus.ts`, `cdk.json`, or the script must show a green run before merging (see CLAUDE.md §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. Runs `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), then `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM against a v2 merge-on-read table). Gated by `run-integ-test` label or `/run-integ-test` collaborator comment. PRs that touch any file under `lib/`, `bin/arceus.ts`, `cdk.json`, or either script must show a green run before merging (see CLAUDE.md §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 - **`publish.yml`** runs on push to `main` — trusted-publish to npm when `package.json`'s `version` is newer than the registry.
 
 The sections [Prerequisites](#prerequisites), [Quickstart](#quickstart),
@@ -137,6 +137,7 @@ Repo source paths (npm consumers import from the package root and get the same e
 - **`lib/iceberg/iceberg-table-properties.ts`**: `IcebergDataFormat` (parquet/orc/avro, default parquet), `IcebergFormatVersion` (v1/v2, default v2), and a validator that catches misconfigured `tableProperties` before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
 - **`lib/arceus-stack.ts`**: the demo stack: KMS-encrypted data lake bucket, Athena results bucket, Glue database, three demo Iceberg tables (`orders`, `events`, `customers`). Repo-only, not in the npm tarball.
 - **`lib/iceberg-evolution-stack.ts`** + **`scripts/integration-test-evolution.sh`**: a parameterized stack and a bash harness that drives four real `cdk deploy`s to prove schema/partition evolution works end-to-end. Repo-only, not in the npm tarball.
+- **`lib/iceberg-dml-stack.ts`** + **`scripts/integration-test-dml.sh`**: a v2 merge-on-read table and a bash harness that exercises UPDATE, DELETE, MERGE INTO (upsert), time-travel SELECT, OPTIMIZE compaction, and VACUUM snapshot expiration. Single deploy, ~3 minutes. Repo-only, not in the npm tarball.
 
 ## Quickstart
 
@@ -165,11 +166,13 @@ npx cdk deploy ArceusStack --require-approval=never
 ./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
 ```
 
-`cdk ls` will show two stacks: `ArceusStack` (the demo data lake +
-three Iceberg tables) and `IcebergEvolutionStack` (the evolution
-test target driven by `scripts/integration-test-evolution.sh`).
-Deploy only `ArceusStack` for the quickstart; the evolution stack
-is created on demand by the script.
+`cdk ls` will show three stacks: `ArceusStack` (the demo data lake +
+three Iceberg tables), `IcebergEvolutionStack` (the evolution test
+target driven by `scripts/integration-test-evolution.sh`), and
+`IcebergDmlStack` (the DML test target driven by
+`scripts/integration-test-dml.sh`). Deploy only `ArceusStack` for
+the quickstart; the two test stacks are created on demand by their
+respective scripts.
 
 ## Using `IcebergTable`
 
@@ -539,6 +542,30 @@ metadata delta (new `schema-id`, new `spec-id`) and writes a new
 the construct pins (`id: N` on each `IcebergColumn`) never change
 across deploys.
 
+## DML, time travel, OPTIMIZE, and VACUUM
+
+`scripts/integration-test-dml.sh` covers the v2 surface that the
+evolution test doesn't. The harness deploys `IcebergDmlStack` once,
+then runs a sequence of Athena statements against a v2 merge-on-read
+table with `identifierFieldNames: ['account_id']`:
+
+| Step | Statement | Verify |
+| ---: | --- | --- |
+| 1 | `INSERT` 5 seed rows | row count == 5 |
+| 2 | `UPDATE balance WHERE account_id = 2` | balance == 250, row count == 5 |
+| 3 | `DELETE WHERE account_id = 4` | row count == 4, account_id=4 gone |
+| 4 | capture pre-MERGE snapshot id from `dml_test$snapshots` | — |
+| 5 | `MERGE INTO ... USING ... ON account_id` (update id=3, insert id=6 + id=7) | row count == 6, id=3 balance updated, ids 6 and 7 present |
+| 6 | `SELECT ... FOR VERSION AS OF <pre-MERGE snapshot>` | time-travel still sees 4 rows, no id=6 |
+| 7 | `OPTIMIZE ... REWRITE DATA USING BIN_PACK` | succeeds, row count unchanged |
+| 8 | `VACUUM ...` (after a 65-s sleep to clear `max-snapshot-age-ms`) | succeeds, row count unchanged |
+| 9 | final `SELECT` | 6 rows with the expected balances |
+
+The DML table is configured with `history.expire.max-snapshot-age-ms`
+of 60 seconds so VACUUM has snapshots to expire on a fresh table.
+Both scripts run sequentially in the same `integ-test.yml` job; the
+evolution test finishes in ~5 minutes and the DML test in ~3.
+
 ## Two footguns the construct prevents
 
 ### Footgun #1 — schema under `storageDescriptor.columns`
@@ -620,6 +647,7 @@ arceus/
 ├── lib/
 │   ├── arceus-stack.ts                 # Demo stack (buckets, DB, 3 demo tables)
 │   ├── iceberg-evolution-stack.ts      # Parameterized stack for the evolution test
+│   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / OPTIMIZE / VACUUM test
 │   └── iceberg/
 │       ├── iceberg-table.ts            # The L2 construct itself
 │       ├── iceberg-type.ts             # IcebergType + struct/list/map/decimal/fixed
@@ -629,6 +657,7 @@ arceus/
 ├── test/
 │   ├── arceus-stack.test.ts
 │   ├── iceberg-evolution-stack.test.ts
+│   ├── iceberg-dml-stack.test.ts
 │   └── iceberg/
 │       ├── iceberg-partition-transform.test.ts
 │       ├── iceberg-table-properties.test.ts
@@ -644,7 +673,8 @@ arceus/
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a
 │                                       # rename in the published surface breaks CI
 ├── scripts/
-│   └── integration-test-evolution.sh   # End-to-end evolution harness
+│   ├── integration-test-evolution.sh   # End-to-end evolution harness
+│   └── integration-test-dml.sh         # End-to-end DML harness
 ├── docs/
 │   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test
 │                                       # workflow (OIDC provider, IAM role, repo var)

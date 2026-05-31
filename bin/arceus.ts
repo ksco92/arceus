@@ -6,6 +6,9 @@ import {
     ArceusStack,
 } from '../lib/arceus-stack';
 import {
+    IcebergDmlStack,
+} from '../lib/iceberg-dml-stack';
+import {
     IcebergEvolutionStack,
 } from '../lib/iceberg-evolution-stack';
 
@@ -45,6 +48,13 @@ new IcebergEvolutionStack(app, 'IcebergEvolutionStack', {
     /// — see the stack itself for the construction. Splitting the
     /// imports across two files would just add a noise stack to
     /// `cdk ls` for zero CFN-side gain.
+    importedDataLakeBucketName: `data-lake-bucket-${account}`,
+    importedDatabaseName: 'sample_database',
+    principalArn,
+});
+
+new IcebergDmlStack(app, 'IcebergDmlStack', {
+    env,
     importedDataLakeBucketName: `data-lake-bucket-${account}`,
     importedDatabaseName: 'sample_database',
     principalArn,
