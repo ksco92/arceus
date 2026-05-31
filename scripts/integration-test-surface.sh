@@ -183,7 +183,11 @@ green "  sort fields match (asc/nulls-first, desc/nulls-last, desc/nulls-last) �
 
 header "TEST 3 — INSERT one row into transforms_test"
 run_athena "INSERT INTO ${DATABASE}.transforms_test VALUES
-  (TIMESTAMP '2026-03-15 14:30:00 UTC', 12345, 'alice@example.com', 99)" > /dev/null
+  (TIMESTAMP '2026-03-15 14:30:00 UTC',
+   TIMESTAMP '2026-03-15 14:30:00 UTC',
+   TIMESTAMP '2026-03-15 14:30:00 UTC',
+   TIMESTAMP '2026-03-15 14:30:00 UTC',
+   12345, 'alice@example.com', 99)" > /dev/null
 yellow "  1 row inserted"
 COUNT=$(run_athena "SELECT CAST(COUNT(*) AS VARCHAR) FROM ${DATABASE}.transforms_test")
 if [ "$COUNT" = "1" ]; then
@@ -192,7 +196,7 @@ else
     red "  expected count=1, got $COUNT"; exit 1
 fi
 if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/data/" --recursive --region "$AWS_REGION" \
-    | grep -q "event_ts_year=2026/event_ts_month=2026-03/event_ts_day=2026-03-15/event_ts_hour=2026-03-15-14"; then
+    | grep -q "year_source_year=2026/month_source_month=2026-03/day_source_day=2026-03-15/hour_source_hour=2026-03-15-14"; then
     green "  multi-transform partition prefix written to S3 ✓"
 else
     red "  expected partition prefix not found in S3"

@@ -91,47 +91,68 @@ export class IcebergSurfaceStack extends Stack {
             tableName: 'transforms_test',
             comment: 'Exercises every IcebergPartitionTransform on a single table.',
             columns: [
+                /// One source column per temporal transform — Iceberg
+                /// considers year(x) + month(x), month(x) + day(x), etc.
+                /// on the same column redundant and refuses to write.
                 {
-                    name: 'event_ts',
+                    name: 'year_source',
                     type: IcebergType.TIMESTAMPTZ,
                     required: true,
                     id: 1,
                 },
                 {
+                    name: 'month_source',
+                    type: IcebergType.TIMESTAMPTZ,
+                    required: true,
+                    id: 2,
+                },
+                {
+                    name: 'day_source',
+                    type: IcebergType.TIMESTAMPTZ,
+                    required: true,
+                    id: 3,
+                },
+                {
+                    name: 'hour_source',
+                    type: IcebergType.TIMESTAMPTZ,
+                    required: true,
+                    id: 4,
+                },
+                {
                     name: 'user_id',
                     type: IcebergType.LONG,
                     required: true,
-                    id: 2,
+                    id: 5,
                 },
                 {
                     name: 'email',
                     type: IcebergType.STRING,
                     required: true,
-                    id: 3,
+                    id: 6,
                 },
                 {
                     name: 'value',
                     type: IcebergType.LONG,
                     required: true,
-                    id: 4,
+                    id: 7,
                 },
             ],
             location: `s3://${bucketName}/${dbName}/transforms_test/`,
             partitionSpec: [
                 {
-                    sourceColumn: 'event_ts',
+                    sourceColumn: 'year_source',
                     transform: IcebergPartitionTransform.YEAR,
                 },
                 {
-                    sourceColumn: 'event_ts',
+                    sourceColumn: 'month_source',
                     transform: IcebergPartitionTransform.MONTH,
                 },
                 {
-                    sourceColumn: 'event_ts',
+                    sourceColumn: 'day_source',
                     transform: IcebergPartitionTransform.DAY,
                 },
                 {
-                    sourceColumn: 'event_ts',
+                    sourceColumn: 'hour_source',
                     transform: IcebergPartitionTransform.HOUR,
                 },
                 {
