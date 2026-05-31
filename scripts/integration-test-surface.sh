@@ -243,6 +243,16 @@ fi
 # call Glue + S3 directly. This bypasses Lake Formation, isolating
 # the IAM grants the construct produces.
 
+# Snapshot the script's starting credentials so we can restore them
+# after each assume-role hop. In CI these come from
+# aws-actions/configure-aws-credentials and live in env vars; in
+# local-dev runs they may live in `~/.aws/credentials` (in which
+# case the env vars are unset, and "restoring" them to empty is the
+# correct behavior).
+ORIGINAL_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+ORIGINAL_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+ORIGINAL_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+
 assume_role_and_export() {
     local role_arn="$1"
     local session="$2"
@@ -258,9 +268,15 @@ assume_role_and_export() {
 }
 
 unset_assumed_role() {
-    unset AWS_ACCESS_KEY_ID
-    unset AWS_SECRET_ACCESS_KEY
-    unset AWS_SESSION_TOKEN
+    if [ -n "$ORIGINAL_AWS_ACCESS_KEY_ID" ]; then
+        export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
+        export AWS_SESSION_TOKEN="$ORIGINAL_AWS_SESSION_TOKEN"
+    else
+        unset AWS_ACCESS_KEY_ID
+        unset AWS_SECRET_ACCESS_KEY
+        unset AWS_SESSION_TOKEN
+    fi
 }
 
 header "TEST 5 — grantRead S3 statements via the native IcebergTable (assume GranteeRole)"
