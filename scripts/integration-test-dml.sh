@@ -35,12 +35,23 @@ header() { printf '\n=== %s ===\n' "$*"; }
 run_athena() {
     local sql="$1"
     local qid
-    qid=$(aws athena start-query-execution \
+    if ! qid=$(aws athena start-query-execution \
         --region "$AWS_REGION" \
         --work-group "$ATHENA_WORKGROUP" \
         --query-string "$sql" \
         --query 'QueryExecutionId' \
-        --output text)
+        --output text 2>&1); then
+        red "Athena start-query-execution failed:" >&2
+        echo "$qid" >&2
+        red "Query SQL:" >&2
+        echo "$sql" >&2
+        return 1
+    fi
+    if [ -z "$qid" ]; then
+        red "Athena start-query-execution returned empty query id for SQL:" >&2
+        echo "$sql" >&2
+        return 1
+    fi
     local state
     until state=$(aws athena get-query-execution \
             --region "$AWS_REGION" \
@@ -204,15 +215,15 @@ assert_select_count 1 "WHERE account_id = 7" "id=7 inserted via MERGE"
 ################################################
 # Step 6: Time travel — pre-MERGE snapshot should still see 4 rows.
 
-header "STEP 6 — Time travel SELECT FOR SYSTEM_VERSION AS OF pre-MERGE"
-COUNT_PRE=$(run_athena "SELECT CAST(COUNT(*) AS VARCHAR) FROM ${DATABASE}.${TABLE} FOR SYSTEM_VERSION AS OF ${SNAPSHOT_PRE_MERGE}")
+header "STEP 6 — Time travel SELECT FOR VERSION AS OF pre-MERGE"
+COUNT_PRE=$(run_athena "SELECT CAST(COUNT(*) AS VARCHAR) FROM ${DATABASE}.${TABLE} FOR VERSION AS OF ${SNAPSHOT_PRE_MERGE}")
 if [ "$COUNT_PRE" = "4" ]; then
     green "  time-travel count ✓ (pre-MERGE saw 4 rows)"
 else
     red "  time-travel count ✗ (expected 4, got $COUNT_PRE)"
     exit 1
 fi
-COUNT_PRE_ID6=$(run_athena "SELECT CAST(COUNT(*) AS VARCHAR) FROM ${DATABASE}.${TABLE} FOR SYSTEM_VERSION AS OF ${SNAPSHOT_PRE_MERGE} WHERE account_id = 6")
+COUNT_PRE_ID6=$(run_athena "SELECT CAST(COUNT(*) AS VARCHAR) FROM ${DATABASE}.${TABLE} FOR VERSION AS OF ${SNAPSHOT_PRE_MERGE} WHERE account_id = 6")
 if [ "$COUNT_PRE_ID6" = "0" ]; then
     green "  time-travel pre-MERGE doesn't see id=6 ✓"
 else
