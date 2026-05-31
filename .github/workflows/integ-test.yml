@@ -138,10 +138,14 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - name: Run integration test (4 deploys + verify)
+      - name: Run integration test — evolution (4 deploys + verify)
         run: |
           set -o pipefail
           bash scripts/integration-test-evolution.sh 2>&1 | tee /tmp/integ-test.log
+      - name: Run integration test — DML (1 deploy + UPDATE/DELETE/MERGE/time-travel/OPTIMIZE/VACUUM)
+        run: |
+          set -o pipefail
+          bash scripts/integration-test-dml.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
         uses: actions/github-script@v7
