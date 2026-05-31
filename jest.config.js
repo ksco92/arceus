@@ -34,6 +34,9 @@ module.exports = {
         'html',
         'text-summary',
         'text',
+        /// `lcov` produces `build/coverage/lcov.info` for the
+        /// Codecov upload step in `.github/workflows/ci.yml`.
+        'lcov',
     ],
     coverageThreshold: {
         global: {
