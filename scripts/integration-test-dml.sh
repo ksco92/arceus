@@ -61,10 +61,11 @@ run_athena() {
         echo "$sql" >&2
         return 1
     fi
+    # Drop the header row (Rows[0]); return only data rows.
     aws athena get-query-results \
         --region "$AWS_REGION" \
         --query-execution-id "$qid" \
-        --query 'ResultSet.Rows[].Data[].VarCharValue' \
+        --query 'ResultSet.Rows[1:].Data[].VarCharValue' \
         --output text
 }
 
