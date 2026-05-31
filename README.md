@@ -556,7 +556,7 @@ table with `identifierFieldNames: ['account_id']`:
 | 3 | `DELETE WHERE account_id = 4` | row count == 4, account_id=4 gone |
 | 4 | capture pre-MERGE snapshot id from `dml_test$snapshots` | — |
 | 5 | `MERGE INTO ... USING ... ON account_id` (update id=3, insert id=6 + id=7) | row count == 6, id=3 balance updated, ids 6 and 7 present |
-| 6 | `SELECT ... FOR SYSTEM_VERSION AS OF <pre-MERGE snapshot>` | time-travel still sees 4 rows, no id=6 |
+| 6 | `SELECT ... FOR VERSION AS OF <pre-MERGE snapshot>` | time-travel still sees 4 rows, no id=6 |
 | 7 | `OPTIMIZE ... REWRITE DATA USING BIN_PACK` | succeeds, row count unchanged |
 | 8 | `VACUUM ...` (after a 65-s sleep to clear `max-snapshot-age-ms`) | succeeds, row count unchanged |
 | 9 | final `SELECT` | 6 rows with the expected balances |
@@ -657,6 +657,7 @@ arceus/
 ├── test/
 │   ├── arceus-stack.test.ts
 │   ├── iceberg-evolution-stack.test.ts
+│   ├── iceberg-dml-stack.test.ts
 │   └── iceberg/
 │       ├── iceberg-partition-transform.test.ts
 │       ├── iceberg-table-properties.test.ts
