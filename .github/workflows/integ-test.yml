@@ -24,13 +24,13 @@ on:
     types: [created]
   workflow_dispatch:
 
-# Single global slot — the script deploys a fixed-name
-# `IcebergEvolutionStack` to one account/region, so two concurrent
-# runs would race on the same CloudFormation stack and Glue table.
-# Don't cancel in-progress: an interrupted run leaves the stack
-# partially deployed.
+# Single global slot — the job deploys fixed-name CloudFormation
+# stacks (`IcebergEvolutionStack`, `IcebergDmlStack`,
+# `IcebergSurfaceStack`) to one account/region, so two concurrent
+# runs would race on the same stacks and Glue tables. Don't cancel
+# in-progress: an interrupted run leaves stacks partially deployed.
 concurrency:
-  group: integ-test-evolution-stack
+  group: integ-test-stacks
   cancel-in-progress: false
 
 permissions:
@@ -146,6 +146,10 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-dml.sh 2>&1 | tee -a /tmp/integ-test.log
+      - name: Run integration test — surface (transforms / sort / nested types / grantRead via native + imported)
+        run: |
+          set -o pipefail
+          bash scripts/integration-test-surface.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
         uses: actions/github-script@v7
