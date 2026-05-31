@@ -279,6 +279,13 @@ unset_assumed_role() {
     fi
 }
 
+# Restore caller credentials on ANY script exit (failure or success).
+# Without this trap, a `set -e` exit in a TEST block between an
+# `assume_role_and_export` and the matching `unset_assumed_role`
+# leaves a local-dev shell holding the assumed-role STS credentials
+# for up to an hour.
+trap unset_assumed_role EXIT
+
 header "TEST 5 — grantRead S3 statements via the native IcebergTable (assume GranteeRole)"
 # Why only S3 here, not Glue: ArceusStack registers the data-lake bucket
 # with Lake Formation. LF gates every `glue:GetTable` call against
