@@ -21,8 +21,7 @@ in `package.json`. Pick the level per semver:
 `.github/workflows/publish.yml` only publishes when the version on
 `main` is newer than the version on the npm registry. A PR that
 forgets to bump won't error — it just becomes a no-op on merge — but
-the policy is "always bump" so reviewers should reject PRs missing a
-version change.
+the policy is "always bump".
 
 ## No AI authorship signals
 
@@ -36,8 +35,8 @@ attribution in artifacts that survive merge is not.
 - Branch names must NOT contain `claude`, `ai`, `bot`, `gpt`,
   `copilot`, or similar.
 - Code, docs, and README prose must not read as AI-generated. Avoid
-  the banned-vocabulary list in the project's `oss-reviewer` rules
-  (§4.10): `delve`, `tapestry`, `landscape`, `testament`, `vibrant`,
+  this banned-vocabulary list: `delve`, `tapestry`, `landscape`,
+  `testament`, `vibrant`,
   `pivotal`, `nuanced`, `seamless`, `comprehensive and`, `robust and`,
   `leverage` (unless followed by `the existing`).
 - Long-running comments that narrate intent in the present tense
@@ -70,8 +69,7 @@ Trigger it on a same-repo PR by either:
 
 It comments back on the PR with success / failure plus a link to the
 run log. Reviewers **must** refuse to merge a trigger-set PR without
-seeing that success comment, even if all unit tests are green and
-pr-reviewer returns PASS.
+seeing that success comment, even if all unit tests are green.
 
 Exemption list (no integ-test required):
 
@@ -90,8 +88,8 @@ When in doubt, run it.
 
 This gate is **human-enforced**: GitHub does not require it as a
 status check for the protected branch, so a trigger-set PR can be
-merged with no integ-test ever fired. Reviewers and the
-`pr-reviewer` agent must hold the line. Until / unless the gate is
+merged with no integ-test ever fired. Reviewers must hold the
+line. Until / unless the gate is
 wired into `Settings → Branches → required status checks`, the
 written policy is the only thing stopping a slip.
 
