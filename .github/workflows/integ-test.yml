@@ -128,7 +128,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.event.issue.pull_request.html_url && format('refs/pull/{0}/head', needs.gate.outputs.pr_number) || github.ref }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - uses: aws-actions/configure-aws-credentials@v4
         with:
