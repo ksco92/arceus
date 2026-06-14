@@ -59,6 +59,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -96,13 +97,14 @@ describe('IcebergTable — happy path', () => {
         });
     });
 
-    it('defaults dataFormat to parquet and formatVersion to v2', () => {
+    it('defaults dataFormat to parquet and surfaces the supplied formatVersion', () => {
         const {
             stack, database,
         } = makeStack();
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -117,6 +119,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'events',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'id',
@@ -181,6 +184,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'always_optional',
@@ -215,6 +219,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'region',
@@ -256,6 +261,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'events',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'occurred_at',
@@ -298,6 +304,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'order_id',
@@ -357,6 +364,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'order_id',
@@ -429,6 +437,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'demo comment',
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
@@ -456,6 +465,7 @@ describe('IcebergTable — happy path', () => {
             new IcebergTable(stack, 'Tbl', {
                 database,
                 tableName: 'conflict',
+                formatVersion: IcebergFormatVersion.V2,
                 columns: MINIMAL_COLUMNS,
                 location: 's3://my-bucket/conflict/',
                 comment: 'from prop',
@@ -473,6 +483,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             partitionSpec: [
@@ -500,6 +511,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -517,6 +529,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             removalPolicy: RemovalPolicy.DESTROY,
@@ -535,6 +548,7 @@ describe('IcebergTable — happy path', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple',
         });
@@ -548,6 +562,7 @@ describe('IcebergTable — happy path', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -576,6 +591,7 @@ describe('IcebergTable — happy path', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'root',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket',
         });
@@ -589,6 +605,7 @@ describe('IcebergTable — happy path', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -603,6 +620,7 @@ describe('IcebergTable — happy path', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -628,6 +646,7 @@ describe('IcebergTable — pinned field ids', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'evolving',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'a',
@@ -673,6 +692,7 @@ describe('IcebergTable — pinned field ids', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'mixed',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'autoFirst',
@@ -724,6 +744,7 @@ describe('IcebergTable — pinned field ids', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'dup',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'a',
@@ -747,6 +768,7 @@ describe('IcebergTable — pinned field ids', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'bad',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'a',
@@ -765,6 +787,7 @@ describe('IcebergTable — pinned field ids', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'bad',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'a',
@@ -783,6 +806,7 @@ describe('IcebergTable — pinned field ids', () => {
         new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'nested',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'a',
@@ -831,6 +855,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'Bad-Name',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         })).toThrow(/tableName.*lowercase/);
@@ -843,6 +868,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [],
             location: 's3://my-bucket/simple/',
         })).toThrow(/at least one column/);
@@ -855,6 +881,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'a',
@@ -876,6 +903,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: '/some/local/path',
         })).toThrow(/s3:\/\//);
@@ -888,6 +916,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             partitionSpec: [
@@ -906,6 +935,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'name',
@@ -930,6 +960,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'col',
@@ -960,6 +991,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             sortOrder: [],
@@ -973,6 +1005,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             sortOrder: [
@@ -990,6 +1023,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'name',
@@ -1014,6 +1048,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             identifierFieldNames: [
@@ -1030,6 +1065,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             identifierFieldNames: [
@@ -1045,6 +1081,7 @@ describe('IcebergTable — validation', () => {
         expect(() => new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
             tableProperties: {
@@ -1086,6 +1123,7 @@ describe('IcebergTable — grants', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/path/simple/',
         });
@@ -1145,6 +1183,7 @@ describe('IcebergTable — grants', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -1181,6 +1220,7 @@ describe('IcebergTable — grants', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket/simple/',
         });
@@ -1226,6 +1266,7 @@ describe('IcebergTable — grants', () => {
         const table = new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'root',
+            formatVersion: IcebergFormatVersion.V2,
             columns: MINIMAL_COLUMNS,
             location: 's3://my-bucket',
         });

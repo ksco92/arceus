@@ -166,8 +166,8 @@ export interface IcebergTableProps {
     /** Data-file storage format. Defaults to `PARQUET`. */
     readonly dataFormat?: IcebergDataFormat;
 
-    /** Iceberg format version. Defaults to `V2`. */
-    readonly formatVersion?: IcebergFormatVersion;
+    /** Iceberg format version. Required — set explicitly per table. */
+    readonly formatVersion: IcebergFormatVersion;
 
     /**
      * Extra `properties` to publish on the table. Auto-added keys
@@ -251,7 +251,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
     /** Resolved data format (after defaulting). */
     public readonly dataFormat: IcebergDataFormat;
 
-    /** Resolved format version (after defaulting). */
+    /** Format version, as supplied by the caller. */
     public readonly formatVersion: IcebergFormatVersion;
 
     /** The underlying L1 — exposed for escape-hatch use. */
@@ -272,7 +272,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         this.tableName = props.tableName;
         this.location = normalizeLocation(props.location);
         this.dataFormat = props.dataFormat ?? IcebergDataFormat.PARQUET;
-        this.formatVersion = props.formatVersion ?? IcebergFormatVersion.V2;
+        this.formatVersion = props.formatVersion;
 
         const parsed = parseS3Uri(this.location);
         this.bucketArn = `arn:${Stack.of(this).partition}:s3:::${parsed.bucket}`;

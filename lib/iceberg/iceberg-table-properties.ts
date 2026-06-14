@@ -10,12 +10,12 @@
  * a deploy.
  */
 
-/** Apache Iceberg format version. Defaults to `V2` in the L2. */
+/** Apache Iceberg format version. Required on every `IcebergTable`. */
 export enum IcebergFormatVersion {
     /** v1 — read-only Hive-compatible analytic tables. */
     V1 = '1',
 
-    /** v2 — adds row-level deletes (default). */
+    /** v2 — adds row-level deletes. */
     V2 = '2',
 }
 

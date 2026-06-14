@@ -37,6 +37,7 @@ import {
 } from 'aws-cdk-lib/aws-athena';
 import {
     IcebergDataFormat,
+    IcebergFormatVersion,
     IcebergNullOrder,
     IcebergPartitionTransform,
     IcebergSortDirection,
@@ -255,6 +256,7 @@ export class ArceusStack extends Stack {
         const ordersTable = new IcebergTable(this, 'OrdersTable', {
             database: glueDatabase,
             tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'Demo Iceberg orders table — exercises partitions, sort order, and merge-on-read.',
             columns: [
                 {
@@ -376,6 +378,7 @@ export class ArceusStack extends Stack {
         const eventsTable = new IcebergTable(this, 'EventsTable', {
             database: glueDatabase,
             tableName: 'events',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'Demo Iceberg events table — high-cardinality hourly partitioning.',
             columns: [
                 {
@@ -426,6 +429,7 @@ export class ArceusStack extends Stack {
         const customersTable = new IcebergTable(this, 'CustomersTable', {
             database: glueDatabase,
             tableName: 'customers',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'Demo Iceberg customers table — schema evolution playground.',
             columns: [
                 {

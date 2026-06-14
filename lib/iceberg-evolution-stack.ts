@@ -18,6 +18,7 @@ import {
 } from 'aws-cdk-lib/aws-s3';
 import {
     IcebergColumn,
+    IcebergFormatVersion,
     IcebergPartitionField,
     IcebergPartitionTransform,
     IcebergTable,
@@ -88,6 +89,7 @@ export class IcebergEvolutionStack extends Stack {
         const table = new IcebergTable(this, 'EvolutionTable', {
             database: importedDatabase,
             tableName: 'evolution_test',
+            formatVersion: IcebergFormatVersion.V2,
             comment: `Integration-test target — evolution step ${step}.`,
             columns,
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
