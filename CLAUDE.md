@@ -36,9 +36,9 @@ attribution in artifacts that survive merge is not.
   `copilot`, or similar.
 - Code, docs, and README prose must not read as AI-generated. Avoid
   this banned-vocabulary list: `delve`, `tapestry`, `landscape`,
-  `testament`, `vibrant`,
-  `pivotal`, `nuanced`, `seamless`, `comprehensive and`, `robust and`,
-  `leverage` (unless followed by `the existing`).
+  `testament`, `vibrant`, `pivotal`, `nuanced`, `seamless`,
+  `comprehensive and`, `robust and`, `leverage` (unless followed by
+  `the existing`).
 - Long-running comments that narrate intent in the present tense
   ("Increment counter by 1", "Loop through items", "Check if X") are
   artifacts of a chat transcript — strip them before commit.
@@ -88,10 +88,10 @@ When in doubt, run it.
 
 This gate is **human-enforced**: GitHub does not require it as a
 status check for the protected branch, so a trigger-set PR can be
-merged with no integ-test ever fired. Reviewers must hold the
-line. Until / unless the gate is
-wired into `Settings → Branches → required status checks`, the
-written policy is the only thing stopping a slip.
+merged with no integ-test ever fired. Reviewers must hold the line.
+Until / unless the gate is wired into `Settings → Branches →
+required status checks`, the written policy is the only thing
+stopping a slip.
 
 `e2e-consumer/` consumes the **published** npm package, so every
 version bump in this repo's `package.json` should be followed by
