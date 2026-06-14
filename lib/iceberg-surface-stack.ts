@@ -21,6 +21,7 @@ import {
     Bucket,
 } from 'aws-cdk-lib/aws-s3';
 import {
+    IcebergFormatVersion,
     IcebergNullOrder,
     IcebergPartitionTransform,
     IcebergSortDirection,
@@ -89,6 +90,7 @@ export class IcebergSurfaceStack extends Stack {
         const transformsTable = new IcebergTable(this, 'TransformsTable', {
             database: importedDatabase,
             tableName: 'transforms_test',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'Exercises every IcebergPartitionTransform on a single table.',
             columns: [
                 /// One source column per temporal transform — Iceberg
@@ -177,6 +179,7 @@ export class IcebergSurfaceStack extends Stack {
         const sortedTable = new IcebergTable(this, 'SortedTable', {
             database: importedDatabase,
             tableName: 'sorted_test',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'Exercises sortOrder with multiple fields, mixed direction + null ordering.',
             columns: [
                 {
@@ -224,6 +227,7 @@ export class IcebergSurfaceStack extends Stack {
         const nestedTable = new IcebergTable(this, 'NestedTable', {
             database: importedDatabase,
             tableName: 'nested_test',
+            formatVersion: IcebergFormatVersion.V2,
             comment: 'Exercises list, struct, and map column types end-to-end via Athena.',
             columns: [
                 {
