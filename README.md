@@ -12,10 +12,10 @@
 and evolving Apache Iceberg tables in the AWS Glue Data Catalog.** It
 emits the exact `AWS::Glue::Table` / `OpenTableFormatInput` shape that
 survives a CloudFormation `Update`, so a single `cdk deploy` creates a
-table, evolves its schema and partitions, and destroys it — the same
+table, evolves its schema and partitions, and destroys it, the same
 lifecycle CDK gives any other resource. No custom resource, no Lambda,
 no "`cdk deploy` and then run this SQL by hand" two-step. Table
-changes — new columns, renames, drops, new partition fields — land as
+changes (new columns, renames, drops, new partition fields) land as
 a reviewed diff in a pull request and apply through `cdk deploy`.
 
 Status (June 2026): published on npm, pre-1.0, with a public surface
@@ -46,7 +46,7 @@ this package tracks that proposal and stays current with it.
 | Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ you own both footguns | ❌ |
 | CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
 | Spark / Athena SQL DDL at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
-| **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ both prevented at synth time | ✅ |
+| **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ both prevented by construction | ✅ |
 
 ## Install
 
@@ -705,13 +705,13 @@ run that adds, renames, and drops columns and partitions through
 
 ### Does CloudFormation support Iceberg tables natively?
 
-Yes — through `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`,
+Yes, through `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`,
 documented by AWS in [December 2025](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation).
 The catch is that the raw shape corrupts the table on the first
 `Update` if you place schema under `storageDescriptor.columns` or set
-`tableInput` alongside `openTableFormatInput`. This construct emits the
-safe shape and rejects the unsafe ones at synth time — see [Two
-footguns the construct prevents](#two-footguns-the-construct-prevents).
+`tableInput` alongside `openTableFormatInput`. This construct only ever
+emits the safe shape and gives you no way to express the unsafe ones.
+See [Two footguns the construct prevents](#two-footguns-the-construct-prevents).
 
 ### What is the difference between cdk-glue-iceberg-table and a raw CfnTable?
 
