@@ -1,8 +1,8 @@
 {
     "name": "cdk-glue-iceberg-table",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "license": "MIT",
-    "description": "CDK L2 construct for Apache Iceberg tables in the AWS Glue Data Catalog.",
+    "description": "AWS CDK L2 construct to create and evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and partition changes that survive CloudFormation updates, via cdk deploy.",
     "author": "Rodrigo Carvajal",
     "repository": {
         "type": "git",
@@ -14,13 +14,20 @@
     },
     "keywords": [
         "aws",
-        "cdk",
         "aws-cdk",
+        "awscdk",
+        "cdk",
+        "cloudformation",
         "glue",
+        "glue-data-catalog",
         "iceberg",
         "apache-iceberg",
+        "data-catalog",
         "data-lake",
-        "construct"
+        "lakehouse",
+        "schema-evolution",
+        "data-engineering",
+        "l2-construct"
     ],
     "main": "dist/lib/iceberg/index.js",
     "types": "dist/lib/iceberg/index.d.ts",

@@ -8,23 +8,45 @@
 [![last commit](https://img.shields.io/github/last-commit/ksco92/arceus.svg)](https://github.com/ksco92/arceus/commits/main)
 [![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](LICENSE)
 
-A CDK L2 construct for Apache Iceberg tables in the AWS Glue Data
-Catalog. Emits the `AWS::Glue::Table` shape that survives
-CloudFormation `Update`, so `cdk deploy` can create, evolve, and
-destroy Iceberg tables the same way it handles any other resource.
+**`cdk-glue-iceberg-table` is the AWS CDK L2 construct for creating
+and evolving Apache Iceberg tables in the AWS Glue Data Catalog.** It
+emits the exact `AWS::Glue::Table` / `OpenTableFormatInput` shape that
+survives a CloudFormation `Update`, so a single `cdk deploy` creates a
+table, evolves its schema and partitions, and destroys it — the same
+lifecycle CDK gives any other resource. No custom resource, no Lambda,
+no "`cdk deploy` and then run this SQL by hand" two-step. Table
+changes — new columns, renames, drops, new partition fields — land as
+a reviewed diff in a pull request and apply through `cdk deploy`.
 
-The motivating issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
+Status (June 2026): published on npm, pre-1.0, with a public surface
+guarded by an end-to-end consumer test on every PR plus three
+real-AWS integration suites.
+
+### Why this exists
+
+AWS documents the CloudFormation shape for Iceberg tables ([AWS Big
+Data blog, December 2025](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation)),
+but raw `AWS::Glue::Table` is a minefield: the CREATE succeeds and the
+*first* `Update` silently strips `table_type=ICEBERG`, after which
+every Athena query fails with `HIVE_UNSUPPORTED_FORMAT`. The
+motivating CDK issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
 [`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)
-documents the only working CFN shape and the silent-corruption traps
-you can hit by getting it slightly wrong. This construct implements
-that shape and refuses to emit the unsafe alternatives.
+documents the only working shape and the silent-corruption traps you
+hit by getting it slightly wrong. This construct implements that
+shape, refuses to emit the unsafe alternatives, and pins Iceberg field
+IDs so schema evolution never orphans existing data. It is the basis
+of the upstream proposal to land an `IcebergTable` in
+`@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988));
+this package tracks that proposal and stays current with it.
 
-The upstream CDK PR landing this construct in
-`@aws-cdk/aws-glue-alpha` is [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988).
-Until that merges, this package is the most current reference
-implementation. Once `@aws-cdk/aws-glue-alpha` ships its own
-`IcebergTable`, prefer the official one and treat this package as a
-stopgap.
+### How it compares
+
+| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Prevents the silent-corruption footguns | Typed API + synth-time validation |
+| --- | --- | --- | --- | --- |
+| Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ you own both footguns | ❌ |
+| CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
+| Spark / Athena SQL DDL at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
+| **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ both prevented at synth time | ✅ |
 
 ## Install
 
@@ -71,9 +93,11 @@ new IcebergTable(this, 'OrdersTable', {
 
 Consumer-facing reference sections below:
 
+- [How it compares](#how-it-compares) — `cdk-glue-iceberg-table` vs raw `CfnTable`, custom resources, and runtime SQL DDL.
 - [Using `IcebergTable`](#using-icebergtable) — full API reference with examples.
 - [Two footguns the construct prevents](#two-footguns-the-construct-prevents) — the silent-corruption traps that motivated this construct.
 - [Known limitations](#known-limitations) — what the construct does and doesn't enforce.
+- [FAQ](#faq) — common "how do I … in CDK / CloudFormation" questions.
 
 ## Repo layout
 
@@ -656,6 +680,70 @@ the construct does **not** prevent. See the next section.)
 - **`merge-on-read` requires v2.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
 - **Athena DDL features that don't surface through CFN** (e.g. `ALTER TABLE WRITE ORDERED BY`, `ALTER TABLE … SET LOCATION`, `bucketed_by` / `bucket_count` Hive clauses) are not exposed. Use `IcebergPartitionTransform.bucket(N)` instead of Hive bucketing.
 - **Dropping a partition column requires a `void` intermediate per the Iceberg spec**, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, but Athena queries against the result will fail with `Type cannot be null`. The integration-test script demonstrates the safe pattern: drop partitions that source from `customer_id` while keeping `customer_id` itself in the schema, and drop the `region` column while it is not partitioning anything.
+
+## FAQ
+
+### How do I create an Apache Iceberg table in AWS CDK?
+
+Install `cdk-glue-iceberg-table`, then declare an `IcebergTable` with a
+database, a column list, and an S3 `location` — see [Use](#use).
+`cdk deploy` creates the Glue Data Catalog table and writes the
+Iceberg `metadata.json` under your S3 prefix. No custom resource or
+Lambda is involved; it is a plain `AWS::Glue::Table` in your
+CloudFormation template.
+
+### How do I evolve an Iceberg table schema (add, rename, or drop a column) in CloudFormation?
+
+Change the `columns` array and run `cdk deploy` again. The construct
+passes the new schema to Glue's `UpdateTable`, which writes a new
+`metadata.json` with a new `schema-id`; existing data files stay
+readable because each column's `id` is pinned and never reused. The
+same applies to `partitionSpec`. See [Schema + partition
+evolution](#schema--partition-evolution-via-cdk-only) for a four-step
+run that adds, renames, and drops columns and partitions through
+`cdk deploy` alone.
+
+### Does CloudFormation support Iceberg tables natively?
+
+Yes — through `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`,
+documented by AWS in [December 2025](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation).
+The catch is that the raw shape corrupts the table on the first
+`Update` if you place schema under `storageDescriptor.columns` or set
+`tableInput` alongside `openTableFormatInput`. This construct emits the
+safe shape and rejects the unsafe ones at synth time — see [Two
+footguns the construct prevents](#two-footguns-the-construct-prevents).
+
+### What is the difference between cdk-glue-iceberg-table and a raw CfnTable?
+
+A raw `CfnTable` makes you hand-write the `OpenTableFormatInput` JSON
+and own both silent-corruption footguns. `cdk-glue-iceberg-table` gives
+you a typed `IcebergType` / `IcebergPartitionTransform` API,
+synth-time validation (partition transforms checked against column
+types, format/version mismatches caught before deploy), pinned field
+IDs for safe evolution, and `grantRead` / `grantWrite` helpers. See
+[How it compares](#how-it-compares).
+
+### How do I create a partitioned Iceberg table in CDK?
+
+Pass a `partitionSpec` of `IcebergPartitionTransform` entries —
+`identity`, `bucket(N)`, `truncate(W)`, `year`, `month`, `day`, `hour`,
+or `void`. Each transform is validated against its source column's type
+at synth time. See [Using `IcebergTable`](#using-icebergtable).
+
+### Does it work with Athena and Lake Formation?
+
+Yes. The demo `ArceusStack` registers the tables with Lake Formation
+and queries them from Athena, including v2 merge-on-read `INSERT` /
+`UPDATE` / `DELETE` / `MERGE`, time travel, `OPTIMIZE`, and `VACUUM`.
+The construct's `grant*` helpers issue IAM grants; under Lake Formation
+you still add the matching `SELECT` / `INSERT` LF grants. See
+[Inserting and querying](#inserting-and-querying).
+
+### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
+
+Yes — set `formatVersion: IcebergFormatVersion.V2` and the
+`write.{delete,update,merge}.mode = merge-on-read` table properties.
+The construct rejects merge-on-read on a v1 table at synth time.
 
 ## Tests
 
