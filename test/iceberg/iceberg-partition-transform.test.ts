@@ -101,14 +101,14 @@ describe('IcebergPartitionTransform — invalid factory args', () => {
 
 describe('IcebergPartitionTransform — source type validation', () => {
     it('identity accepts any type', () => {
-        expect(() => IcebergPartitionTransform.IDENTITY.validateSourceType('c', IcebergType.STRING)).not.toThrow();
-        expect(() => IcebergPartitionTransform.IDENTITY.validateSourceType('c', IcebergType.BOOLEAN)).not.toThrow();
-        expect(() => IcebergPartitionTransform.IDENTITY.validateSourceType('c', IcebergType.decimal(5, 2))).not.toThrow();
+        expect(() => IcebergPartitionTransform.IDENTITY._validateSourceType('c', IcebergType.STRING)).not.toThrow();
+        expect(() => IcebergPartitionTransform.IDENTITY._validateSourceType('c', IcebergType.BOOLEAN)).not.toThrow();
+        expect(() => IcebergPartitionTransform.IDENTITY._validateSourceType('c', IcebergType.decimal(5, 2))).not.toThrow();
     });
 
     it('void accepts any type', () => {
-        expect(() => IcebergPartitionTransform.VOID.validateSourceType('c', IcebergType.STRING)).not.toThrow();
-        expect(() => IcebergPartitionTransform.VOID.validateSourceType('c', IcebergType.BOOLEAN)).not.toThrow();
+        expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', IcebergType.STRING)).not.toThrow();
+        expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', IcebergType.BOOLEAN)).not.toThrow();
     });
 
     it.each([
@@ -116,9 +116,9 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergPartitionTransform.MONTH,
         IcebergPartitionTransform.DAY,
     ])('year/month/day accept date and timestamp types', (transform) => {
-        expect(() => transform.validateSourceType('c', IcebergType.DATE)).not.toThrow();
-        expect(() => transform.validateSourceType('c', IcebergType.TIMESTAMP)).not.toThrow();
-        expect(() => transform.validateSourceType('c', IcebergType.TIMESTAMPTZ)).not.toThrow();
+        expect(() => transform._validateSourceType('c', IcebergType.DATE)).not.toThrow();
+        expect(() => transform._validateSourceType('c', IcebergType.TIMESTAMP)).not.toThrow();
+        expect(() => transform._validateSourceType('c', IcebergType.TIMESTAMPTZ)).not.toThrow();
     });
 
     it.each([
@@ -126,15 +126,15 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergPartitionTransform.MONTH,
         IcebergPartitionTransform.DAY,
     ])('year/month/day reject non-temporal types', (transform) => {
-        expect(() => transform.validateSourceType('c', IcebergType.STRING)).toThrow(/date\/timestamp\/timestamptz/);
-        expect(() => transform.validateSourceType('c', IcebergType.INT)).toThrow(/date\/timestamp\/timestamptz/);
+        expect(() => transform._validateSourceType('c', IcebergType.STRING)).toThrow(/date\/timestamp\/timestamptz/);
+        expect(() => transform._validateSourceType('c', IcebergType.INT)).toThrow(/date\/timestamp\/timestamptz/);
     });
 
     it('hour accepts timestamps but not dates', () => {
-        expect(() => IcebergPartitionTransform.HOUR.validateSourceType('c', IcebergType.TIMESTAMP)).not.toThrow();
-        expect(() => IcebergPartitionTransform.HOUR.validateSourceType('c', IcebergType.TIMESTAMPTZ)).not.toThrow();
-        expect(() => IcebergPartitionTransform.HOUR.validateSourceType('c', IcebergType.DATE)).toThrow(/timestamp\/timestamptz/);
-        expect(() => IcebergPartitionTransform.HOUR.validateSourceType('c', IcebergType.STRING)).toThrow(/timestamp\/timestamptz/);
+        expect(() => IcebergPartitionTransform.HOUR._validateSourceType('c', IcebergType.TIMESTAMP)).not.toThrow();
+        expect(() => IcebergPartitionTransform.HOUR._validateSourceType('c', IcebergType.TIMESTAMPTZ)).not.toThrow();
+        expect(() => IcebergPartitionTransform.HOUR._validateSourceType('c', IcebergType.DATE)).toThrow(/timestamp\/timestamptz/);
+        expect(() => IcebergPartitionTransform.HOUR._validateSourceType('c', IcebergType.STRING)).toThrow(/timestamp\/timestamptz/);
     });
 
     it.each([
@@ -150,7 +150,7 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.decimal(10, 2),
         IcebergType.fixed(16),
     ])('bucket accepts %s', (type) => {
-        expect(() => IcebergPartitionTransform.bucket(8).validateSourceType('c', type)).not.toThrow();
+        expect(() => IcebergPartitionTransform.bucket(8)._validateSourceType('c', type)).not.toThrow();
     });
 
     it.each([
@@ -158,7 +158,7 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.FLOAT,
         IcebergType.DOUBLE,
     ])('bucket rejects %s', (type) => {
-        expect(() => IcebergPartitionTransform.bucket(8).validateSourceType('c', type)).toThrow(/bucket/);
+        expect(() => IcebergPartitionTransform.bucket(8)._validateSourceType('c', type)).toThrow(/bucket/);
     });
 
     it.each([
@@ -168,7 +168,7 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.BINARY,
         IcebergType.decimal(10, 2),
     ])('truncate accepts %s', (type) => {
-        expect(() => IcebergPartitionTransform.truncate(8).validateSourceType('c', type)).not.toThrow();
+        expect(() => IcebergPartitionTransform.truncate(8)._validateSourceType('c', type)).not.toThrow();
     });
 
     it.each([
@@ -178,6 +178,6 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.DATE,
         IcebergType.TIMESTAMP,
     ])('truncate rejects %s', (type) => {
-        expect(() => IcebergPartitionTransform.truncate(8).validateSourceType('c', type)).toThrow(/truncate/);
+        expect(() => IcebergPartitionTransform.truncate(8)._validateSourceType('c', type)).toThrow(/truncate/);
     });
 });

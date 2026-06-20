@@ -1,7 +1,7 @@
 import {
     IcebergDataFormat,
     IcebergFormatVersion,
-    ICEBERG_PROPERTY_KEYS,
+    IcebergPropertyKeys,
     validateIcebergProperties,
 } from '../../lib/iceberg/iceberg-table-properties';
 
@@ -19,13 +19,13 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_FORMAT_DEFAULT]: 'parquet',
-                [ICEBERG_PROPERTY_KEYS.FORMAT_VERSION]: '2',
-                [ICEBERG_PROPERTY_KEYS.WRITE_PARQUET_COMPRESSION_CODEC]: 'zstd',
-                [ICEBERG_PROPERTY_KEYS.WRITE_DELETE_MODE]: 'merge-on-read',
-                [ICEBERG_PROPERTY_KEYS.WRITE_DISTRIBUTION_MODE]: 'hash',
-                [ICEBERG_PROPERTY_KEYS.GC_ENABLED]: 'true',
-                [ICEBERG_PROPERTY_KEYS.WRITE_TARGET_FILE_SIZE_BYTES]: '134217728',
+                [IcebergPropertyKeys.WRITE_FORMAT_DEFAULT]: 'parquet',
+                [IcebergPropertyKeys.FORMAT_VERSION]: '2',
+                [IcebergPropertyKeys.WRITE_PARQUET_COMPRESSION_CODEC]: 'zstd',
+                [IcebergPropertyKeys.WRITE_DELETE_MODE]: 'merge-on-read',
+                [IcebergPropertyKeys.WRITE_DISTRIBUTION_MODE]: 'hash',
+                [IcebergPropertyKeys.GC_ENABLED]: 'true',
+                [IcebergPropertyKeys.WRITE_TARGET_FILE_SIZE_BYTES]: '134217728',
             },
         )).not.toThrow();
     });
@@ -35,7 +35,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_FORMAT_DEFAULT]: 'orc',
+                [IcebergPropertyKeys.WRITE_FORMAT_DEFAULT]: 'orc',
             },
         )).toThrow(/write\.format\.default.*orc.*parquet/);
     });
@@ -45,7 +45,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.FORMAT_VERSION]: '1',
+                [IcebergPropertyKeys.FORMAT_VERSION]: '1',
             },
         )).toThrow(/format-version.*1.*2/);
     });
@@ -55,7 +55,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_ORC_COMPRESSION_CODEC]: 'zstd',
+                [IcebergPropertyKeys.WRITE_ORC_COMPRESSION_CODEC]: 'zstd',
             },
         )).toThrow(/write\.orc\.compression-codec.*parquet/);
     });
@@ -65,7 +65,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_PARQUET_COMPRESSION_CODEC]: 'bzip2',
+                [IcebergPropertyKeys.WRITE_PARQUET_COMPRESSION_CODEC]: 'bzip2',
             },
         )).toThrow(/bzip2/);
     });
@@ -75,7 +75,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.ORC,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_ORC_COMPRESSION_CODEC]: 'zlib',
+                [IcebergPropertyKeys.WRITE_ORC_COMPRESSION_CODEC]: 'zlib',
             },
         )).not.toThrow();
     });
@@ -85,7 +85,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.AVRO,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_AVRO_COMPRESSION_CODEC]: 'snappy',
+                [IcebergPropertyKeys.WRITE_AVRO_COMPRESSION_CODEC]: 'snappy',
             },
         )).not.toThrow();
     });
@@ -95,15 +95,15 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V1,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_DELETE_MODE]: 'merge-on-read',
+                [IcebergPropertyKeys.WRITE_DELETE_MODE]: 'merge-on-read',
             },
         )).toThrow(/merge-on-read.*v2/);
     });
 
     it.each([
-        ICEBERG_PROPERTY_KEYS.WRITE_DELETE_MODE,
-        ICEBERG_PROPERTY_KEYS.WRITE_UPDATE_MODE,
-        ICEBERG_PROPERTY_KEYS.WRITE_MERGE_MODE,
+        IcebergPropertyKeys.WRITE_DELETE_MODE,
+        IcebergPropertyKeys.WRITE_UPDATE_MODE,
+        IcebergPropertyKeys.WRITE_MERGE_MODE,
     ])('rejects merge-on-read on %s when v1', (key) => {
         expect(() => validateIcebergProperties(
             IcebergDataFormat.PARQUET,
@@ -119,7 +119,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_MERGE_MODE]: 'weird-mode',
+                [IcebergPropertyKeys.WRITE_MERGE_MODE]: 'weird-mode',
             },
         )).toThrow(/write\.merge\.mode.*weird-mode/);
     });
@@ -129,7 +129,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.WRITE_DISTRIBUTION_MODE]: 'sideways',
+                [IcebergPropertyKeys.WRITE_DISTRIBUTION_MODE]: 'sideways',
             },
         )).toThrow(/distribution-mode/);
     });
@@ -139,16 +139,16 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.GC_ENABLED]: 'yes',
+                [IcebergPropertyKeys.GC_ENABLED]: 'yes',
             },
         )).toThrow(/gc\.enabled.*yes/);
     });
 
     it.each([
-        ICEBERG_PROPERTY_KEYS.WRITE_TARGET_FILE_SIZE_BYTES,
-        ICEBERG_PROPERTY_KEYS.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS,
-        ICEBERG_PROPERTY_KEYS.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP,
-        ICEBERG_PROPERTY_KEYS.COMMIT_RETRY_NUM_RETRIES,
+        IcebergPropertyKeys.WRITE_TARGET_FILE_SIZE_BYTES,
+        IcebergPropertyKeys.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS,
+        IcebergPropertyKeys.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP,
+        IcebergPropertyKeys.COMMIT_RETRY_NUM_RETRIES,
     ])('rejects non-positive-int %s', (key) => {
         expect(() => validateIcebergProperties(
             IcebergDataFormat.PARQUET,
@@ -168,7 +168,7 @@ describe('validateIcebergProperties', () => {
             IcebergDataFormat.PARQUET,
             IcebergFormatVersion.V2,
             {
-                [ICEBERG_PROPERTY_KEYS.COMMIT_RETRY_NUM_RETRIES]: value,
+                [IcebergPropertyKeys.COMMIT_RETRY_NUM_RETRIES]: value,
             },
         )).toThrow(/positive integer/);
     });

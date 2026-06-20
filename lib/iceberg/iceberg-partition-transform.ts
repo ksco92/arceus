@@ -171,7 +171,7 @@ export class IcebergPartitionTransform {
      *
      * @internal
      */
-    public validateSourceType(sourceColumnName: string, sourceType: IcebergType): void {
+    public _validateSourceType(sourceColumnName: string, sourceType: IcebergType): void {
         switch (this.kind) {
             case IcebergPartitionTransformKind.IDENTITY:
             case IcebergPartitionTransformKind.VOID:
@@ -213,7 +213,7 @@ export class IcebergPartitionTransform {
             /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
             default: {
                 const exhaustive: never = this.kind;
-                throw new Error(`unknown IcebergPartitionTransformKind in validateSourceType: ${exhaustive}`);
+                throw new Error(`unknown IcebergPartitionTransformKind in _validateSourceType: ${exhaustive}`);
             }
         }
     }
