@@ -591,6 +591,10 @@ Yes — set `formatVersion: IcebergFormatVersion.V2` and the
 `write.{delete,update,merge}.mode = merge-on-read` table properties.
 The construct rejects merge-on-read on a v1 table at synth time.
 
+## Contributing
+
+Development, the monorepo layout, and the demo app live in [CONTRIBUTING.md](https://github.com/ksco92/arceus/blob/main/CONTRIBUTING.md).
+
 ## License
 
 [MIT](LICENSE).

@@ -21,6 +21,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # The root README is the consumer doc, kept byte-identical to the
+      # package README so the GitHub landing page and the npm/PyPI page
+      # never drift. `diff` exits non-zero (failing CI) if they differ.
+      - name: Verify root and package READMEs are in sync
+        run: diff README.md packages/cdk-glue-iceberg-table/README.md
       - run: npm run lint
       # Package unit tests (with the 95% coverage gate) and the demo
       # stack tests. `npm test` runs both via the root script.
