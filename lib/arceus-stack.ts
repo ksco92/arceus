@@ -43,7 +43,7 @@ import {
     IcebergSortDirection,
     IcebergTable,
     IcebergType,
-} from './iceberg';
+} from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
 /** Props for `ArceusStack`. */
 export interface ArceusStackProps extends StackProps {

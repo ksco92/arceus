@@ -41,13 +41,19 @@ jobs:
       # setup-node@v4 still ships an older npm with it, so upgrade
       # the CLI explicitly before any registry call.
       - run: npm install -g npm@latest
+      # `npm ci` at the workspace root installs the package's deps too.
       - run: npm ci
       - run: npm run lint
       - run: npm test
       - run: npm run build
 
+      # The version gate and the publish itself run inside the package
+      # workspace, so `require('./package.json')` and `npm publish`
+      # operate on packages/cdk-glue-iceberg-table — not the private
+      # monorepo root manifest.
       - name: Compare package.json version against registry
         id: check
+        working-directory: packages/cdk-glue-iceberg-table
         run: |
           local_version=$(node -p "require('./package.json').version")
           registry_version=$(npm view cdk-glue-iceberg-table version 2>/dev/null || echo "0.0.0")
@@ -63,4 +69,5 @@ jobs:
 
       - name: Publish
         if: steps.check.outputs.skip == 'false'
+        working-directory: packages/cdk-glue-iceberg-table
         run: npm publish --access public --provenance

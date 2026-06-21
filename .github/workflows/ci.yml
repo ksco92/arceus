@@ -22,19 +22,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Package unit tests (with the 95% coverage gate) and the demo
+      # stack tests. `npm test` runs both via the root script.
       - run: npm test
       - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@v5
         with:
-          files: build/coverage/lcov.info
+          files: packages/cdk-glue-iceberg-table/build/coverage/lcov.info
           # Required because `main` is a protected branch. Codecov's
           # tokenless-uploads-for-public-repos path is disabled on
           # protected branches as an anti-abuse measure.
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
       - run: npm run build
-      - run: npm pack --dry-run
+      - name: npm pack dry-run on the published package
+        run: npm pack --dry-run
+        working-directory: packages/cdk-glue-iceberg-table
 
   e2e-consumer:
     # Proves the published cdk-glue-iceberg-table package is importable

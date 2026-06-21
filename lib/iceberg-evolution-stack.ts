@@ -23,7 +23,7 @@ import {
     IcebergPartitionTransform,
     IcebergTable,
     IcebergType,
-} from './iceberg';
+} from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
 /**
  * Props for `IcebergEvolutionStack`. The stack itself is parameterized
