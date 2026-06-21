@@ -25,12 +25,12 @@ import type {
     IIcebergTable,
 } from 'cdk-glue-iceberg-table';
 import {
-    ICEBERG_PROPERTY_KEYS,
     IcebergDataFormat,
     IcebergFormatVersion,
     IcebergNullOrder,
     IcebergPartitionTransform,
     IcebergPartitionTransformKind,
+    IcebergPropertyKeys,
     IcebergSortDirection,
     IcebergTable,
     IcebergType,
@@ -116,7 +116,22 @@ const enums = [
 
 const fromAttributes = IcebergTable.fromIcebergTableAttributes;
 
-const propertyKeys = ICEBERG_PROPERTY_KEYS;
+const propertyKeys = [
+    IcebergPropertyKeys.FORMAT_VERSION,
+    IcebergPropertyKeys.WRITE_FORMAT_DEFAULT,
+    IcebergPropertyKeys.WRITE_PARQUET_COMPRESSION_CODEC,
+    IcebergPropertyKeys.WRITE_ORC_COMPRESSION_CODEC,
+    IcebergPropertyKeys.WRITE_AVRO_COMPRESSION_CODEC,
+    IcebergPropertyKeys.WRITE_TARGET_FILE_SIZE_BYTES,
+    IcebergPropertyKeys.WRITE_DELETE_MODE,
+    IcebergPropertyKeys.WRITE_UPDATE_MODE,
+    IcebergPropertyKeys.WRITE_MERGE_MODE,
+    IcebergPropertyKeys.WRITE_DISTRIBUTION_MODE,
+    IcebergPropertyKeys.GC_ENABLED,
+    IcebergPropertyKeys.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS,
+    IcebergPropertyKeys.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP,
+    IcebergPropertyKeys.COMMIT_RETRY_NUM_RETRIES,
+];
 
 // Type-only imports must be referenced via a value position to
 // survive `tsc` tree-shaking. A throwaway `null as unknown as T`
