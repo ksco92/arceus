@@ -1,16 +1,27 @@
-name: Publish to npm
+name: Publish to npm and PyPI
 
 # Runs on every push to `main` (i.e. every PR merge) and on manual
 # dispatch. Publishes the version in package.json IF and ONLY IF it
-# is newer than what is already on the npm registry. PRs that forget
-# to bump `version` become no-ops here — per CLAUDE.md, the policy is
-# "always bump", and a missing bump should be caught at review time.
+# is newer than what is already on the respective registry. PRs that
+# forget to bump `version` become no-ops here — per CLAUDE.md, the
+# policy is "always bump", and a missing bump should be caught at
+# review time.
 #
-# Authentication uses npm trusted publishing — the workflow exchanges
-# its GitHub OIDC token for a short-lived npm credential. No long-lived
-# `NPM_TOKEN` secret is needed; the trust is configured on the package
-# at https://www.npmjs.com/package/cdk-glue-iceberg-table/access (the
-# repo, workflow filename, and branch must match).
+# The package is a jsii multi-language construct: `npm run build`
+# invokes jsii, and `jsii-pacmak -t python` produces the Python wheel.
+# Two independent publishes run from the same build:
+#
+#   * npm  — trusted publishing (OIDC) exchanges the GitHub OIDC token
+#     for a short-lived npm credential. No `NPM_TOKEN` secret. Trust is
+#     configured on the package at
+#     https://www.npmjs.com/package/cdk-glue-iceberg-table/access
+#     (repo, workflow filename, and branch must match).
+#   * PyPI — trusted publishing (OIDC) via pypa/gh-action-pypi-publish.
+#     No `PYPI_TOKEN` secret. Trust is configured at pypi.org →
+#     publishing settings (repo ksco92/arceus, workflow publish.yml,
+#     branch main). Until the maintainer configures it, ONLY the PyPI
+#     step fails — npm still publishes. The two are independent on
+#     purpose: neither registry gates the other.
 
 on:
   push:
@@ -27,6 +38,9 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      # Required for BOTH npm trusted publishing and PyPI trusted
+      # publishing (each mints its short-lived credential from this
+      # GitHub OIDC token).
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +49,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           registry-url: https://registry.npmjs.org
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
       # Trusted publishing (OIDC) requires npm >= 11.5.1 and Node
       # >= 22.14 per https://docs.npmjs.com/trusted-publishers.
       # The .nvmrc pin (Node 24 LTS) satisfies the Node side;
@@ -45,14 +62,18 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      # jsii build — emits dist/ JS + d.ts + the .jsii assembly.
       - run: npm run build
 
+      # ----------------------------------------------------------------
+      # npm publish — gated on the package version vs the npm registry.
+      # ----------------------------------------------------------------
       # The version gate and the publish itself run inside the package
       # workspace, so `require('./package.json')` and `npm publish`
       # operate on packages/cdk-glue-iceberg-table — not the private
       # monorepo root manifest.
-      - name: Compare package.json version against registry
-        id: check
+      - name: Compare package.json version against npm registry
+        id: check_npm
         working-directory: packages/cdk-glue-iceberg-table
         run: |
           local_version=$(node -p "require('./package.json').version")
@@ -61,13 +82,45 @@ jobs:
           echo "registry=$registry_version" >> "$GITHUB_OUTPUT"
           if [ "$local_version" = "$registry_version" ]; then
             echo "skip=true"  >> "$GITHUB_OUTPUT"
-            echo "::notice::Version $local_version already on registry — no publish."
+            echo "::notice::npm version $local_version already on registry — no publish."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Local $local_version differs from registry $registry_version — publishing."
+            echo "::notice::Local $local_version differs from npm $registry_version — publishing."
           fi
 
-      - name: Publish
-        if: steps.check.outputs.skip == 'false'
+      - name: Publish to npm
+        if: steps.check_npm.outputs.skip == 'false'
         working-directory: packages/cdk-glue-iceberg-table
         run: npm publish --access public --provenance
+
+      # ----------------------------------------------------------------
+      # PyPI publish — gated on the package version vs the PyPI registry.
+      # Independent of the npm gate: a PyPI failure never blocks npm.
+      # ----------------------------------------------------------------
+      - name: Compare package.json version against PyPI registry
+        id: check_pypi
+        working-directory: packages/cdk-glue-iceberg-table
+        run: |
+          local_version=$(node -p "require('./package.json').version")
+          registry_version=$(curl -fsSL "https://pypi.org/pypi/cdk-glue-iceberg-table/json" 2>/dev/null \
+            | python -c "import sys, json; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null \
+            || echo "0.0.0")
+          echo "local=$local_version"       >> "$GITHUB_OUTPUT"
+          echo "registry=$registry_version" >> "$GITHUB_OUTPUT"
+          if [ "$local_version" = "$registry_version" ]; then
+            echo "skip=true"  >> "$GITHUB_OUTPUT"
+            echo "::notice::PyPI version $local_version already on registry — no publish."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Local $local_version differs from PyPI $registry_version — publishing."
+          fi
+
+      - name: Build Python distribution with jsii-pacmak
+        if: steps.check_pypi.outputs.skip == 'false'
+        run: npm run package:python --workspace cdk-glue-iceberg-table
+
+      - name: Publish to PyPI
+        if: steps.check_pypi.outputs.skip == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/cdk-glue-iceberg-table/dist/jsii/python/

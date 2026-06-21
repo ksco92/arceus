@@ -12,6 +12,10 @@ module.exports = {
         '^.+\\.tsx?$': [
             'ts-jest',
             {
+                /// jsii owns the generated `tsconfig.json` (which excludes
+                /// `test/`), so ts-jest reads `tsconfig.dev.json` instead —
+                /// it includes both `lib/` and `test/`.
+                tsconfig: 'tsconfig.dev.json',
                 /// TS151002 fires once per test file when ts-jest is
                 /// used with `module: "NodeNext"` and isolatedModules
                 /// is off; the warning is informational and unrelated

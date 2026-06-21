@@ -3,6 +3,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/ksco92/arceus/ci.yml?branch=main&label=CI)](https://github.com/ksco92/arceus/actions/workflows/ci.yml)
 [![coverage](https://codecov.io/gh/ksco92/arceus/branch/main/graph/badge.svg)](https://codecov.io/gh/ksco92/arceus)
 [![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
+[![PyPI](https://img.shields.io/pypi/v/cdk-glue-iceberg-table.svg)](https://pypi.org/project/cdk-glue-iceberg-table/)
+[![Construct Hub](https://constructs.dev/badge?package=cdk-glue-iceberg-table)](https://constructs.dev/packages/cdk-glue-iceberg-table)
 [![types](https://img.shields.io/npm/types/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![downloads](https://img.shields.io/npm/dw/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![last commit](https://img.shields.io/github/last-commit/ksco92/arceus.svg)](https://github.com/ksco92/arceus/commits/main)
@@ -18,9 +20,13 @@ no "`cdk deploy` and then run this SQL by hand" two-step. Table
 changes (new columns, renames, drops, new partition fields) land as
 a reviewed diff in a pull request and apply through `cdk deploy`.
 
-Status (June 2026): published on npm, pre-1.0, with a public surface
-guarded by an end-to-end consumer test on every PR plus three
-real-AWS integration suites. Developed in the
+Status (June 2026): published on npm (TypeScript/JavaScript) and PyPI
+(Python), pre-1.0, with a public surface guarded by an end-to-end
+consumer test on every PR plus three real-AWS integration suites. The
+multi-language packages are generated from one TypeScript source with
+[jsii](https://aws.github.io/jsii/) and indexed on
+[Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
+Developed in the
 [`ksco92/arceus`](https://github.com/ksco92/arceus) monorepo, which
 also holds a CDK demo app that dogfoods the construct against a real
 AWS account.
@@ -53,17 +59,34 @@ this package tracks that proposal and stays current with it.
 
 ## Install
 
+TypeScript / JavaScript (npm):
+
 ```bash
 npm install cdk-glue-iceberg-table
 ```
 
-Peer dependencies (your CDK app must already have these):
+Python (PyPI):
+
+```bash
+pip install cdk-glue-iceberg-table
+```
+
+Peer dependencies (your CDK app must already have these). For
+TypeScript / JavaScript:
 
 ```bash
 npm install aws-cdk-lib constructs @aws-cdk/aws-glue-alpha
 ```
 
+For Python:
+
+```bash
+pip install aws-cdk-lib constructs aws-cdk.aws-glue-alpha
+```
+
 ## Use
+
+### TypeScript
 
 ```ts
 import { Bucket } from 'aws-cdk-lib/aws-s3';
@@ -94,6 +117,40 @@ new IcebergTable(this, 'OrdersTable', {
 });
 ```
 
+### Python
+
+The same table in Python — the API mirrors TypeScript with
+`snake_case` props and `PascalCase` types:
+
+```python
+from aws_cdk.aws_s3 import Bucket
+from aws_cdk.aws_glue_alpha import Database
+from cdk_glue_iceberg_table import (
+    IcebergTable,
+    IcebergType,
+    IcebergPartitionTransform,
+)
+
+bucket = Bucket(self, "Warehouse")
+db = Database(self, "Db", database_name="analytics")
+
+IcebergTable(self, "OrdersTable",
+    database=db,
+    table_name="orders",
+    location=f"s3://{bucket.bucket_name}/analytics/orders/",
+    columns=[
+        {"name": "order_id", "type": IcebergType.LONG, "required": True, "id": 1},
+        {"name": "customer_id", "type": IcebergType.LONG, "required": True, "id": 2},
+        {"name": "placed_at", "type": IcebergType.TIMESTAMPTZ, "required": True, "id": 3},
+    ],
+    partition_spec=[
+        {"source_column": "placed_at", "transform": IcebergPartitionTransform.DAY},
+        {"source_column": "customer_id", "transform": IcebergPartitionTransform.bucket(16)},
+    ],
+    identifier_field_names=["order_id"],
+)
+```
+
 Consumer-facing reference sections:
 
 - [How it compares](#how-it-compares) — `cdk-glue-iceberg-table` vs raw `CfnTable`, custom resources, and runtime SQL DDL.
@@ -105,8 +162,10 @@ Consumer-facing reference sections:
 ## Exported surface
 
 The package entry point re-exports everything you import from
-`cdk-glue-iceberg-table`. After `npm install` the compiled surface
-lives under `dist/lib/iceberg/`:
+`cdk-glue-iceberg-table`. In TypeScript / JavaScript the compiled
+surface lives under `dist/lib/iceberg/` after `npm install`; in Python
+the same surface is imported from the `cdk_glue_iceberg_table` module
+after `pip install`:
 
 - **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite` and the `fromIcebergTableAttributes(...)` import factory.
 - **`IcebergType`** — primitive types plus `list` / `map` / `struct` / `decimal` / `fixed` factories. Renders to the JSON shape Glue's `IcebergStructField.type` expects.

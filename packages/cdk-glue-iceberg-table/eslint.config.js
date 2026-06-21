@@ -83,7 +83,7 @@ module.exports = [
         languageOptions: {
             parser: tsParser,
             parserOptions: {
-                project: './tsconfig.json',
+                project: './tsconfig.dev.json',
                 ecmaVersion: 'latest',
                 sourceType: 'module',
             },
