@@ -268,5 +268,3 @@ every exported symbol so that a rename in the published surface breaks
 CI. The pin in `e2e-consumer/package-lock.json` tracks the version
 most recently published to npm; [CLAUDE.md](CLAUDE.md) asks for it to
 be bumped after each release.
-</content>
-</invoke>
