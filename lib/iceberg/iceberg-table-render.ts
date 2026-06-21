@@ -9,7 +9,7 @@ import {
     IcebergPartitionTransform,
 } from './iceberg-partition-transform';
 import {
-    ICEBERG_PROPERTY_KEYS,
+    IcebergPropertyKeys,
     IcebergDataFormat,
     IcebergFormatVersion,
 } from './iceberg-table-properties';
@@ -169,7 +169,7 @@ export function validatePartitionSpec(
                 `partitionSpec references unknown column '${field.sourceColumn}'`,
             );
         }
-        field.transform.validateSourceType(field.sourceColumn, source.type);
+        field.transform._validateSourceType(field.sourceColumn, source.type);
         const partitionName = field.name ?? defaultPartitionName(field);
         if (partitionNames.has(partitionName)) {
             throw new Error(`duplicate partition field name: ${partitionName}`);
@@ -195,7 +195,7 @@ export function validateSortOrder(
             throw new Error(`sortOrder references unknown column '${field.sourceColumn}'`);
         }
         const transform = field.transform ?? IcebergPartitionTransform.IDENTITY;
-        transform.validateSourceType(field.sourceColumn, source.type);
+        transform._validateSourceType(field.sourceColumn, source.type);
     }
 }
 
@@ -293,8 +293,8 @@ export function mergeProperties(
         );
     }
     const merged: { [key: string]: string } = {
-        [ICEBERG_PROPERTY_KEYS.FORMAT_VERSION]: formatVersion,
-        [ICEBERG_PROPERTY_KEYS.WRITE_FORMAT_DEFAULT]: dataFormat,
+        [IcebergPropertyKeys.FORMAT_VERSION]: formatVersion,
+        [IcebergPropertyKeys.WRITE_FORMAT_DEFAULT]: dataFormat,
         ...(user ?? {}),
     };
     if (comment !== undefined) {

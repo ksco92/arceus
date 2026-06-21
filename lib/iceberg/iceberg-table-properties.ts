@@ -32,22 +32,49 @@ export enum IcebergDataFormat {
 }
 
 /** Canonical Iceberg property keys the L2 understands. */
-export const ICEBERG_PROPERTY_KEYS = {
-    FORMAT_VERSION: 'format-version',
-    WRITE_FORMAT_DEFAULT: 'write.format.default',
-    WRITE_PARQUET_COMPRESSION_CODEC: 'write.parquet.compression-codec',
-    WRITE_ORC_COMPRESSION_CODEC: 'write.orc.compression-codec',
-    WRITE_AVRO_COMPRESSION_CODEC: 'write.avro.compression-codec',
-    WRITE_TARGET_FILE_SIZE_BYTES: 'write.target-file-size-bytes',
-    WRITE_DELETE_MODE: 'write.delete.mode',
-    WRITE_UPDATE_MODE: 'write.update.mode',
-    WRITE_MERGE_MODE: 'write.merge.mode',
-    WRITE_DISTRIBUTION_MODE: 'write.distribution-mode',
-    GC_ENABLED: 'gc.enabled',
-    HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS: 'history.expire.max-snapshot-age-ms',
-    HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP: 'history.expire.min-snapshots-to-keep',
-    COMMIT_RETRY_NUM_RETRIES: 'commit.retry.num-retries',
-} as const;
+export class IcebergPropertyKeys {
+    /** `format-version`. */
+    public static readonly FORMAT_VERSION = 'format-version';
+
+    /** `write.format.default`. */
+    public static readonly WRITE_FORMAT_DEFAULT = 'write.format.default';
+
+    /** `write.parquet.compression-codec`. */
+    public static readonly WRITE_PARQUET_COMPRESSION_CODEC = 'write.parquet.compression-codec';
+
+    /** `write.orc.compression-codec`. */
+    public static readonly WRITE_ORC_COMPRESSION_CODEC = 'write.orc.compression-codec';
+
+    /** `write.avro.compression-codec`. */
+    public static readonly WRITE_AVRO_COMPRESSION_CODEC = 'write.avro.compression-codec';
+
+    /** `write.target-file-size-bytes`. */
+    public static readonly WRITE_TARGET_FILE_SIZE_BYTES = 'write.target-file-size-bytes';
+
+    /** `write.delete.mode`. */
+    public static readonly WRITE_DELETE_MODE = 'write.delete.mode';
+
+    /** `write.update.mode`. */
+    public static readonly WRITE_UPDATE_MODE = 'write.update.mode';
+
+    /** `write.merge.mode`. */
+    public static readonly WRITE_MERGE_MODE = 'write.merge.mode';
+
+    /** `write.distribution-mode`. */
+    public static readonly WRITE_DISTRIBUTION_MODE = 'write.distribution-mode';
+
+    /** `gc.enabled`. */
+    public static readonly GC_ENABLED = 'gc.enabled';
+
+    /** `history.expire.max-snapshot-age-ms`. */
+    public static readonly HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS = 'history.expire.max-snapshot-age-ms';
+
+    /** `history.expire.min-snapshots-to-keep`. */
+    public static readonly HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP = 'history.expire.min-snapshots-to-keep';
+
+    /** `commit.retry.num-retries`. */
+    public static readonly COMMIT_RETRY_NUM_RETRIES = 'commit.retry.num-retries';
+}
 
 const PARQUET_CODECS = new Set([
     'zstd',
@@ -103,19 +130,19 @@ export function validateIcebergProperties(
     properties: { [key: string]: string },
 ): void {
     /// 1. write.format.default must match the chosen data format.
-    const declaredFormat = properties[ICEBERG_PROPERTY_KEYS.WRITE_FORMAT_DEFAULT];
+    const declaredFormat = properties[IcebergPropertyKeys.WRITE_FORMAT_DEFAULT];
     if (declaredFormat !== undefined && declaredFormat !== dataFormat) {
         throw new Error(
-            `tableProperties['${ICEBERG_PROPERTY_KEYS.WRITE_FORMAT_DEFAULT}'] is '${declaredFormat}' `
+            `tableProperties['${IcebergPropertyKeys.WRITE_FORMAT_DEFAULT}'] is '${declaredFormat}' `
             + `but dataFormat is '${dataFormat}'. Drop the property or change dataFormat to match.`,
         );
     }
 
     /// 2. format-version must match the chosen format version.
-    const declaredVersion = properties[ICEBERG_PROPERTY_KEYS.FORMAT_VERSION];
+    const declaredVersion = properties[IcebergPropertyKeys.FORMAT_VERSION];
     if (declaredVersion !== undefined && declaredVersion !== formatVersion) {
         throw new Error(
-            `tableProperties['${ICEBERG_PROPERTY_KEYS.FORMAT_VERSION}'] is '${declaredVersion}' `
+            `tableProperties['${IcebergPropertyKeys.FORMAT_VERSION}'] is '${declaredVersion}' `
             + `but formatVersion is '${formatVersion}'. Drop the property or change formatVersion to match.`,
         );
     }
@@ -125,17 +152,17 @@ export function validateIcebergProperties(
     validateCompressionForFormat(dataFormat, properties);
 
     /// 4. write modes must be valid Iceberg literals.
-    validateEnumProperty(properties, ICEBERG_PROPERTY_KEYS.WRITE_DELETE_MODE, WRITE_MODES);
-    validateEnumProperty(properties, ICEBERG_PROPERTY_KEYS.WRITE_UPDATE_MODE, WRITE_MODES);
-    validateEnumProperty(properties, ICEBERG_PROPERTY_KEYS.WRITE_MERGE_MODE, WRITE_MODES);
-    validateEnumProperty(properties, ICEBERG_PROPERTY_KEYS.WRITE_DISTRIBUTION_MODE, DISTRIBUTION_MODES);
+    validateEnumProperty(properties, IcebergPropertyKeys.WRITE_DELETE_MODE, WRITE_MODES);
+    validateEnumProperty(properties, IcebergPropertyKeys.WRITE_UPDATE_MODE, WRITE_MODES);
+    validateEnumProperty(properties, IcebergPropertyKeys.WRITE_MERGE_MODE, WRITE_MODES);
+    validateEnumProperty(properties, IcebergPropertyKeys.WRITE_DISTRIBUTION_MODE, DISTRIBUTION_MODES);
 
     /// 5. merge-on-read requires format-version=2.
     if (formatVersion === IcebergFormatVersion.V1) {
         for (const key of [
-            ICEBERG_PROPERTY_KEYS.WRITE_DELETE_MODE,
-            ICEBERG_PROPERTY_KEYS.WRITE_UPDATE_MODE,
-            ICEBERG_PROPERTY_KEYS.WRITE_MERGE_MODE,
+            IcebergPropertyKeys.WRITE_DELETE_MODE,
+            IcebergPropertyKeys.WRITE_UPDATE_MODE,
+            IcebergPropertyKeys.WRITE_MERGE_MODE,
         ]) {
             if (properties[key] === 'merge-on-read') {
                 throw new Error(
@@ -146,13 +173,13 @@ export function validateIcebergProperties(
     }
 
     /// 6. gc.enabled is a boolean.
-    validateEnumProperty(properties, ICEBERG_PROPERTY_KEYS.GC_ENABLED, BOOLEAN_VALUES);
+    validateEnumProperty(properties, IcebergPropertyKeys.GC_ENABLED, BOOLEAN_VALUES);
 
     /// 7. Numeric properties must parse to positive integers.
-    validatePositiveInt(properties, ICEBERG_PROPERTY_KEYS.WRITE_TARGET_FILE_SIZE_BYTES);
-    validatePositiveInt(properties, ICEBERG_PROPERTY_KEYS.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS);
-    validatePositiveInt(properties, ICEBERG_PROPERTY_KEYS.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP);
-    validatePositiveInt(properties, ICEBERG_PROPERTY_KEYS.COMMIT_RETRY_NUM_RETRIES);
+    validatePositiveInt(properties, IcebergPropertyKeys.WRITE_TARGET_FILE_SIZE_BYTES);
+    validatePositiveInt(properties, IcebergPropertyKeys.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS);
+    validatePositiveInt(properties, IcebergPropertyKeys.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP);
+    validatePositiveInt(properties, IcebergPropertyKeys.COMMIT_RETRY_NUM_RETRIES);
 }
 
 function validateCompressionForFormat(
@@ -161,17 +188,17 @@ function validateCompressionForFormat(
 ): void {
     const candidates: Array<{ key: string; allowed: ReadonlySet<string>; ownerFormat: IcebergDataFormat }> = [
         {
-            key: ICEBERG_PROPERTY_KEYS.WRITE_PARQUET_COMPRESSION_CODEC,
+            key: IcebergPropertyKeys.WRITE_PARQUET_COMPRESSION_CODEC,
             allowed: PARQUET_CODECS,
             ownerFormat: IcebergDataFormat.PARQUET,
         },
         {
-            key: ICEBERG_PROPERTY_KEYS.WRITE_ORC_COMPRESSION_CODEC,
+            key: IcebergPropertyKeys.WRITE_ORC_COMPRESSION_CODEC,
             allowed: ORC_CODECS,
             ownerFormat: IcebergDataFormat.ORC,
         },
         {
-            key: ICEBERG_PROPERTY_KEYS.WRITE_AVRO_COMPRESSION_CODEC,
+            key: IcebergPropertyKeys.WRITE_AVRO_COMPRESSION_CODEC,
             allowed: AVRO_CODECS,
             ownerFormat: IcebergDataFormat.AVRO,
         },

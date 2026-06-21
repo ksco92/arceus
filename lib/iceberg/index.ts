@@ -12,7 +12,7 @@ export {
 export {
     IcebergDataFormat,
     IcebergFormatVersion,
-    ICEBERG_PROPERTY_KEYS,
+    IcebergPropertyKeys,
 } from './iceberg-table-properties';
 export {
     IcebergColumn,
