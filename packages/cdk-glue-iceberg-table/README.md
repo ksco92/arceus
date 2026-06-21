@@ -4,7 +4,7 @@
 [![coverage](https://codecov.io/gh/ksco92/arceus/branch/main/graph/badge.svg)](https://codecov.io/gh/ksco92/arceus)
 [![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![PyPI](https://img.shields.io/pypi/v/cdk-glue-iceberg-table.svg)](https://pypi.org/project/cdk-glue-iceberg-table/)
-[![Construct Hub](https://constructs.dev/badge?package=cdk-glue-iceberg-table)](https://constructs.dev/packages/cdk-glue-iceberg-table)
+[![Construct Hub](https://img.shields.io/badge/Construct%20Hub-available-blueviolet)](https://constructs.dev/packages/cdk-glue-iceberg-table)
 [![types](https://img.shields.io/npm/types/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![downloads](https://img.shields.io/npm/dw/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![last commit](https://img.shields.io/github/last-commit/ksco92/arceus.svg)](https://github.com/ksco92/arceus/commits/main)
