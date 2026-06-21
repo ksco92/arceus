@@ -3,12 +3,14 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/ksco92/arceus/ci.yml?branch=main&label=CI)](https://github.com/ksco92/arceus/actions/workflows/ci.yml)
 [![coverage](https://codecov.io/gh/ksco92/arceus/branch/main/graph/badge.svg)](https://codecov.io/gh/ksco92/arceus)
 [![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
+[![PyPI](https://img.shields.io/pypi/v/cdk-glue-iceberg-table.svg)](https://pypi.org/project/cdk-glue-iceberg-table/)
+[![Construct Hub](https://constructs.dev/badge?package=cdk-glue-iceberg-table)](https://constructs.dev/packages/cdk-glue-iceberg-table)
 [![last commit](https://img.shields.io/github/last-commit/ksco92/arceus.svg)](https://github.com/ksco92/arceus/commits/main)
 
 This repository is an npm-workspace monorepo with two parts:
 
 - **[`packages/cdk-glue-iceberg-table/`](packages/cdk-glue-iceberg-table)** —
-  the published npm package
+  the published package
   [`cdk-glue-iceberg-table`](https://www.npmjs.com/package/cdk-glue-iceberg-table):
   an AWS CDK L2 construct for creating and evolving Apache Iceberg
   tables in the AWS Glue Data Catalog. **For consumer documentation —
@@ -16,10 +18,12 @@ This repository is an npm-workspace monorepo with two parts:
   FAQ — see the [package README](packages/cdk-glue-iceberg-table/README.md).**
 - **The CDK demo app at the repo root** (`bin/`, `lib/arceus-stack.ts`,
   the evolution / DML / surface stacks, `scripts/`) — dogfoods the
-  construct against a real AWS account. Repo-only, not published to npm.
+  construct against a real AWS account. Repo-only, not published.
 
-The published build is still plain `tsc`; the jsii / multi-language
-swap is a separate slice.
+The package builds with [jsii](https://aws.github.io/jsii/) and ships
+as a multi-language artifact: npm for TypeScript / JavaScript and PyPI
+for Python, both generated from one TypeScript source and indexed on
+[Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
 
 ## Repo layout
 
@@ -27,7 +31,7 @@ swap is a separate slice.
 arceus/
 ├── package.json                        # Monorepo root + demo-app manifest (npm workspaces)
 ├── packages/
-│   └── cdk-glue-iceberg-table/         # The PUBLISHED npm package
+│   └── cdk-glue-iceberg-table/         # The PUBLISHED package (npm + PyPI, built with jsii)
 │       ├── lib/iceberg/
 │       │   ├── iceberg-table.ts        # The L2 construct itself
 │       │   ├── iceberg-type.ts         # IcebergType + struct/list/map/decimal/fixed
@@ -35,11 +39,10 @@ arceus/
 │       │   ├── iceberg-table-properties.ts
 │       │   ├── iceberg-table-grants.ts
 │       │   ├── iceberg-table-render.ts
-│       │   └── index.ts                # Re-exports (the npm package's entry point)
+│       │   └── index.ts                # Re-exports (the package's entry point)
 │       ├── test/iceberg/               # Unit tests for the construct
-│       ├── package.json                # The published manifest (version held at 0.3.1)
-│       ├── tsconfig.json
-│       ├── tsconfig.build.json         # Narrow include (used by `npm publish`)
+│       ├── package.json                # The published manifest (jsii config + version)
+│       ├── tsconfig.dev.json           # tsconfig for ESLint + ts-jest (jsii owns tsconfig.json)
 │       ├── jest.config.js
 │       ├── eslint.config.js
 │       ├── README.md                   # Consumer-facing docs (the npm page)
@@ -70,8 +73,8 @@ arceus/
 ├── jest.config.js                      # Demo stack tests
 ├── eslint.config.js
 └── .github/workflows/
-    ├── ci.yml                          # Lint + test + build + pack + e2e-consumer
-    ├── publish.yml                     # Trusted-publish the package to npm on version bump
+    ├── ci.yml                          # Lint + test + jsii build + Python package + pack + e2e-consumer
+    ├── publish.yml                     # Trusted-publish the package to npm + PyPI on version bump
     └── integ-test.yml                  # Real-AWS evolution/DML/surface tests (gated)
 ```
 
@@ -89,7 +92,7 @@ From the repo root:
 
 ```bash
 npm install                 # installs the workspace (root + packages/*)
-npm run build               # builds the published package (tsc)
+npm run build               # builds the published package (jsii)
 npm run lint                # lints the package + the demo app
 npm test                    # package unit tests + demo stack tests
 npm run test:package        # package unit tests only
@@ -110,8 +113,8 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 ## How the CI / publish / integ-test gates fit together
 
-- **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
-- **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to npm when its `package.json` `version` is newer than the registry. A PR that forgets to bump becomes a no-op.
+- **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
+- **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
 - **`integ-test.yml`** is the real-AWS gate. It runs three scripts back-to-back: `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM against a v2 merge-on-read table), and `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites

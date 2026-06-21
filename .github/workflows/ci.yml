@@ -35,7 +35,15 @@ jobs:
           # protected branches as an anti-abuse measure.
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+      # `npm run build` invokes jsii (not tsc) and emits the compiled
+      # JS/d.ts plus the `.jsii` assembly that Construct Hub indexes.
       - run: npm run build
+      # Prove the multi-language packaging works end to end: jsii-pacmak
+      # builds the Python wheel + sdist from the assembly. This is the
+      # same command the publish workflow runs before the PyPI upload, so
+      # a packaging break surfaces on the PR, not at release time.
+      - name: Build Python distribution with jsii-pacmak
+        run: npm run package:python --workspace cdk-glue-iceberg-table
       - name: npm pack dry-run on the published package
         run: npm pack --dry-run
         working-directory: packages/cdk-glue-iceberg-table

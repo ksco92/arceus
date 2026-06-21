@@ -11,6 +11,12 @@ cdk.out
 # npm publish output
 dist
 
+# jsii build artifacts (generated each build; shipped in the npm tarball,
+# never committed). jsii regenerates packages/*/tsconfig.json on build.
+.jsii
+packages/*/tsconfig.json
+packages/*/.npmignore
+
 .idea
 build
 cdk_repo_setup.md
