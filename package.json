@@ -1,8 +1,9 @@
 {
-    "name": "cdk-glue-iceberg-table",
-    "version": "0.3.1",
+    "name": "arceus",
+    "version": "0.0.0",
+    "private": true,
     "license": "MIT",
-    "description": "AWS CDK L2 construct to create and evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and partition changes that survive CloudFormation updates, via cdk deploy.",
+    "description": "Monorepo for the cdk-glue-iceberg-table package plus a CDK demo app that dogfoods it.",
     "author": "Rodrigo Carvajal",
     "repository": {
         "type": "git",
@@ -12,46 +13,18 @@
     "bugs": {
         "url": "https://github.com/ksco92/arceus/issues"
     },
-    "keywords": [
-        "aws",
-        "aws-cdk",
-        "awscdk",
-        "cdk",
-        "cloudformation",
-        "glue",
-        "glue-data-catalog",
-        "iceberg",
-        "apache-iceberg",
-        "data-catalog",
-        "data-lake",
-        "lakehouse",
-        "schema-evolution",
-        "data-engineering",
-        "l2-construct"
-    ],
-    "main": "dist/lib/iceberg/index.js",
-    "types": "dist/lib/iceberg/index.d.ts",
-    "files": [
-        "dist/lib/iceberg/**/*.js",
-        "dist/lib/iceberg/**/*.d.ts",
-        "README.md",
-        "LICENSE"
+    "workspaces": [
+        "packages/*"
     ],
     "scripts": {
-        "build": "tsc -p tsconfig.build.json",
-        "watch": "tsc -p tsconfig.build.json -w",
-        "test": "jest",
+        "build": "npm run build --workspace cdk-glue-iceberg-table",
+        "test": "npm run test --workspace cdk-glue-iceberg-table && jest",
+        "test:package": "npm run test --workspace cdk-glue-iceberg-table",
+        "test:demo": "jest",
+        "lint": "npm run lint --workspace cdk-glue-iceberg-table && eslint . --ext .ts,.tsx --report-unused-disable-directives --max-warnings=0 --fix --ignore-pattern '**/*.d.ts'",
         "cdk": "cdk",
         "deploy": "cdk deploy --require-approval=never",
-        "lint": "eslint . --ext .ts,.tsx --report-unused-disable-directives --max-warnings=0 --fix --ignore-pattern '**/*.d.ts'",
-        "clean": "rm -rf node_modules package-lock.json build cdk.out dist",
-        "dev": "npm run clean && npm i && npm run lint && npm run build && npm run test",
-        "prepublishOnly": "npm run build && npm test"
-    },
-    "peerDependencies": {
-        "@aws-cdk/aws-glue-alpha": "^2.258.1-alpha.0",
-        "aws-cdk-lib": "^2.258.1",
-        "constructs": "^10.0.0"
+        "clean": "rm -rf node_modules package-lock.json build cdk.out dist && npm run clean --workspace cdk-glue-iceberg-table"
     },
     "devDependencies": {
         "@aws-cdk/aws-glue-alpha": "^2.258.1-alpha.0",
@@ -73,8 +46,5 @@
     },
     "engines": {
         "node": ">=22.14"
-    },
-    "publishConfig": {
-        "access": "public"
     }
 }

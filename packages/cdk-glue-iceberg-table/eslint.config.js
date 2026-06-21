@@ -25,9 +25,6 @@ module.exports = [
             'coverage/**',
             'dist/**',
             'build/**',
-            // The package workspace has its own eslint config + tsconfig
-            // and is linted by `npm run lint --workspace cdk-glue-iceberg-table`.
-            'packages/**',
         ],
     },
     {

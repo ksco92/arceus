@@ -5,8 +5,12 @@ written with AI assistance.
 
 ## Version bumping
 
-Every PR merged to `main` must include a bump to the `version` field
-in `package.json`. Pick the level per semver:
+Every PR merged to `main` that changes the published package must
+include a bump to the `version` field in
+`packages/cdk-glue-iceberg-table/package.json` (the published
+manifest — the monorepo root `package.json` is private and
+unpublished, so its version is not released). Pick the level per
+semver:
 
 - **patch** (`0.1.0` → `0.1.1`) — bug fixes, doc-only changes, internal
   refactors that don't change the public API.
@@ -53,12 +57,18 @@ have the **Integration test** workflow
 (`.github/workflows/integ-test.yml`) run green on the PR head before
 merging. The trigger set is:
 
-- any file under `lib/`,
+- any construct source under
+  `packages/cdk-glue-iceberg-table/lib/iceberg/` (the published
+  construct the demo stacks deploy),
+- any demo stack under `lib/` (`lib/arceus-stack.ts`,
+  `lib/iceberg-evolution-stack.ts`, `lib/iceberg-dml-stack.ts`,
+  `lib/iceberg-surface-stack.ts`),
 - `bin/arceus.ts` (`cdk.json`'s `app:` entry — every `cdk` invocation
   parses it),
 - `cdk.json` (feature flags + the `app:` declaration),
-- `scripts/integration-test-evolution.sh` (the script the workflow
-  runs).
+- the integration scripts under `scripts/`
+  (`integration-test-evolution.sh`, `integration-test-dml.sh`,
+  `integration-test-surface.sh`).
 
 The workflow is gated — it does not fire on every PR because it runs
 real `cdk deploy`s against a sandbox AWS account and takes ~5 min.
@@ -81,8 +91,10 @@ Exemption list (no integ-test required):
 - `.github/workflows/integ-test.yml` itself — a broken `integ-test.yml`
   can't validate itself; review changes to this file knowing the
   next trigger-set PR is the first chance to confirm it still works.
-- `test/` (unit tests, exercised by `npm test` in `ci.yml`).
-- `package.json` if the only change is the `version` bump.
+- `test/` and `packages/cdk-glue-iceberg-table/test/` (unit tests,
+  exercised by `npm test` in `ci.yml`).
+- `packages/cdk-glue-iceberg-table/package.json` if the only change is
+  the `version` bump.
 
 When in doubt, run it.
 
@@ -94,9 +106,9 @@ required status checks`, the written policy is the only thing
 stopping a slip.
 
 `e2e-consumer/` consumes the **published** npm package, so every
-version bump in this repo's `package.json` should be followed by
-bumping `e2e-consumer/package-lock.json` to the same version once
-the publish workflow completes. The `^x.y.z` range in
+version bump in `packages/cdk-glue-iceberg-table/package.json` should
+be followed by bumping `e2e-consumer/package-lock.json` to the same
+version once the publish workflow completes. The `^x.y.z` range in
 `e2e-consumer/package.json` will keep the spec compatible; only the
 lockfile needs updating, in a small follow-up PR. The surface-anchor
 test only catches a rename when the lock pin matches the version
