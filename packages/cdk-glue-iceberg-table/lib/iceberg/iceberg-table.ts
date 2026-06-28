@@ -94,15 +94,17 @@ export interface IcebergColumn {
     readonly doc?: string;
 
     /**
-     * Pin this column to a specific Iceberg field id. Highly
-     * recommended for production tables: it lets you safely add,
-     * remove, and reorder columns across `cdk deploy`s without
-     * triggering Iceberg's silent-corruption-on-id-reuse trap. When
-     * omitted the construct assigns ids by position (1..N for the
-     * top-level columns), which is fine for fresh tables but unsafe
-     * once the table has data and you start dropping columns.
+     * Iceberg field id for this column. Required: every top-level
+     * column must be pinned to a stable, unique positive integer that
+     * you never reuse or reassign across deploys. That stability is the
+     * whole point — because data files reference fields by id, a fixed
+     * id lets you add, remove, and reorder columns safely without
+     * triggering Iceberg's silent-corruption-on-id-reuse trap. Pick the
+     * id once when you add the column and never change it; once a column
+     * is dropped, leave its id retired rather than giving it to a new
+     * column.
      */
-    readonly id?: number;
+    readonly id: number;
 }
 
 /** One partition spec field. */

@@ -216,6 +216,17 @@ new IcebergTable(this, 'Users', {
 });
 ```
 
+Every top-level column must declare an `id`: a stable, unique,
+positive integer you pick once and never reuse or reassign. Because
+Iceberg data files reference fields by id rather than by name, a fixed
+id is what lets you add, rename, and drop columns across deploys
+without corrupting old data — see
+[How do I evolve an Iceberg table schema](#how-do-i-evolve-an-iceberg-table-schema-add-rename-or-drop-a-column-in-cloudformation).
+Once a column is dropped, leave its id retired; never hand it to a new
+column. (Nested struct/list/map field ids are assigned automatically
+above the highest top-level id — only top-level column ids are
+caller-provided.)
+
 A table that exercises most of the surface (partitions, sort order,
 nested types, identifier fields, table properties, removal policy):
 
