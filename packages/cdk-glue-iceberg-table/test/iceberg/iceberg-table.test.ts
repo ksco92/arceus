@@ -15,6 +15,7 @@ import {
     ServicePrincipal,
 } from 'aws-cdk-lib/aws-iam';
 import {
+    IcebergColumn,
     IcebergDataFormat,
     IcebergFormatVersion,
     IcebergNullOrder,
@@ -47,6 +48,7 @@ const MINIMAL_COLUMNS = [
         name: 'id',
         type: IcebergType.LONG,
         required: true,
+        id: 1,
     },
 ];
 
@@ -125,16 +127,19 @@ describe('IcebergTable — happy path', () => {
                     name: 'id',
                     type: IcebergType.LONG,
                     required: true,
+                    id: 1,
                 },
                 {
                     name: 'occurred_at',
                     type: IcebergType.TIMESTAMPTZ,
                     required: true,
+                    id: 2,
                 },
                 {
                     name: 'customer_id',
                     type: IcebergType.LONG,
                     required: true,
+                    id: 3,
                 },
             ],
             location: 's3://my-bucket/events/',
@@ -189,6 +194,7 @@ describe('IcebergTable — happy path', () => {
                 {
                     name: 'always_optional',
                     type: IcebergType.STRING,
+                    id: 1,
                 },
             ],
             location: 's3://my-bucket/simple/',
@@ -225,6 +231,7 @@ describe('IcebergTable — happy path', () => {
                     name: 'region',
                     type: IcebergType.STRING,
                     required: true,
+                    id: 1,
                 },
             ],
             location: 's3://my-bucket/simple/',
@@ -267,6 +274,7 @@ describe('IcebergTable — happy path', () => {
                     name: 'occurred_at',
                     type: IcebergType.TIMESTAMPTZ,
                     required: true,
+                    id: 1,
                 },
             ],
             location: 's3://my-bucket/events/',
@@ -310,11 +318,13 @@ describe('IcebergTable — happy path', () => {
                     name: 'order_id',
                     type: IcebergType.LONG,
                     required: true,
+                    id: 1,
                 },
                 {
                     name: 'placed_at',
                     type: IcebergType.TIMESTAMPTZ,
                     required: true,
+                    id: 2,
                 },
             ],
             location: 's3://my-bucket/orders/',
@@ -370,11 +380,13 @@ describe('IcebergTable — happy path', () => {
                     name: 'order_id',
                     type: IcebergType.LONG,
                     required: true,
+                    id: 1,
                 },
                 {
                     name: 'customer_id',
                     type: IcebergType.LONG,
                     required: true,
+                    id: 2,
                 },
             ],
             location: 's3://my-bucket/orders/',
@@ -685,30 +697,32 @@ describe('IcebergTable — pinned field ids', () => {
         });
     });
 
-    it('fills auto-assigned ids around pinned ones without collision', () => {
+    it('honors arbitrary non-contiguous pinned ids', () => {
         const {
             stack, database,
         } = makeStack();
         new IcebergTable(stack, 'Tbl', {
             database,
-            tableName: 'mixed',
+            tableName: 'sparse',
             formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
-                    name: 'autoFirst',
+                    name: 'first',
                     type: IcebergType.LONG,
+                    id: 1,
                 },
                 {
-                    name: 'pinnedTwo',
+                    name: 'second',
                     type: IcebergType.STRING,
-                    id: 2,
+                    id: 5,
                 },
                 {
-                    name: 'autoNext',
+                    name: 'third',
                     type: IcebergType.STRING,
+                    id: 100,
                 },
             ],
-            location: 's3://my-bucket/mixed/',
+            location: 's3://my-bucket/sparse/',
         });
         const template = Template.fromStack(stack);
         template.hasResourceProperties('AWS::Glue::Table', {
@@ -719,15 +733,15 @@ describe('IcebergTable — pinned field ids', () => {
                             Fields: [
                                 Match.objectLike({
                                     Id: 1,
-                                    Name: 'autoFirst',
+                                    Name: 'first',
                                 }),
                                 Match.objectLike({
-                                    Id: 2,
-                                    Name: 'pinnedTwo',
+                                    Id: 5,
+                                    Name: 'second',
                                 }),
                                 Match.objectLike({
-                                    Id: 3,
-                                    Name: 'autoNext',
+                                    Id: 100,
+                                    Name: 'third',
                                 }),
                             ],
                         }),
@@ -735,6 +749,70 @@ describe('IcebergTable — pinned field ids', () => {
                 },
             },
         });
+    });
+
+    it('rejects a column that is missing its required id', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'missing',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'a',
+                    type: IcebergType.LONG,
+                    id: 1,
+                },
+                /// Cast through `unknown` to bypass the required-field
+                /// type check and exercise the runtime guard a jsii
+                /// Python/JS caller could still trip.
+                {
+                    name: 'b',
+                    type: IcebergType.STRING,
+                } as unknown as IcebergColumn,
+            ],
+            location: 's3://my-bucket/missing/',
+        })).toThrow(/column 'b' is missing a required id/);
+    });
+
+    it('rejects a column whose id is explicitly undefined', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'undef',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'a',
+                    type: IcebergType.LONG,
+                    id: undefined,
+                } as unknown as IcebergColumn,
+            ],
+            location: 's3://my-bucket/undef/',
+        })).toThrow(/column 'a' is missing a required id/);
+    });
+
+    it('rejects a column whose id is null', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'nullid',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'a',
+                    type: IcebergType.LONG,
+                    id: null,
+                } as unknown as IcebergColumn,
+            ],
+            location: 's3://my-bucket/nullid/',
+        })).toThrow(/column 'a' is missing a required id/);
     });
 
     it('rejects duplicate pinned ids', () => {
@@ -816,6 +894,7 @@ describe('IcebergTable — pinned field ids', () => {
                 {
                     name: 'list_col',
                     type: IcebergType.list(IcebergType.STRING),
+                    id: 101,
                 },
             ],
             location: 's3://my-bucket/nested/',
@@ -886,10 +965,12 @@ describe('IcebergTable — validation', () => {
                 {
                     name: 'a',
                     type: IcebergType.INT,
+                    id: 1,
                 },
                 {
                     name: 'a',
                     type: IcebergType.STRING,
+                    id: 2,
                 },
             ],
             location: 's3://my-bucket/simple/',
@@ -941,6 +1022,7 @@ describe('IcebergTable — validation', () => {
                     name: 'name',
                     type: IcebergType.STRING,
                     required: true,
+                    id: 1,
                 },
             ],
             location: 's3://my-bucket/simple/',
@@ -966,6 +1048,7 @@ describe('IcebergTable — validation', () => {
                     name: 'col',
                     type: IcebergType.STRING,
                     required: true,
+                    id: 1,
                 },
             ],
             location: 's3://my-bucket/simple/',
@@ -1029,6 +1112,7 @@ describe('IcebergTable — validation', () => {
                     name: 'name',
                     type: IcebergType.STRING,
                     required: true,
+                    id: 1,
                 },
             ],
             location: 's3://my-bucket/simple/',

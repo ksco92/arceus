@@ -82,11 +82,11 @@ export interface RenderedSchema {
 
 /** @internal */
 export function renderSchema(columns: IcebergColumn[]): RenderedSchema {
-    /// First pass: assign top-level ids. Pinned ids win; the rest are
-    /// filled with the smallest unused positive integers. Nested-type
-    /// ids continue above the highest top-level id so they never
-    /// collide with column ids.
-    const topLevelIds = assignTopLevelIds(columns);
+    /// First pass: collect and validate the caller-provided top-level
+    /// ids (every column pins its own; the construct never fills them).
+    /// Nested-type ids continue above the highest top-level id so they
+    /// never collide with column ids.
+    const topLevelIds = collectTopLevelIds(columns);
     let nextId = Math.max(...topLevelIds, columns.length) + 1;
     const ctx: IcebergRenderContext = {
         nextId: () => {
@@ -118,15 +118,18 @@ export function renderSchema(columns: IcebergColumn[]): RenderedSchema {
 }
 
 /**
- * Assign top-level field ids honoring user-pinned ids and filling
- * unspecified ones with the smallest unused positive integer.
- * Throws on duplicate or non-positive ids.
+ * Validate the caller-provided top-level field ids and return them in
+ * column order. Every column must pin an id (the construct no longer
+ * auto-assigns); each id must be a positive integer and unique across
+ * the column set. Throws on a missing, non-positive, or duplicate id.
  */
-function assignTopLevelIds(columns: IcebergColumn[]): number[] {
+function collectTopLevelIds(columns: IcebergColumn[]): number[] {
     const taken = new Set<number>();
-    for (const column of columns) {
-        if (column.id === undefined) {
-            continue;
+    return columns.map((column) => {
+        /// Defensive: a jsii Python/JS caller can still pass nothing
+        /// despite the required TypeScript type, so guard at runtime.
+        if (column.id === undefined || column.id === null) {
+            throw new Error(`column '${column.name}' is missing a required id`);
         }
         if (!Number.isInteger(column.id) || column.id < 1) {
             throw new Error(
@@ -137,19 +140,7 @@ function assignTopLevelIds(columns: IcebergColumn[]): number[] {
             throw new Error(`duplicate column id ${column.id} on column '${column.name}'`);
         }
         taken.add(column.id);
-    }
-    let cursor = 1;
-    return columns.map((column) => {
-        if (column.id !== undefined) {
-            return column.id;
-        }
-        while (taken.has(cursor)) {
-            cursor += 1;
-        }
-        taken.add(cursor);
-        const assigned = cursor;
-        cursor += 1;
-        return assigned;
+        return column.id;
     });
 }
 
