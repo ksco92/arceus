@@ -2,7 +2,7 @@
  * Iceberg primitive and nested type representation.
  *
  * Iceberg field types are serialized to a string when a primitive
- * (`int`, `long`, `decimal(10,2)`, ...) and to a JSON object embedded
+ * (`int`, `long`, `decimal(10, 2)`, ...) and to a JSON object embedded
  * as a string when nested (`list`, `map`, `struct`). The Glue CFN
  * surface accepts either form in `IcebergStructField.type`, so the L2
  * always renders to `string`.
@@ -357,7 +357,19 @@ export class IcebergType {
     public _render(ctx: IcebergRenderContext): string {
         switch (this.kind) {
             case IcebergTypeKind.DECIMAL:
-                return `decimal(${this.decimalPrecision},${this.decimalScale})`;
+                /// The space after the comma is load-bearing: Iceberg's
+                /// canonical decimal form is `decimal(P, S)`, and that is
+                /// exactly what Glue writes into the stored table metadata.
+                /// Emitting `decimal(P,S)` (no space) makes every later
+                /// schema-identical UpdateTable submit a type string that
+                /// differs textually from the stored one; Glue reads that as
+                /// a phantom column change that adds no schema, then its
+                /// set-current-schema step dereferences a "last added schema"
+                /// that never got added and fails the deploy with
+                /// `Cannot set last added schema: no schema has been added`.
+                /// Matching the canonical spacing keeps the submitted schema
+                /// byte-identical to the live one. See issue #40.
+                return `decimal(${this.decimalPrecision}, ${this.decimalScale})`;
             case IcebergTypeKind.FIXED:
                 return `fixed[${this.fixedLength}]`;
             case IcebergTypeKind.LIST: {
