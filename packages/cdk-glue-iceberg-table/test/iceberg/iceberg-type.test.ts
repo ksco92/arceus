@@ -170,10 +170,25 @@ describe('IcebergType — primitive', () => {
 });
 
 describe('IcebergType — decimal', () => {
-    it('renders decimal(P,S)', () => {
+    it('renders decimal(P, S) in Iceberg canonical form (space after the comma)', () => {
+        /// The space is required: Glue stores decimals as `decimal(P, S)`,
+        /// so a spaceless render makes schema-identical updates fail with
+        /// `Cannot set last added schema`. Regression guard for issue #40.
         const type = IcebergType.decimal(10, 2);
-        expect(type._render(makeContext())).toBe('decimal(10,2)');
+        expect(type._render(makeContext())).toBe('decimal(10, 2)');
         expect(type.isDecimal()).toBe(true);
+    });
+
+    it('renders a decimal nested inside a struct in canonical form', () => {
+        const type = IcebergType.struct([
+            {
+                name: 'amount',
+                type: IcebergType.decimal(12, 4),
+                required: true,
+            },
+        ]);
+        const repr = JSON.parse(type._render(makeContext()));
+        expect(repr.fields[0].type).toBe('decimal(12, 4)');
     });
 
     it.each([
