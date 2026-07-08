@@ -110,8 +110,8 @@ new IcebergTable(this, 'OrdersTable', {
         { name: 'placed_at',   type: IcebergType.TIMESTAMPTZ, required: true, id: 3 },
     ],
     partitionSpec: [
-        { sourceColumn: 'placed_at',   transform: IcebergPartitionTransform.DAY },
-        { sourceColumn: 'customer_id', transform: IcebergPartitionTransform.bucket(16) },
+        { sourceColumn: 'placed_at',   transform: IcebergPartitionTransform.DAY,        fieldId: 1000 },
+        { sourceColumn: 'customer_id', transform: IcebergPartitionTransform.bucket(16), fieldId: 1001 },
     ],
     identifierFieldNames: ['order_id'],
 });
@@ -144,8 +144,8 @@ IcebergTable(self, "OrdersTable",
         {"name": "placed_at", "type": IcebergType.TIMESTAMPTZ, "required": True, "id": 3},
     ],
     partition_spec=[
-        {"source_column": "placed_at", "transform": IcebergPartitionTransform.DAY},
-        {"source_column": "customer_id", "transform": IcebergPartitionTransform.bucket(16)},
+        {"source_column": "placed_at", "transform": IcebergPartitionTransform.DAY, "field_id": 1000},
+        {"source_column": "customer_id", "transform": IcebergPartitionTransform.bucket(16), "field_id": 1001},
     ],
     identifier_field_names=["order_id"],
 )
@@ -323,10 +323,12 @@ new IcebergTable(this, 'OrdersTable', {
         {
             sourceColumn: 'placed_at',
             transform: IcebergPartitionTransform.DAY,
+            fieldId: 1000,
         },
         {
             sourceColumn: 'customer_id',
             transform: IcebergPartitionTransform.bucket(16),
+            fieldId: 1001,
         },
     ],
     sortOrder: [
@@ -357,6 +359,18 @@ new IcebergTable(this, 'OrdersTable', {
     removalPolicy: RemovalPolicy.DESTROY,
 });
 ```
+
+Each partition field also pins a `fieldId`: an integer of 1000 or
+above (the Iceberg spec reserves lower ids for schema columns), unique
+across the table's entire partition-spec history. The discipline is
+the inverse of the column-id rule. A column keeps its id forever; a
+partition field keeps its id only while it stays untouched. Change
+anything about a field — swap `month` for `day`, point it at a
+different source column — and it becomes a *new* field that needs a
+fresh, never-before-used id, while the old id retires with the old
+spec. Reusing a retired id (or reassigning an id to a different field)
+produces a table that Athena still reads but Spark and Trino reject
+with `ValidationException: Conflicting partition fields`.
 
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:
@@ -448,8 +462,29 @@ again. The construct passes the new schema to Glue's `UpdateTable`,
 which writes a new `metadata.json` with a new `schema-id`; existing
 data files stay readable because each column's `id` is pinned and
 never reused. Adds, renames (same `id`, new `name`), and drops all
-flow through `cdk deploy` alone — no out-of-band SQL DDL. The same
-applies to `partitionSpec`.
+flow through `cdk deploy` alone — no out-of-band SQL DDL.
+
+Partition evolution flows the same way, with one extra rule on
+`fieldId`: a changed partition field is a new partition field. To move
+a table from `month(placed_at)` to `day(placed_at)`, drop the month
+entry and add a day entry under a fresh `fieldId` — never recycle the
+month field's id:
+
+```typescript
+partitionSpec: [
+    // was: { sourceColumn: 'placed_at', transform: IcebergPartitionTransform.MONTH, fieldId: 1000 },
+    {
+        sourceColumn: 'placed_at',
+        transform: IcebergPartitionTransform.DAY,
+        fieldId: 1001,
+    },
+],
+```
+
+Old data files written under the month spec stay readable; new writes
+partition by day. Reusing `1000` for the day field instead corrupts
+the spec history for strict engines (Spark, Trino) while Athena keeps
+working — the failure only surfaces at Spark runtime.
 
 ### Inserting and querying
 
@@ -532,7 +567,8 @@ the construct does **not** prevent. See the next section.)
 ## Known limitations
 
 - **Field-id reuse is not detected across deploys.** If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate column id N` validator), but it doesn't compare against the live table state. The safe workflow is to always pin `id` explicitly and treat dropped ids as retired forever; never let CDK reassign an id that has ever been used.
-- **Partition field ids are positional and not pinnable.** The construct allocates partition `fieldId` densely from 1000 in the order partitions appear in `partitionSpec`. Reordering the array across deploys reassigns those ids for unchanged logical partitions, which is the partition-spec analog of the column-id-reuse footgun above. There is no `IcebergPartitionField.fieldId` pinning prop today. The safe workflow is append-only: add new partition fields at the end of `partitionSpec`, and only drop the trailing ones.
+- **Partition field-id reuse is not detected across deploys either.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), but it cannot tell that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. The safe workflow: treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id.
+- **`last-partition-id` is written by Glue, not by the construct.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The repo's integration test asserts the counter keeps up with the highest supplied field id after a partition evolution, but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter — if you mix CDK-managed and engine-managed partition evolution, verify the counter in `metadata.json` before trusting engine-side changes.
 - **CREATE-only metadata operation.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that. Subsequent deploys use Glue's normal `UpdateTable` path, which writes new Iceberg metadata in-place.
 - **Format version is immutable after CREATE.** The `formatVersion` prop is read once at table creation; changing it later requires a destroy + recreate.
 - **`merge-on-read` requires v2.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
@@ -555,9 +591,10 @@ CloudFormation template.
 Change the `columns` array and run `cdk deploy` again. The construct
 passes the new schema to Glue's `UpdateTable`, which writes a new
 `metadata.json` with a new `schema-id`; existing data files stay
-readable because each column's `id` is pinned and never reused. The
-same applies to `partitionSpec`. See [Evolving schema and
-partitions](#evolving-schema-and-partitions).
+readable because each column's `id` is pinned and never reused.
+Partition changes work the same way, except a changed partition field
+takes a fresh `fieldId` instead of keeping its old one. See [Evolving
+schema and partitions](#evolving-schema-and-partitions).
 
 ### Does CloudFormation support Iceberg tables natively?
 
@@ -583,8 +620,9 @@ IDs for safe evolution, and `grantRead` / `grantWrite` helpers. See
 
 Pass a `partitionSpec` of `IcebergPartitionTransform` entries —
 `identity`, `bucket(N)`, `truncate(W)`, `year`, `month`, `day`, `hour`,
-or `void`. Each transform is validated against its source column's type
-at synth time. See [Using `IcebergTable`](#using-icebergtable).
+or `void` — each pinned to a `fieldId` of 1000 or above. Transforms are
+validated against their source column's type at synth time. See
+[Using `IcebergTable`](#using-icebergtable).
 
 ### Does it work with Athena and Lake Formation?
 

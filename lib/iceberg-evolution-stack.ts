@@ -68,8 +68,9 @@ export class IcebergEvolutionStack extends Stack {
             2,
             3,
             4,
+            5,
         ].includes(step)) {
-            throw new Error(`evolutionStep must be 1, 2, 3, or 4, got '${stepRaw}'`);
+            throw new Error(`evolutionStep must be 1, 2, 3, 4, or 5, got '${stepRaw}'`);
         }
 
         const importedBucket = Bucket.fromBucketName(
@@ -209,6 +210,7 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
     const dayPartition: IcebergPartitionField = {
         sourceColumn: 'signed_up_at',
         transform: IcebergPartitionTransform.DAY,
+        fieldId: 1000,
     };
     /// `customer_id` is partitioned via `bucket(8)` from step 3 onward,
     /// and removed in step 4. The transform deliberately targets a
@@ -217,6 +219,17 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
     const customerBucketPartition: IcebergPartitionField = {
         sourceColumn: 'customer_id',
         transform: IcebergPartitionTransform.bucket(8),
+        fieldId: 1001,
+    };
+    /// Step 5 changes the transform on `signed_up_at` from `day` to
+    /// `month`. A changed transform is a NEW partition field, so it
+    /// takes the next never-used id (1002) — reusing 1000 here would
+    /// reproduce the "Conflicting partition fields" corruption from
+    /// issue #43, and 1001 stays retired with the dropped bucket field.
+    const monthPartition: IcebergPartitionField = {
+        sourceColumn: 'signed_up_at',
+        transform: IcebergPartitionTransform.MONTH,
+        fieldId: 1002,
     };
     if (step === 1 || step === 2) {
         return [
@@ -231,7 +244,13 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
     }
     /// Step 4: DROP the bucket partition on customer_id while keeping
     /// the column itself in the schema.
+    if (step === 4) {
+        return [
+            dayPartition,
+        ];
+    }
+    /// Step 5: CHANGE the transform on signed_up_at (day -> month).
     return [
-        dayPartition,
+        monthPartition,
     ];
 }

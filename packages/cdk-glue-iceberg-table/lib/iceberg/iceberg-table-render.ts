@@ -153,6 +153,7 @@ export function validatePartitionSpec(
         return;
     }
     const partitionNames = new Set<string>();
+    const partitionFieldIds = new Set<number>();
     for (const field of partitionSpec) {
         const source = columnByName.get(field.sourceColumn);
         if (source === undefined) {
@@ -166,6 +167,25 @@ export function validatePartitionSpec(
             throw new Error(`duplicate partition field name: ${partitionName}`);
         }
         partitionNames.add(partitionName);
+        /// Defensive: a jsii Python/JS caller can still pass nothing
+        /// despite the required TypeScript type, so guard at runtime.
+        if (field.fieldId === undefined || field.fieldId === null) {
+            throw new Error(
+                `partition field '${partitionName}' is missing a required fieldId`,
+            );
+        }
+        if (!Number.isInteger(field.fieldId) || field.fieldId < 1000) {
+            throw new Error(
+                `partition field '${partitionName}' has invalid fieldId ${field.fieldId}; `
+                + 'partition field ids must be integers >= 1000',
+            );
+        }
+        if (partitionFieldIds.has(field.fieldId)) {
+            throw new Error(
+                `duplicate partition fieldId ${field.fieldId} on partition field '${partitionName}'`,
+            );
+        }
+        partitionFieldIds.add(field.fieldId);
     }
 }
 
@@ -198,16 +218,11 @@ export function renderPartitionSpec(
     if (partitionSpec === undefined || partitionSpec.length === 0) {
         return undefined;
     }
-    const fields: CfnTable.IcebergPartitionFieldProperty[] = partitionSpec.map((field, index) => ({
+    const fields: CfnTable.IcebergPartitionFieldProperty[] = partitionSpec.map((field) => ({
         name: field.name ?? defaultPartitionName(field),
         sourceId: columnByName.get(field.sourceColumn)!.id,
         transform: field.transform.toTransformString(),
-        /// Per the Iceberg spec, partition field ids must be in the
-        /// range [1000, 9999]; the construct allocates them densely
-        /// from 1000 in declaration order. Reordering partitions
-        /// across deploys reassigns ids — see the "partition field id
-        /// reuse" entry in the README's Known limitations.
-        fieldId: 1000 + index,
+        fieldId: field.fieldId,
     }));
     return {
         specId: 0,

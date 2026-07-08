@@ -342,10 +342,12 @@ export class ArceusStack extends Stack {
                 {
                     sourceColumn: 'placed_at',
                     transform: IcebergPartitionTransform.DAY,
+                    fieldId: 1000,
                 },
                 {
                     sourceColumn: 'customer_id',
                     transform: IcebergPartitionTransform.bucket(16),
+                    fieldId: 1001,
                 },
             ],
             sortOrder: [
@@ -417,6 +419,7 @@ export class ArceusStack extends Stack {
                 {
                     sourceColumn: 'occurred_at',
                     transform: IcebergPartitionTransform.HOUR,
+                    fieldId: 1000,
                 },
             ],
             removalPolicy: RemovalPolicy.DESTROY,

@@ -19,6 +19,7 @@ import {
     IcebergDataFormat,
     IcebergFormatVersion,
     IcebergNullOrder,
+    IcebergPartitionField,
     IcebergPartitionTransform,
     IcebergSortDirection,
     IcebergTable,
@@ -147,10 +148,12 @@ describe('IcebergTable — happy path', () => {
                 {
                     sourceColumn: 'occurred_at',
                     transform: IcebergPartitionTransform.DAY,
+                    fieldId: 1000,
                 },
                 {
                     sourceColumn: 'customer_id',
                     transform: IcebergPartitionTransform.bucket(16),
+                    fieldId: 1001,
                 },
             ],
         });
@@ -174,6 +177,69 @@ describe('IcebergTable — happy path', () => {
                                     Transform: 'bucket[16]',
                                     FieldId: 1001,
                                 },
+                            ],
+                        },
+                    }),
+                },
+            },
+        });
+    });
+
+    it('renders pinned partition field ids verbatim, not by position', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'events',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'occurred_at',
+                    type: IcebergType.TIMESTAMPTZ,
+                    required: true,
+                    id: 1,
+                },
+                {
+                    name: 'customer_id',
+                    type: IcebergType.LONG,
+                    required: true,
+                    id: 2,
+                },
+            ],
+            location: 's3://my-bucket/events/',
+            /// Non-contiguous, non-sorted ids: the first declared field
+            /// carries the higher id. A positional allocator would emit
+            /// 1000/1001 here instead.
+            partitionSpec: [
+                {
+                    sourceColumn: 'occurred_at',
+                    transform: IcebergPartitionTransform.MONTH,
+                    fieldId: 1007,
+                },
+                {
+                    sourceColumn: 'customer_id',
+                    transform: IcebergPartitionTransform.bucket(16),
+                    fieldId: 1003,
+                },
+            ],
+        });
+        const template = Template.fromStack(stack);
+        template.hasResourceProperties('AWS::Glue::Table', {
+            OpenTableFormatInput: {
+                IcebergInput: {
+                    IcebergTableInput: Match.objectLike({
+                        PartitionSpec: {
+                            SpecId: 0,
+                            Fields: [
+                                Match.objectLike({
+                                    Name: 'occurred_at_month',
+                                    FieldId: 1007,
+                                }),
+                                Match.objectLike({
+                                    Name: 'customer_id_bucket',
+                                    FieldId: 1003,
+                                }),
                             ],
                         },
                     }),
@@ -239,6 +305,7 @@ describe('IcebergTable — happy path', () => {
                 {
                     sourceColumn: 'region',
                     transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1000,
                 },
             ],
         });
@@ -283,6 +350,7 @@ describe('IcebergTable — happy path', () => {
                     sourceColumn: 'occurred_at',
                     transform: IcebergPartitionTransform.HOUR,
                     name: 'hourly',
+                    fieldId: 1000,
                 },
             ],
         });
@@ -502,6 +570,7 @@ describe('IcebergTable — happy path', () => {
                 {
                     sourceColumn: 'id',
                     transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1000,
                 },
             ],
             sortOrder: [
@@ -1004,6 +1073,7 @@ describe('IcebergTable — validation', () => {
                 {
                     sourceColumn: 'who_dis',
                     transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1000,
                 },
             ],
         })).toThrow(/unknown column 'who_dis'/);
@@ -1030,6 +1100,7 @@ describe('IcebergTable — validation', () => {
                 {
                     sourceColumn: 'name',
                     transform: IcebergPartitionTransform.DAY,
+                    fieldId: 1000,
                 },
             ],
         })).toThrow(/day.*date/);
@@ -1057,14 +1128,150 @@ describe('IcebergTable — validation', () => {
                     sourceColumn: 'col',
                     transform: IcebergPartitionTransform.IDENTITY,
                     name: 'p',
+                    fieldId: 1000,
                 },
                 {
                     sourceColumn: 'col',
                     transform: IcebergPartitionTransform.IDENTITY,
                     name: 'p',
+                    fieldId: 1001,
                 },
             ],
         })).toThrow(/duplicate partition field name/);
+    });
+
+    it('rejects a partition field that is missing its required fieldId', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/simple/',
+            /// Cast through `unknown` to bypass the required-field
+            /// type check and exercise the runtime guard a jsii
+            /// Python/JS caller could still trip.
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                } as unknown as IcebergPartitionField,
+            ],
+        })).toThrow(/partition field 'id' is missing a required fieldId/);
+    });
+
+    it('rejects a partition field whose fieldId is explicitly undefined', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/simple/',
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: undefined,
+                } as unknown as IcebergPartitionField,
+            ],
+        })).toThrow(/partition field 'id' is missing a required fieldId/);
+    });
+
+    it('rejects a partition field whose fieldId is null', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/simple/',
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: null,
+                } as unknown as IcebergPartitionField,
+            ],
+        })).toThrow(/partition field 'id' is missing a required fieldId/);
+    });
+
+    it('rejects a partition fieldId below 1000', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/simple/',
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 999,
+                },
+            ],
+        })).toThrow(/partition field 'id' has invalid fieldId 999/);
+    });
+
+    it('rejects a fractional partition fieldId', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/simple/',
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1000.5,
+                },
+            ],
+        })).toThrow(/partition field 'id' has invalid fieldId 1000.5/);
+    });
+
+    it('rejects duplicate partition fieldIds', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'occurred_at',
+                    type: IcebergType.TIMESTAMPTZ,
+                    required: true,
+                    id: 1,
+                },
+            ],
+            location: 's3://my-bucket/simple/',
+            partitionSpec: [
+                {
+                    sourceColumn: 'occurred_at',
+                    transform: IcebergPartitionTransform.MONTH,
+                    fieldId: 1000,
+                },
+                {
+                    sourceColumn: 'occurred_at',
+                    transform: IcebergPartitionTransform.DAY,
+                    fieldId: 1000,
+                },
+            ],
+        })).toThrow(/duplicate partition fieldId 1000 on partition field 'occurred_at_day'/);
     });
 
     it('rejects an empty sortOrder when provided', () => {
