@@ -37,12 +37,15 @@ function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
     }));
 }
 
-function partitionsAt(step: number | string): string[] {
+function partitionsAt(step: number | string): Array<{ Name: string; FieldId: number }> {
     const template = synthAt(step);
     const tables = template.findResources('AWS::Glue::Table');
     const props = Object.values(tables)[0].Properties;
     const fields = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.PartitionSpec.Fields;
-    return fields.map((field: { Name: string }) => field.Name);
+    return fields.map((field: { Name: string; FieldId: number }) => ({
+        Name: field.Name,
+        FieldId: field.FieldId,
+    }));
 }
 
 describe('IcebergEvolutionStack — schema evolution', () => {
@@ -117,28 +120,52 @@ describe('IcebergEvolutionStack — schema evolution', () => {
 });
 
 describe('IcebergEvolutionStack — partition evolution', () => {
-    it('step 1 has a single day(signed_up_at) partition', () => {
+    it('step 1 has a single day(signed_up_at) partition pinned at 1000', () => {
         expect(partitionsAt(1)).toEqual([
-            'signed_up_at_day',
+            {
+                Name: 'signed_up_at_day',
+                FieldId: 1000,
+            },
         ]);
     });
 
     it('step 2 keeps the single partition while ADDing the region column', () => {
         expect(partitionsAt(2)).toEqual([
-            'signed_up_at_day',
+            {
+                Name: 'signed_up_at_day',
+                FieldId: 1000,
+            },
         ]);
     });
 
-    it('step 3 ADDs a bucket(8)(customer_id) partition during the rename', () => {
+    it('step 3 ADDs a bucket(8)(customer_id) partition at fresh id 1001', () => {
         expect(partitionsAt(3)).toEqual([
-            'signed_up_at_day',
-            'customer_id_bucket',
+            {
+                Name: 'signed_up_at_day',
+                FieldId: 1000,
+            },
+            {
+                Name: 'customer_id_bucket',
+                FieldId: 1001,
+            },
         ]);
     });
 
     it('step 4 DROPs the customer_id partition (column stays in the schema)', () => {
         expect(partitionsAt(4)).toEqual([
-            'signed_up_at_day',
+            {
+                Name: 'signed_up_at_day',
+                FieldId: 1000,
+            },
+        ]);
+    });
+
+    it('step 5 CHANGEs the transform day -> month under a fresh id, never reusing 1000', () => {
+        expect(partitionsAt(5)).toEqual([
+            {
+                Name: 'signed_up_at_month',
+                FieldId: 1002,
+            },
         ]);
     });
 });
@@ -162,7 +189,7 @@ describe('IcebergEvolutionStack — wiring', () => {
     });
 
     it('rejects an out-of-range step', () => {
-        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, or 4/);
+        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, or 5/);
     });
 
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {

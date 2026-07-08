@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # End-to-end integration test for IcebergTable schema + partition
-# evolution. Drives the `IcebergEvolutionStack` through four real
+# evolution. Drives the `IcebergEvolutionStack` through five real
 # `cdk deploy`s and verifies the resulting Glue / Iceberg metadata
 # after each.
 #
@@ -123,6 +123,55 @@ assert_partitions() {
     fi
 }
 
+# Issue #43 regression check. Walks the FULL partition-spec history in
+# the current metadata JSON and enforces the two invariants a partition
+# evolution must uphold for strict engines (Spark, Trino):
+#   1. no partition field-id is bound to two different
+#      (source-id, transform) pairs across specs — the exact corruption
+#      behind "ValidationException: Conflicting partition fields";
+#   2. last-partition-id has advanced to the highest field-id in any
+#      spec, so a later engine-side evolution allocates from the right
+#      counter instead of colliding.
+assert_partition_history() {
+    META_LOC=$(aws glue get-table \
+        --database-name "$DATABASE" \
+        --name "$TABLE" \
+        --region "$AWS_REGION" \
+        --query 'Table.Parameters.metadata_location' \
+        --output text)
+    if aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null \
+        | python3 -c "
+import json, sys
+m = json.load(sys.stdin)
+specs = m['partition-specs']
+bindings = {}
+conflicts = []
+max_field_id = 0
+for spec in specs:
+    for f in spec['fields']:
+        binding = (f['source-id'], f['transform'])
+        max_field_id = max(max_field_id, f['field-id'])
+        previous = bindings.setdefault(f['field-id'], binding)
+        if previous != binding:
+            conflicts.append((f['field-id'], previous, binding))
+print('spec-count', len(specs))
+print('partition-field-ids', ','.join(str(i) for i in sorted(bindings)))
+print('last-partition-id', m['last-partition-id'])
+if conflicts:
+    for field_id, a, b in conflicts:
+        print(f'CONFLICT: field-id {field_id} bound to both {a} and {b}')
+    sys.exit(1)
+if m['last-partition-id'] < max_field_id:
+    print(f'STALE COUNTER: last-partition-id {m[\"last-partition-id\"]} < max field-id {max_field_id}')
+    sys.exit(1)
+"; then
+        green "  partition-spec history consistent ✓"
+    else
+        red   "  partition-spec history violates Iceberg invariants ✗"
+        return 1
+    fi
+}
+
 deploy_step() {
     local step="$1"
     header "STEP $step — cdk deploy"
@@ -227,6 +276,33 @@ if [ "$COUNT" -ge 4 ]; then
     green "  all 4 pre-existing rows queryable after drop ✓"
 else
     red "  expected at least 4 rows, got $COUNT"; echo "$ROWS"; exit 1
+fi
+
+################################################
+################################################
+# Step 5: CHANGE the partition transform on signed_up_at from day to
+# month — the issue #43 scenario. The new field takes the fresh id
+# 1002; the retired day (1000) and bucket (1001) fields stay behind in
+# the spec history, and the whole history must remain conflict-free.
+
+deploy_step 5
+
+header "VERIFY step 5 (CHANGE partition transform day -> month)"
+assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
+assert_partitions "signed_up_at_month"
+assert_partition_history
+
+header "VERIFY table still readable and writable under the evolved spec"
+run_athena "INSERT INTO ${DATABASE}.${TABLE} VALUES
+  (14, 'e@example.com', TIMESTAMP '2026-03-05 09:00:00 UTC')" > /dev/null
+yellow "  inserted 1 row under the month spec"
+
+ROWS=$(run_athena "SELECT customer_id FROM ${DATABASE}.${TABLE} ORDER BY customer_id")
+COUNT=$(echo "$ROWS" | tr '\t' '\n' | grep -c '^[0-9][0-9]$' || true)
+if [ "$COUNT" -ge 5 ]; then
+    green "  rows written under day + month specs all queryable ✓"
+else
+    red "  expected at least 5 rows, got $COUNT"; echo "$ROWS"; exit 1
 fi
 
 ################################################

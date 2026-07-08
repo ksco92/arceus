@@ -106,6 +106,7 @@ export class IcebergDmlStack extends Stack {
                 {
                     sourceColumn: 'account_id',
                     transform: IcebergPartitionTransform.bucket(4),
+                    fieldId: 1000,
                 },
             ],
             sortOrder: [

@@ -144,30 +144,37 @@ export class IcebergSurfaceStack extends Stack {
                 {
                     sourceColumn: 'year_source',
                     transform: IcebergPartitionTransform.YEAR,
+                    fieldId: 1000,
                 },
                 {
                     sourceColumn: 'month_source',
                     transform: IcebergPartitionTransform.MONTH,
+                    fieldId: 1001,
                 },
                 {
                     sourceColumn: 'day_source',
                     transform: IcebergPartitionTransform.DAY,
+                    fieldId: 1002,
                 },
                 {
                     sourceColumn: 'hour_source',
                     transform: IcebergPartitionTransform.HOUR,
+                    fieldId: 1003,
                 },
                 {
                     sourceColumn: 'user_id',
                     transform: IcebergPartitionTransform.bucket(8),
+                    fieldId: 1004,
                 },
                 {
                     sourceColumn: 'email',
                     transform: IcebergPartitionTransform.truncate(4),
+                    fieldId: 1005,
                 },
                 {
                     sourceColumn: 'value',
                     transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1006,
                 },
             ],
             removalPolicy: RemovalPolicy.DESTROY,
