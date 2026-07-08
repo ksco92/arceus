@@ -9,7 +9,7 @@
     "dependencies": {
         "@aws-cdk/aws-glue-alpha": "^2.258.1-alpha.0",
         "aws-cdk-lib": "^2.258.1",
-        "cdk-glue-iceberg-table": "^0.5.0",
+        "cdk-glue-iceberg-table": "^0.6.0",
         "constructs": "^10.0.0"
     },
     "devDependencies": {
