@@ -96,6 +96,7 @@ pip install 'aws-cdk-lib>=2.273.0' 'constructs>=10.8.1'
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { Database } from 'aws-cdk-lib/aws-glue';
 import {
+    IcebergFormatVersion,
     IcebergTable,
     IcebergType,
     IcebergPartitionTransform,
@@ -118,6 +119,7 @@ new IcebergTable(this, 'OrdersTable', {
         { sourceColumn: 'customer_id', transform: IcebergPartitionTransform.bucket(16), fieldId: 1001 },
     ],
     identifierFieldNames: ['order_id'],
+    formatVersion: IcebergFormatVersion.V2,
 });
 ```
 
@@ -130,6 +132,7 @@ The same table in Python — the API mirrors TypeScript with
 from aws_cdk.aws_s3 import Bucket
 from aws_cdk.aws_glue import Database
 from cdk_glue_iceberg_table import (
+    IcebergFormatVersion,
     IcebergTable,
     IcebergType,
     IcebergPartitionTransform,
@@ -152,6 +155,7 @@ IcebergTable(self, "OrdersTable",
         {"source_column": "customer_id", "transform": IcebergPartitionTransform.bucket(16), "field_id": 1001},
     ],
     identifier_field_names=["order_id"],
+    format_version=IcebergFormatVersion.V2,
 )
 ```
 
@@ -185,6 +189,7 @@ import {
     Database,
 } from 'aws-cdk-lib/aws-glue';
 import {
+    IcebergFormatVersion,
     IcebergTable,
     IcebergType,
 } from 'cdk-glue-iceberg-table';
@@ -217,6 +222,7 @@ new IcebergTable(this, 'Users', {
         },
     ],
     location: `s3://${bucket.bucketName}/analytics/users/`,
+    formatVersion: IcebergFormatVersion.V2,
 });
 ```
 
