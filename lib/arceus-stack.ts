@@ -221,6 +221,7 @@ export class ArceusStack extends Stack {
             databaseName: databaseName,
             description: 'Demo Iceberg tables for the arceus IcebergTable construct.',
             locationUri: `s3://${dataLakeBucket.bucketName}/${databaseName}/`,
+            removalPolicy: RemovalPolicy.DESTROY,
         });
 
         /// /////////////////////////////////////////////////
