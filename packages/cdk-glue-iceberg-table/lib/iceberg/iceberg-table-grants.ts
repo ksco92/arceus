@@ -111,15 +111,13 @@ export function grantSplit(
             },
         });
     }
-    if (args.bucketActions.length > 0) {
-        Grant.addToPrincipal({
-            grantee,
-            actions: args.bucketActions,
-            resourceArns: [
-                args.bucketArn,
-            ],
-        });
-    }
+    Grant.addToPrincipal({
+        grantee,
+        actions: args.bucketActions,
+        resourceArns: [
+            args.bucketArn,
+        ],
+    });
     Grant.addToPrincipal({
         grantee,
         actions: args.objectActions,
