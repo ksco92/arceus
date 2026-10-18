@@ -186,6 +186,9 @@ A minimal table:
 
 ```typescript
 import {
+    Bucket,
+} from 'aws-cdk-lib/aws-s3';
+import {
     Database,
 } from 'aws-cdk-lib/aws-glue';
 import {
@@ -193,6 +196,8 @@ import {
     IcebergTable,
     IcebergType,
 } from 'cdk-glue-iceberg-table';
+
+const bucket = new Bucket(this, 'Warehouse');
 
 const db = new Database(this, 'Db', {
     databaseName: 'analytics',
