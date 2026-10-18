@@ -8,7 +8,7 @@
 [![types](https://img.shields.io/npm/types/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![downloads](https://img.shields.io/npm/dw/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![last commit](https://img.shields.io/github/last-commit/ksco92/arceus.svg)](https://github.com/ksco92/arceus/commits/main)
-[![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](LICENSE)
+[![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](https://github.com/ksco92/arceus/blob/main/LICENSE)
 
 **`cdk-glue-iceberg-table` is the AWS CDK L2 construct for creating
 and evolving Apache Iceberg tables in the AWS Glue Data Catalog.** It
@@ -661,4 +661,4 @@ Development, the monorepo layout, and the demo app live in [CONTRIBUTING.md](htt
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/ksco92/arceus/blob/main/LICENSE).
