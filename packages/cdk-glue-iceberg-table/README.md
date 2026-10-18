@@ -43,10 +43,10 @@ motivating CDK issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issue
 documents the only working shape and the silent-corruption traps you
 hit by getting it slightly wrong. This construct implements that
 shape, refuses to emit the unsafe alternatives, and pins Iceberg field
-IDs so schema evolution never orphans existing data. It is the basis
-of the upstream proposal to land an `IcebergTable` in
-`@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988));
-this package tracks that proposal and stays current with it.
+IDs so schema evolution never orphans existing data. It was the basis
+of an upstream proposal to land an `IcebergTable` in
+`@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988)),
+closed unmerged in September 2026.
 
 ### How it compares
 
