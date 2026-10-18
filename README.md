@@ -71,10 +71,12 @@ Python (PyPI):
 pip install cdk-glue-iceberg-table
 ```
 
-Peer dependencies (your CDK app must already have these). Version
-0.7.0 requires `aws-cdk-lib` 2.273.0 or newer and `constructs` 10.8.1
-or newer, and Node.js 22.14 or newer for TypeScript / JavaScript. For
-TypeScript / JavaScript:
+Peer dependencies (your CDK app must already have these). This
+release requires `aws-cdk-lib` 2.273.0 or newer and `constructs`
+10.8.1 or newer, plus Node.js 22.14 or newer for both languages (the
+Python package runs under Node.js through jsii).
+
+For TypeScript / JavaScript:
 
 ```bash
 npm install aws-cdk-lib@^2.273.0 constructs@^10.8.1
