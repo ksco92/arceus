@@ -25,6 +25,9 @@ import {
     IcebergTable,
     IcebergType,
 } from '../../lib/iceberg';
+import {
+    grantSplit,
+} from '../../lib/iceberg/iceberg-table-grants';
 
 function makeStack(): { stack: Stack; database: Database } {
     const app = new App();
@@ -1502,6 +1505,34 @@ describe('IcebergTable — grants', () => {
         const objectStatements = statementsByAction(statements, 's3:PutObject');
         expect(objectStatements).toHaveLength(1);
         expect(resolvedResourceString(stack, objectStatements[0])).toContain('my-bucket/simple/*');
+    });
+
+    it('grantSplit with no bucket actions emits no bucket-level statement', () => {
+        const {
+            stack,
+        } = makeStack();
+        const role = new Role(stack, 'Writer', {
+            assumedBy: new ServicePrincipal('glue.amazonaws.com'),
+        });
+        grantSplit(role, {
+            tableArn: 'arn:aws:glue:us-east-1:123456789012:table/test_db/simple',
+            bucketArn: 'arn:aws:s3:::my-bucket',
+            objectArn: 'arn:aws:s3:::my-bucket/simple/*',
+            prefixGlob: 'simple/*',
+            tableActions: [
+                'glue:UpdateTable',
+            ],
+            listActions: [],
+            bucketActions: [],
+            objectActions: [
+                's3:PutObject',
+            ],
+        });
+        const statements = resolvedStatements(Template.fromStack(stack));
+
+        expect(statementsByAction(statements, 'glue:UpdateTable')).toHaveLength(1);
+        expect(statementsByAction(statements, 's3:PutObject')).toHaveLength(1);
+        expect(statements.filter(statement => resolvedResourceString(stack, statement) === 'arn:aws:s3:::my-bucket')).toHaveLength(0);
     });
 
     it('grantReadWrite combines all four statement shapes', () => {

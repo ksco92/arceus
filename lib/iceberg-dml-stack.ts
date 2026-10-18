@@ -152,7 +152,7 @@ export class IcebergDmlStack extends Stack {
                 dataLakePrincipalIdentifier: props.principalArn,
             },
         });
-        permission.addDependency(table.resource);
+        permission.addResourceDependency(table.resource);
 
         new CfnOutput(this, 'DmlTableNameOutput', {
             value: table.tableName,

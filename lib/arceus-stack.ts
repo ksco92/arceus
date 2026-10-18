@@ -551,7 +551,7 @@ export class ArceusStack extends Stack {
                     dataLakePrincipalIdentifier: principal.arn,
                 },
             });
-            permission.addDependency(grant.table.resource);
+            permission.addResourceDependency(grant.table.resource);
         });
     }
 }
