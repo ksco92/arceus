@@ -307,7 +307,7 @@ export class IcebergSurfaceStack extends Stack {
                     dataLakePrincipalIdentifier: props.principalArn,
                 },
             });
-            permission.addDependency(table.resource);
+            permission.addResourceDependency(table.resource);
         });
 
         /// ////////////////////////////////////////////////////////

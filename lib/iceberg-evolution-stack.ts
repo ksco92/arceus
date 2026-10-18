@@ -121,7 +121,7 @@ export class IcebergEvolutionStack extends Stack {
                 dataLakePrincipalIdentifier: props.principalArn,
             },
         });
-        permission.addDependency(table.resource);
+        permission.addResourceDependency(table.resource);
 
         new CfnOutput(this, 'EvolutionStepOutput', {
             value: String(step),
