@@ -117,3 +117,22 @@ being reviewed, so a stale pin silently weakens the guarantee.
 See `docs/integ-test-setup.md` for the AWS-side prerequisites
 (`ArceusStack` deployed, account `cdk bootstrap`ped, IAM role +
 `AWS_INTEG_ROLE_ARN` repo variable set).
+
+## Accepted install-time scripts
+
+The root lockfile carries two packages that run a script at `npm ci`:
+`unrs-resolver` (`postinstall`, through `napi-postinstall`, which
+downloads the platform's native binding from the registry without an
+integrity check when the pinned `@unrs/resolver-binding-*` optional
+dependency is absent) and `@parcel/watcher` (`install`, a no-op unless
+`npm_config_build_from_source=true`). Both arrive through Jest 30.
+Accepted because CI and publish run on linux-x64-gnu, where the
+lockfile pins both bindings with integrity hashes. Revisit if a
+workflow runs on another platform or with `--omit=optional`. A new
+entry in the list printed by
+
+```
+node -e 'const l=require("./package-lock.json");for(const [k,v] of Object.entries(l.packages)) if(v.hasInstallScript) console.log(k)'
+```
+
+is a review finding until it is recorded here.
