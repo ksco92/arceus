@@ -150,6 +150,7 @@ module.exports = [
             },
         },
         rules: {
+            ...jestPlugin.configs['flat/recommended'].rules,
             'jest/expect-expect': [
                 'error',
                 {
