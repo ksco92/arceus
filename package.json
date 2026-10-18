@@ -27,7 +27,6 @@
         "clean": "rm -rf node_modules package-lock.json build cdk.out dist && npm run clean --workspace cdk-glue-iceberg-table"
     },
     "devDependencies": {
-        "@aws-cdk/aws-glue-alpha": "^2.273.0-alpha.0",
         "@eslint/js": "^10.0.1",
         "@types/jest": "^30.0.0",
         "@types/node": "^24.19.2",

@@ -16,7 +16,7 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {
     Database,
-} from '@aws-cdk/aws-glue-alpha';
+} from 'aws-cdk-lib/aws-glue';
 import {
     Bucket,
 } from 'aws-cdk-lib/aws-s3';
