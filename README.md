@@ -20,7 +20,7 @@ no "`cdk deploy` and then run this SQL by hand" two-step. Table
 changes (new columns, renames, drops, new partition fields) land as
 a reviewed diff in a pull request and apply through `cdk deploy`.
 
-Status (June 2026): published on npm (TypeScript/JavaScript) and PyPI
+Status (October 2026): published on npm (TypeScript/JavaScript) and PyPI
 (Python), pre-1.0, with a public surface guarded by an end-to-end
 consumer test on every PR plus three real-AWS integration suites. The
 multi-language packages are generated from one TypeScript source with
@@ -43,10 +43,10 @@ motivating CDK issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issue
 documents the only working shape and the silent-corruption traps you
 hit by getting it slightly wrong. This construct implements that
 shape, refuses to emit the unsafe alternatives, and pins Iceberg field
-IDs so schema evolution never orphans existing data. It is the basis
-of the upstream proposal to land an `IcebergTable` in
-`@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988));
-this package tracks that proposal and stays current with it.
+IDs so schema evolution never orphans existing data. It was the basis
+of an upstream proposal to land an `IcebergTable` in
+`@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988)),
+closed unmerged in September 2026.
 
 ### How it compares
 
@@ -71,17 +71,21 @@ Python (PyPI):
 pip install cdk-glue-iceberg-table
 ```
 
-Peer dependencies (your CDK app must already have these). For
-TypeScript / JavaScript:
+Peer dependencies (your CDK app must already have these). This
+release requires `aws-cdk-lib` 2.273.0 or newer and `constructs`
+10.8.1 or newer, plus Node.js 22.14 or newer for both languages (the
+Python package runs under Node.js through jsii).
+
+For TypeScript / JavaScript:
 
 ```bash
-npm install aws-cdk-lib constructs @aws-cdk/aws-glue-alpha
+npm install aws-cdk-lib@^2.273.0 constructs@^10.8.1
 ```
 
 For Python:
 
 ```bash
-pip install aws-cdk-lib constructs aws-cdk.aws-glue-alpha
+pip install 'aws-cdk-lib>=2.273.0' 'constructs>=10.8.1'
 ```
 
 ## Use
@@ -90,7 +94,7 @@ pip install aws-cdk-lib constructs aws-cdk.aws-glue-alpha
 
 ```ts
 import { Bucket } from 'aws-cdk-lib/aws-s3';
-import { Database } from '@aws-cdk/aws-glue-alpha';
+import { Database } from 'aws-cdk-lib/aws-glue';
 import {
     IcebergTable,
     IcebergType,
@@ -124,7 +128,7 @@ The same table in Python — the API mirrors TypeScript with
 
 ```python
 from aws_cdk.aws_s3 import Bucket
-from aws_cdk.aws_glue_alpha import Database
+from aws_cdk.aws_glue import Database
 from cdk_glue_iceberg_table import (
     IcebergTable,
     IcebergType,
@@ -179,7 +183,7 @@ A minimal table:
 ```typescript
 import {
     Database,
-} from '@aws-cdk/aws-glue-alpha';
+} from 'aws-cdk-lib/aws-glue';
 import {
     IcebergTable,
     IcebergType,
@@ -236,7 +240,7 @@ import {
 } from 'aws-cdk-lib';
 import {
     Database,
-} from '@aws-cdk/aws-glue-alpha';
+} from 'aws-cdk-lib/aws-glue';
 import {
     IcebergDataFormat,
     IcebergFormatVersion,

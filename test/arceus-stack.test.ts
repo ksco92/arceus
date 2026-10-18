@@ -43,6 +43,13 @@ describe('ArceusStack', () => {
         });
     });
 
+    it('destroys the Glue database with the stack', () => {
+        template.hasResource('AWS::Glue::Database', {
+            DeletionPolicy: 'Delete',
+            UpdateReplacePolicy: 'Delete',
+        });
+    });
+
     it('creates the Athena workgroup', () => {
         template.hasResourceProperties('AWS::Athena::WorkGroup', {
             Name: 'ReadOnly',

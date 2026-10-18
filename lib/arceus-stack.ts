@@ -23,15 +23,13 @@ import {
 } from 'aws-cdk-lib/aws-s3';
 import {
     CfnDataCatalogEncryptionSettings,
+    Database,
 } from 'aws-cdk-lib/aws-glue';
 import {
     CfnDataLakeSettings,
     CfnPermissions,
     CfnResource,
 } from 'aws-cdk-lib/aws-lakeformation';
-import {
-    Database,
-} from '@aws-cdk/aws-glue-alpha';
 import {
     CfnWorkGroup,
 } from 'aws-cdk-lib/aws-athena';
@@ -223,6 +221,7 @@ export class ArceusStack extends Stack {
             databaseName: databaseName,
             description: 'Demo Iceberg tables for the arceus IcebergTable construct.',
             locationUri: `s3://${dataLakeBucket.bucketName}/${databaseName}/`,
+            removalPolicy: RemovalPolicy.DESTROY,
         });
 
         /// /////////////////////////////////////////////////

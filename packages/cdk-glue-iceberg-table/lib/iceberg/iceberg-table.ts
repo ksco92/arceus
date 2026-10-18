@@ -5,6 +5,7 @@ import {
 } from 'aws-cdk-lib';
 import {
     CfnTable,
+    IDatabase,
 } from 'aws-cdk-lib/aws-glue';
 import {
     Grant,
@@ -13,9 +14,6 @@ import {
 import {
     Construct,
 } from 'constructs';
-import {
-    IDatabase,
-} from '@aws-cdk/aws-glue-alpha';
 import {
     IcebergType,
 } from './iceberg-type';
