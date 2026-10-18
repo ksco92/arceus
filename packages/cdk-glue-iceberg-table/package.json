@@ -1,6 +1,6 @@
 {
     "name": "cdk-glue-iceberg-table",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "license": "MIT",
     "description": "AWS CDK L2 construct to create and evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and partition changes that survive CloudFormation updates, via cdk deploy.",
     "stability": "experimental",
@@ -53,19 +53,19 @@
         "prepublishOnly": "npm run build && npm test"
     },
     "peerDependencies": {
-        "@aws-cdk/aws-glue-alpha": "^2.258.1-alpha.0",
-        "aws-cdk-lib": "^2.258.1",
-        "constructs": "^10.0.0"
+        "@aws-cdk/aws-glue-alpha": "^2.273.0-alpha.0",
+        "aws-cdk-lib": "^2.273.0",
+        "constructs": "^10.8.1"
     },
     "devDependencies": {
-        "@aws-cdk/aws-glue-alpha": "^2.258.1-alpha.0",
+        "@aws-cdk/aws-glue-alpha": "^2.273.0-alpha.0",
         "@eslint/js": "^9.27.0",
         "@types/jest": "^29.5.14",
         "@types/node": "^24.13.2",
         "@typescript-eslint/eslint-plugin": "^8.0.0",
         "@typescript-eslint/parser": "^8.0.0",
-        "aws-cdk-lib": "^2.258.1",
-        "constructs": "^10.0.0",
+        "aws-cdk-lib": "^2.273.0",
+        "constructs": "^10.8.1",
         "eslint": "^9.27.0",
         "eslint-plugin-jest": "^28.0.0",
         "globals": "^15.0.0",
