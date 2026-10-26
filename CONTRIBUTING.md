@@ -70,6 +70,7 @@ arceus/
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
 │       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
 │       ├── verify_dml.py               # PySpark engine steps for the DML harness
+│       ├── verify_evolution.py         # PySpark engine steps for the evolution harness
 │       └── verify_surface.py           # PySpark engine steps for the surface harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
@@ -170,10 +171,9 @@ Before running the quickstart you need:
 # PRINCIPAL_ARN is the ARN of the IAM principal (user, role, or
 # federated identity) that the stack should make a Lake Formation
 # admin and per-table grantee. It must equal the identity running
-# `cdk deploy` and the Spark queries the integration scripts run, and
-# it must hold the Lake Formation grants — otherwise their INSERT/SELECT
-# calls fail with `Principal does not have any privilege on
-# specified resource`.
+# `cdk deploy` and the Spark queries the integration scripts run —
+# otherwise the integration script's INSERT/SELECT calls fail with
+# `Principal does not have any privilege on specified resource`.
 #
 # For a direct IAM-user session, the line below returns the right ARN
 # (`arn:aws:iam::<acct>:user/<name>`).
@@ -235,7 +235,7 @@ without `DESTROY=1` it leaves the stack deployed.
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys.
 
-The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above); it needs `PRINCIPAL_ARN` and a deployed `ArceusStack` with the same principal, and without `DESTROY=1` it leaves `IcebergEvolutionStack` deployed.
+Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and tears `IcebergEvolutionStack` down only with `DESTROY=1`.
 
 | Step | Change | Columns | Partitions | Spark phase after the deploy |
 | ---: | --- | --- | --- | --- |
