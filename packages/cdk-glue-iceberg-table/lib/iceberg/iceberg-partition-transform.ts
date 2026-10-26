@@ -51,22 +51,22 @@ export class IcebergPartitionTransform {
         kind: IcebergPartitionTransformKind.IDENTITY,
     });
 
-    /** `year` — extracts the year of a date/timestamp. */
+    /** `year` — extracts the year of a date or timestamp (nanosecond timestamps included). */
     public static readonly YEAR: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.YEAR,
     });
 
-    /** `month` — extracts the month of a date/timestamp. */
+    /** `month` — extracts the month of a date or timestamp (nanosecond timestamps included). */
     public static readonly MONTH: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.MONTH,
     });
 
-    /** `day` — extracts the day of a date/timestamp. */
+    /** `day` — extracts the day of a date or timestamp (nanosecond timestamps included). */
     public static readonly DAY: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.DAY,
     });
 
-    /** `hour` — extracts the hour of a timestamp (not a date). */
+    /** `hour` — extracts the hour of a timestamp (nanosecond timestamps included, not a date). */
     public static readonly HOUR: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.HOUR,
     });
@@ -172,6 +172,24 @@ export class IcebergPartitionTransform {
      * @internal
      */
     public _validateSourceType(sourceColumnName: string, sourceType: IcebergType): void {
+        if (sourceType.kind === IcebergTypeKind.VARIANT) {
+            throw new Error(
+                `column '${sourceColumnName}' has type variant, which cannot be a partition or sort source`,
+            );
+        }
+        if (
+            (
+                sourceType.kind === IcebergTypeKind.GEOMETRY
+                || sourceType.kind === IcebergTypeKind.GEOGRAPHY
+                || sourceType.kind === IcebergTypeKind.UNKNOWN
+            )
+            && this.kind !== IcebergPartitionTransformKind.VOID
+        ) {
+            throw new Error(
+                `partition transform '${this.toTransformString()}' on column '${sourceColumnName}' `
+                + `is not allowed on ${sourceType.kind}; only 'void' is`,
+            );
+        }
         switch (this.kind) {
             case IcebergPartitionTransformKind.IDENTITY:
             case IcebergPartitionTransformKind.VOID:
@@ -182,7 +200,7 @@ export class IcebergPartitionTransform {
                 if (!isTemporal(sourceType)) {
                     throw new Error(
                         `partition transform '${this.kind}' on column '${sourceColumnName}' `
-                        + 'requires a date/timestamp/timestamptz column',
+                        + 'requires a date/timestamp/timestamptz/timestamp_ns/timestamptz_ns column',
                     );
                 }
                 return;
@@ -190,7 +208,7 @@ export class IcebergPartitionTransform {
                 if (!isTimestamp(sourceType)) {
                     throw new Error(
                         `partition transform 'hour' on column '${sourceColumnName}' `
-                        + 'requires a timestamp/timestamptz column',
+                        + 'requires a timestamp/timestamptz/timestamp_ns/timestamptz_ns column',
                     );
                 }
                 return;
@@ -198,7 +216,8 @@ export class IcebergPartitionTransform {
                 if (!isBucketLegal(sourceType)) {
                     throw new Error(
                         `partition transform 'bucket[${this.bucketCount}]' on column '${sourceColumnName}' requires `
-                        + 'an int/long/decimal/date/time/timestamp/timestamptz/string/uuid/fixed/binary column',
+                        + 'an int/long/decimal/date/time/timestamp/timestamptz/timestamp_ns/timestamptz_ns/'
+                        + 'string/uuid/fixed/binary column',
                     );
                 }
                 return;
@@ -222,12 +241,16 @@ export class IcebergPartitionTransform {
 function isTemporal(type: IcebergType): boolean {
     return type.kind === IcebergTypeKind.DATE
         || type.kind === IcebergTypeKind.TIMESTAMP
-        || type.kind === IcebergTypeKind.TIMESTAMPTZ;
+        || type.kind === IcebergTypeKind.TIMESTAMPTZ
+        || type.kind === IcebergTypeKind.TIMESTAMP_NS
+        || type.kind === IcebergTypeKind.TIMESTAMPTZ_NS;
 }
 
 function isTimestamp(type: IcebergType): boolean {
     return type.kind === IcebergTypeKind.TIMESTAMP
-        || type.kind === IcebergTypeKind.TIMESTAMPTZ;
+        || type.kind === IcebergTypeKind.TIMESTAMPTZ
+        || type.kind === IcebergTypeKind.TIMESTAMP_NS
+        || type.kind === IcebergTypeKind.TIMESTAMPTZ_NS;
 }
 
 function isBucketLegal(type: IcebergType): boolean {
@@ -238,6 +261,8 @@ function isBucketLegal(type: IcebergType): boolean {
         case IcebergTypeKind.TIME:
         case IcebergTypeKind.TIMESTAMP:
         case IcebergTypeKind.TIMESTAMPTZ:
+        case IcebergTypeKind.TIMESTAMP_NS:
+        case IcebergTypeKind.TIMESTAMPTZ_NS:
         case IcebergTypeKind.STRING:
         case IcebergTypeKind.UUID:
         case IcebergTypeKind.BINARY:

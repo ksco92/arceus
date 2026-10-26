@@ -1360,6 +1360,31 @@ describe('IcebergTable — validation', () => {
         })).toThrow(/hour/);
     });
 
+    it('rejects a variant column in sortOrder', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V3,
+            columns: [
+                {
+                    name: 'payload',
+                    type: IcebergType.VARIANT,
+                    id: 1,
+                },
+            ],
+            location: 's3://my-bucket/simple/',
+            sortOrder: [
+                {
+                    sourceColumn: 'payload',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                },
+            ],
+        })).toThrow(/column 'payload' has type variant, which cannot be a partition or sort source/);
+    });
+
     it('rejects identifierFieldNames with duplicates', () => {
         const {
             stack, database,
