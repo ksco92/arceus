@@ -1,4 +1,5 @@
 export {
+    IcebergEdgeAlgorithm,
     IcebergType,
     IcebergTypeKind,
     IcebergTypeOptions,

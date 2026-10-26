@@ -46,7 +46,25 @@ export enum IcebergTypeKind {
     LIST = 'list',
     MAP = 'map',
     STRUCT = 'struct',
+    UNKNOWN = 'unknown',
+    TIMESTAMP_NS = 'timestamp_ns',
+    TIMESTAMPTZ_NS = 'timestamptz_ns',
+    VARIANT = 'variant',
+    GEOMETRY = 'geometry',
+    GEOGRAPHY = 'geography',
 }
+
+/** Edge-interpolation algorithm of a `geography` type. */
+export enum IcebergEdgeAlgorithm {
+    SPHERICAL = 'spherical',
+    VINCENTY = 'vincenty',
+    THOMAS = 'thomas',
+    ANDOYER = 'andoyer',
+    KARNEY = 'karney',
+}
+
+/** CRS that `geography(<crs>, <algorithm>)` spells out when only an algorithm is set. */
+const DEFAULT_GEO_CRS = 'OGC:CRS84';
 
 /** Definition of a single struct field. */
 export interface IcebergStructFieldDefinition {
@@ -101,11 +119,17 @@ export interface IcebergTypeOptions {
 
     /** Struct fields (non-empty, unique names). Required when `kind === STRUCT`. */
     readonly structFields?: IcebergStructFieldDefinition[];
+
+    /** Coordinate reference system identifier. Optional when `kind` is `GEOMETRY` or `GEOGRAPHY`. */
+    readonly geoCrs?: string;
+
+    /** Edge-interpolation algorithm. Optional when `kind === GEOGRAPHY`. */
+    readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 }
 
 /**
  * Iceberg type. Use the static factories on this class to construct
- * primitives, decimals, fixed, lists, maps, and structs.
+ * primitives, decimals, fixed, geospatial types, lists, maps, and structs.
  */
 export class IcebergType {
     /// Primitives — values from https://iceberg.apache.org/spec/#schemas-and-data-types
@@ -168,6 +192,26 @@ export class IcebergType {
     /** Variable-length byte sequence. */
     public static readonly BINARY: IcebergType = new IcebergType({
         kind: IcebergTypeKind.BINARY,
+    });
+
+    /** Type of a column whose values are always null. Format v3; never required. */
+    public static readonly UNKNOWN: IcebergType = new IcebergType({
+        kind: IcebergTypeKind.UNKNOWN,
+    });
+
+    /** Nanosecond-precision timestamp without zone. Format v3. */
+    public static readonly TIMESTAMP_NS: IcebergType = new IcebergType({
+        kind: IcebergTypeKind.TIMESTAMP_NS,
+    });
+
+    /** Nanosecond-precision timestamp stored as UTC. Format v3. */
+    public static readonly TIMESTAMPTZ_NS: IcebergType = new IcebergType({
+        kind: IcebergTypeKind.TIMESTAMPTZ_NS,
+    });
+
+    /** Semi-structured value: an object, an array, or a primitive. Format v3. */
+    public static readonly VARIANT: IcebergType = new IcebergType({
+        kind: IcebergTypeKind.VARIANT,
     });
 
     /**
@@ -233,6 +277,30 @@ export class IcebergType {
         });
     }
 
+    /**
+     * Geospatial features with linear edges. Format v3.
+     * @param crs Coordinate reference system identifier, such as `EPSG:3857`. Defaults to `OGC:CRS84`.
+     */
+    public static geometry(crs?: string): IcebergType {
+        return new IcebergType({
+            kind: IcebergTypeKind.GEOMETRY,
+            geoCrs: crs,
+        });
+    }
+
+    /**
+     * Geospatial features with edges interpolated by an algorithm. Format v3.
+     * @param crs Coordinate reference system identifier. Defaults to `OGC:CRS84`.
+     * @param algorithm Edge-interpolation algorithm. Defaults to `SPHERICAL`.
+     */
+    public static geography(crs?: string, algorithm?: IcebergEdgeAlgorithm): IcebergType {
+        return new IcebergType({
+            kind: IcebergTypeKind.GEOGRAPHY,
+            geoCrs: crs,
+            geographyAlgorithm: algorithm,
+        });
+    }
+
     /** Discriminator. */
     public readonly kind: IcebergTypeKind;
 
@@ -262,6 +330,12 @@ export class IcebergType {
 
     /** Struct fields (set when `kind === STRUCT`). */
     public readonly structFields?: IcebergStructFieldDefinition[];
+
+    /** Coordinate reference system (set when `kind` is `GEOMETRY` or `GEOGRAPHY` and one was given). */
+    public readonly geoCrs?: string;
+
+    /** Edge-interpolation algorithm (set when one was given). */
+    public readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 
     public constructor(options: IcebergTypeOptions) {
         this.kind = options.kind;
@@ -325,6 +399,17 @@ export class IcebergType {
                 }
                 this.structFields = options.structFields;
                 break;
+            case IcebergTypeKind.GEOMETRY:
+            case IcebergTypeKind.GEOGRAPHY:
+                if (options.geoCrs !== undefined && !/^[^\s(){},]+$/.test(options.geoCrs)) {
+                    throw new Error(
+                        `${options.kind} CRS must be a non-empty identifier such as 'EPSG:4326' with no whitespace, `
+                        + `parentheses, braces, or commas (inline PROJJSON is not allowed), got '${options.geoCrs}'`,
+                    );
+                }
+                this.geoCrs = options.geoCrs;
+                this.geographyAlgorithm = options.geographyAlgorithm;
+                break;
             case IcebergTypeKind.BOOLEAN:
             case IcebergTypeKind.INT:
             case IcebergTypeKind.LONG:
@@ -337,6 +422,10 @@ export class IcebergType {
             case IcebergTypeKind.STRING:
             case IcebergTypeKind.UUID:
             case IcebergTypeKind.BINARY:
+            case IcebergTypeKind.UNKNOWN:
+            case IcebergTypeKind.TIMESTAMP_NS:
+            case IcebergTypeKind.TIMESTAMPTZ_NS:
+            case IcebergTypeKind.VARIANT:
                 /// Primitives carry no extra data.
                 break;
             /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
@@ -372,6 +461,13 @@ export class IcebergType {
                 return `decimal(${this.decimalPrecision}, ${this.decimalScale})`;
             case IcebergTypeKind.FIXED:
                 return `fixed[${this.fixedLength}]`;
+            case IcebergTypeKind.GEOMETRY:
+                return this.geoCrs === undefined ? 'geometry' : `geometry(${this.geoCrs})`;
+            case IcebergTypeKind.GEOGRAPHY:
+                if (this.geographyAlgorithm !== undefined) {
+                    return `geography(${this.geoCrs ?? DEFAULT_GEO_CRS}, ${this.geographyAlgorithm})`;
+                }
+                return this.geoCrs === undefined ? 'geography' : `geography(${this.geoCrs})`;
             case IcebergTypeKind.LIST: {
                 const elementId = ctx.nextId();
                 const elementRepr = this.listElement!._render(ctx);
@@ -429,6 +525,10 @@ export class IcebergType {
             case IcebergTypeKind.STRING:
             case IcebergTypeKind.UUID:
             case IcebergTypeKind.BINARY:
+            case IcebergTypeKind.UNKNOWN:
+            case IcebergTypeKind.TIMESTAMP_NS:
+            case IcebergTypeKind.TIMESTAMPTZ_NS:
+            case IcebergTypeKind.VARIANT:
                 return this.kind;
             /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
             default: {

@@ -4,6 +4,7 @@ import {
 import {
     IcebergRenderContext,
     IcebergType,
+    IcebergTypeKind,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
@@ -45,6 +46,68 @@ export function validateProps(props: IcebergTableProps): void {
     }
     if (!props.location.startsWith('s3://')) {
         throw new Error(`location must start with 's3://', got '${props.location}'`);
+    }
+    for (const column of props.columns) {
+        validateFieldType(column.name, column.type, column.required ?? false, props.formatVersion);
+    }
+}
+
+const V3_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
+    IcebergTypeKind.UNKNOWN,
+    IcebergTypeKind.TIMESTAMP_NS,
+    IcebergTypeKind.TIMESTAMPTZ_NS,
+    IcebergTypeKind.VARIANT,
+    IcebergTypeKind.GEOMETRY,
+    IcebergTypeKind.GEOGRAPHY,
+]);
+
+const NON_IDENTIFIER_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set(
+    [
+        ...V3_TYPE_KINDS,
+    ].filter(
+        (kind) => kind !== IcebergTypeKind.TIMESTAMP_NS && kind !== IcebergTypeKind.TIMESTAMPTZ_NS,
+    ),
+);
+
+/**
+ * Throws if the field at `path`, or any field nested in it, uses a v3
+ * type below format v3 or is a required `unknown`. List elements, map
+ * keys, and map values count as fields.
+ */
+function validateFieldType(
+    path: string,
+    type: IcebergType,
+    required: boolean,
+    formatVersion: IcebergFormatVersion,
+): void {
+    if (V3_TYPE_KINDS.has(type.kind)
+        && (formatVersion === IcebergFormatVersion.V1 || formatVersion === IcebergFormatVersion.V2)) {
+        throw new Error(
+            `column '${path}' has type '${type.kind}', which requires formatVersion v3; got v${formatVersion}. `
+            + 'Set formatVersion to IcebergFormatVersion.V3 or change the column type.',
+        );
+    }
+    if (type.kind === IcebergTypeKind.UNKNOWN && required) {
+        throw new Error(
+            `column '${path}' has type 'unknown', which must be optional; `
+            + 'drop required (or set elementRequired / valueRequired to false), or change the type.',
+        );
+    }
+    if (type.listElement !== undefined) {
+        validateFieldType(`${path}.element`, type.listElement, type.listElementRequired!, formatVersion);
+    }
+    if (type.mapKey !== undefined) {
+        if (type.mapKey.kind === IcebergTypeKind.UNKNOWN) {
+            throw new Error(
+                `column '${path}.key' has type 'unknown' as a map key; `
+                + 'map keys are always required, so use a different key type',
+            );
+        }
+        validateFieldType(`${path}.key`, type.mapKey, true, formatVersion);
+        validateFieldType(`${path}.value`, type.mapValue!, type.mapValueRequired!, formatVersion);
+    }
+    for (const field of type.structFields ?? []) {
+        validateFieldType(`${path}.${field.name}`, field.type, field.required ?? false, formatVersion);
     }
 }
 
@@ -280,6 +343,12 @@ export function resolveIdentifierFieldIds(
         const column = columnByName.get(name);
         if (column === undefined) {
             throw new Error(`identifierFieldNames references unknown column '${name}'`);
+        }
+        if (NON_IDENTIFIER_TYPE_KINDS.has(column.type.kind)) {
+            throw new Error(
+                `identifierFieldNames references column '${name}' of type '${column.type.kind}', `
+                + 'which cannot identify a row; remove it from identifierFieldNames',
+            );
         }
         return column.id;
     });
