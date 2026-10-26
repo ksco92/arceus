@@ -115,13 +115,7 @@ export class ArceusStack extends Stack {
         /// /////////////////////////////////////////////////
         // Bucket permissions
 
-        const buckets = [
-            dataLakeBucket,
-        ];
-
-        buckets.forEach((bucket) => {
-            bucket.grantReadWrite(new ArnPrincipal(lfServiceRoleArn));
-        });
+        dataLakeBucket.grantReadWrite(new ArnPrincipal(lfServiceRoleArn));
 
         /// /////////////////////////////////////////////////
         /// /////////////////////////////////////////////////
