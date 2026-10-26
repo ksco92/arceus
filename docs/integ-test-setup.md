@@ -17,7 +17,7 @@ The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scr
 
 The integ-test workflow assumes two things already exist in the target AWS account:
 
-1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
+1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
 
    ```bash
    export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
@@ -120,7 +120,7 @@ The integration test does the following AWS actions:
 
 | Service | Why |
 | --- | --- |
-| CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`). |
+| CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
 | S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`). |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
@@ -223,4 +223,4 @@ Before the other integration scripts run, the workflow installs Java 17 and the 
 
 After the surface script, the workflow runs `scripts/integration-test-v3-evolution.sh`: CDK deploys `IcebergV3EvolutionStack` four times with `--context v3EvolutionStep=N`, and the script reads the table's `metadata.json` from the Glue `metadata_location` after each deploy. It runs no Spark query, so it needs only the Glue, S3, and CloudFormation permissions the other scripts already use.
 
-After the v3 evolution script, the workflow runs `scripts/integration-test-v3-dml.sh`: CDK deploys `IcebergV3DmlStack` (a v3 table and a v2 table, both granted SELECT/INSERT/DELETE/ALTER/DESCRIBE to the role), and `scripts/spark/verify_v3_dml.py` runs DML, maintenance procedures, and a v2 to v3 upgrade against them through Spark. Teardown deletes the stack and both tables' S3 prefixes.
+After the v3 evolution script, the workflow runs `scripts/integration-test-v3-dml.sh`: CDK deploys `IcebergV3DmlStack` (a v3 table and a v2 table, both granted SELECT/INSERT/DELETE/ALTER/DESCRIBE to the role), and `scripts/spark/verify_v3_dml.py` runs DML, maintenance procedures, and a v2 to v3 upgrade against them through Spark. With `DESTROY=1`, teardown deletes the stack and both tables' S3 prefixes.

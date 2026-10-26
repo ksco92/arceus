@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
-# End-to-end test for Iceberg v3 tables created by CloudFormation.
-# Deploys `IcebergV3DmlStack`, checks the `metadata.json` Glue points at,
-# runs scripts/spark/verify_v3_dml.py, then checks `metadata.json` again.
+# End-to-end test for Iceberg v3 tables created by CloudFormation,
+# driven through Spark against `IcebergV3DmlStack`.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -38,9 +37,8 @@ cleanup_table_prefixes() {
     done
 }
 
-# Usage: assert_metadata <table> <format-version> <1 to also require next-row-id > 0, else 0>
 assert_metadata() {
-    local table="$1" format_version="$2" require_row_ids="$3"
+    local table="$1" format_version="$2" min_next_row_id="$3"
     local meta_loc
     meta_loc=$(aws glue get-table \
         --database-name "$DATABASE" \
@@ -51,12 +49,12 @@ assert_metadata() {
     aws s3 cp "$meta_loc" - --region "$AWS_REGION" | python3 -c '
 import json, sys
 m = json.load(sys.stdin)
-table, format_version, require_row_ids = sys.argv[1], int(sys.argv[2]), sys.argv[3] == "1"
+table, format_version, min_next_row_id = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 found, next_row_id = m["format-version"], m.get("next-row-id", 0)
 assert found == format_version, f"{table}: format-version {found}, expected {format_version}"
-assert not require_row_ids or next_row_id > 0, f"{table}: next-row-id {next_row_id}, expected > 0"
+assert next_row_id >= min_next_row_id, f"{table}: next-row-id {next_row_id}, expected >= {min_next_row_id}"
 print(f"  {table}: format-version {found}, next-row-id {next_row_id} \u2713")
-' "$table" "$format_version" "$require_row_ids"
+' "$table" "$format_version" "$min_next_row_id"
 }
 
 # shellcheck source=scripts/spark/spark-env.sh

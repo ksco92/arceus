@@ -33,12 +33,10 @@ def source_row(account_id: int, payload: str, balance: str) -> str:
 
 
 def current_snapshot() -> int:
-    """Snapshot id the `main` branch of DML points at."""
     return query(f"SELECT snapshot_id FROM {DML}.refs WHERE name = 'main'")[0][0]
 
 
 def last_added_dvs() -> str | None:
-    """`added-dvs` from the summary of the current snapshot of DML."""
     sql = f"SELECT summary['added-dvs'] FROM {DML}.snapshots WHERE snapshot_id = {current_snapshot()}"
     return query(sql)[0][0]
 

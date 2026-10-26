@@ -51,27 +51,31 @@ arceus/
 │   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / compaction / snapshot-expiry test
 │   ├── iceberg-surface-stack.ts        # Stack for transforms / sort / nested types / grants test
 │   ├── iceberg-spark-smoke-stack.ts    # Stack for the Spark toolchain smoke check
-│   └── iceberg-v3-evolution-stack.ts   # Parameterized stack for the v3 evolution test
+│   ├── iceberg-v3-evolution-stack.ts   # Parameterized stack for the v3 evolution test
+│   └── iceberg-v3-dml-stack.ts         # Stack for the v3 DML / row lineage / upgrade test
 ├── test/                               # Demo stack tests
 │   ├── arceus-stack.test.ts
 │   ├── iceberg-evolution-stack.test.ts
 │   ├── iceberg-dml-stack.test.ts
 │   ├── iceberg-surface-stack.test.ts
 │   ├── iceberg-spark-smoke-stack.test.ts
-│   └── iceberg-v3-evolution-stack.test.ts
+│   ├── iceberg-v3-evolution-stack.test.ts
+│   └── iceberg-v3-dml-stack.test.ts
 ├── scripts/
 │   ├── integration-test-evolution.sh   # End-to-end evolution harness
 │   ├── integration-test-dml.sh         # End-to-end DML harness
 │   ├── integration-test-surface.sh     # End-to-end surface harness
 │   ├── integration-test-spark-smoke.sh # Spark toolchain smoke check (1 deploy + INSERT/SELECT)
 │   ├── integration-test-v3-evolution.sh # v3 catalog-level evolution harness
+│   ├── integration-test-v3-dml.sh      # End-to-end v3 DML harness
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
 │       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
 │       ├── verify_dml.py               # PySpark engine steps for the DML harness
 │       ├── verify_evolution.py         # PySpark engine steps for the evolution harness
-│       └── verify_surface.py           # PySpark engine steps for the surface harness
+│       ├── verify_surface.py           # PySpark engine steps for the surface harness
+│       └── verify_v3_dml.py            # PySpark engine steps for the v3 DML harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
@@ -125,7 +129,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
 - **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs four scripts back-to-back: `scripts/integration-test-evolution.sh` (five `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), and `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs four scripts back-to-back: `scripts/integration-test-evolution.sh` (five `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
@@ -229,22 +233,9 @@ DESTROY=1 scripts/integration-test-spark-smoke.sh   # destroys any leftover Iceb
 The smoke script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`;
 without `DESTROY=1` it leaves the stack deployed.
 
-`scripts/integration-test-v3-dml.sh` uses the same toolchain against
-`IcebergV3DmlStack`: a v3 merge-on-read table (`v3_dml_test`, with
-`variant`, `unknown`, `geography`, and `geometry` columns) and a v2 table
-(`v3_upgrade_test`). After checking that the `metadata.json` CloudFormation
-wrote is at format version 3 (and 2 for the upgrade table),
-`scripts/spark/verify_v3_dml.py` inserts rows, then asserts that UPDATE
-and DELETE write Puffin deletion vectors (and no Parquet position-delete
-files), that `_row_id` survives UPDATE and `rewrite_data_files` while
-`_last_updated_sequence_number` rises, that MERGE INTO and
-`VERSION AS OF` work, that `variant_get` / `to_json` and the geo values
-round-trip with SRID 4326, that `placeholder` reads NULL, and that
-`expire_snapshots` leaves one snapshot. On `v3_upgrade_test` it inserts at
-v2, sets `format-version` to 3, inserts again, and checks the row ids. The
-script then checks `metadata.json` again (`next-row-id > 0`, and format
-version 3 on both tables). Nanosecond timestamp columns are left out
-because Spark cannot open a table that has one.
+`IcebergV3DmlStack` deploys `v3_dml_test` (v3, merge-on-read) and `v3_upgrade_test` (v2).
+`scripts/integration-test-v3-dml.sh` checks deletion vectors, row lineage, variant, geo, MERGE, time travel, compaction, snapshot expiry, the v2→v3 upgrade, and `next-row-id` on `v3_dml_test` from `metadata.json`.
+Install the Spark toolchain first (see "Spark toolchain" above); with `PRINCIPAL_ARN` set and `ArceusStack` deployed with the same principal, run `DESTROY=1 scripts/integration-test-v3-dml.sh` (without `DESTROY=1` it leaves `IcebergV3DmlStack` deployed).
 
 ## Demo: schema + partition evolution
 

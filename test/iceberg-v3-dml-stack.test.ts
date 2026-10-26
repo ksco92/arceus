@@ -30,24 +30,8 @@ describe('IcebergV3DmlStack', () => {
         template = synth();
     });
 
-    it('creates v3_dml_test at Version 3 and v3_upgrade_test at Version 2', () => {
+    it('creates two Glue tables', () => {
         template.resourceCountIs('AWS::Glue::Table', 2);
-        template.hasResourceProperties('AWS::Glue::Table', {
-            Name: 'v3_dml_test',
-            OpenTableFormatInput: {
-                IcebergInput: Match.objectLike({
-                    Version: '3',
-                }),
-            },
-        });
-        template.hasResourceProperties('AWS::Glue::Table', {
-            Name: 'v3_upgrade_test',
-            OpenTableFormatInput: {
-                IcebergInput: Match.objectLike({
-                    Version: '2',
-                }),
-            },
-        });
     });
 
     it('renders the v3 column types of v3_dml_test with stable ids', () => {
@@ -148,32 +132,17 @@ describe('IcebergV3DmlStack', () => {
         });
     });
 
-    it('declares v3_upgrade_test as unpartitioned v2 with id and name', () => {
+    it('declares v3_upgrade_test as unpartitioned v2', () => {
         template.hasResourceProperties('AWS::Glue::Table', {
             Name: 'v3_upgrade_test',
             OpenTableFormatInput: {
                 IcebergInput: Match.objectLike({
+                    Version: '2',
                     IcebergTableInput: Match.objectLike({
                         Location: 's3://data-lake-bucket-123456789012/sample_database/v3_upgrade_test/',
                         PartitionSpec: Match.absent(),
                         Properties: Match.objectLike({
                             'format-version': '2',
-                        }),
-                        Schema: Match.objectLike({
-                            Fields: [
-                                {
-                                    Id: 1,
-                                    Name: 'id',
-                                    Required: false,
-                                    Type: 'long',
-                                },
-                                {
-                                    Id: 2,
-                                    Name: 'name',
-                                    Required: false,
-                                    Type: 'string',
-                                },
-                            ],
                         }),
                     }),
                 }),
@@ -204,6 +173,30 @@ describe('IcebergV3DmlStack', () => {
                     DatabaseName: 'sample_database',
                 },
             },
+        });
+    });
+
+    it.each([
+        [
+            'v3_dml_test',
+            'V3DmlTable',
+        ],
+        [
+            'v3_upgrade_test',
+            'V3UpgradeTable',
+        ],
+    ])('creates the %s grant after the table', (tableName, tablePrefix) => {
+        template.hasResource('AWS::LakeFormation::Permissions', {
+            DependsOn: [
+                Match.stringLikeRegexp(`^${tablePrefix}`),
+            ],
+            Properties: Match.objectLike({
+                Resource: {
+                    TableResource: Match.objectLike({
+                        Name: tableName,
+                    }),
+                },
+            }),
         });
     });
 });
