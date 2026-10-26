@@ -17,7 +17,8 @@ export enum IcebergFormatVersion {
 
     /** v2 — adds row-level deletes. */
     V2 = '2',
-    /** v3 — adds deletion vectors, row lineage, and the variant, geospatial, and nanosecond-timestamp types. Not readable by Athena. */
+
+    /** v3 — adds deletion vectors and row lineage. */
     V3 = '3',
 }
 
@@ -159,7 +160,7 @@ export function validateIcebergProperties(
     validateEnumProperty(properties, IcebergPropertyKeys.WRITE_MERGE_MODE, WRITE_MODES);
     validateEnumProperty(properties, IcebergPropertyKeys.WRITE_DISTRIBUTION_MODE, DISTRIBUTION_MODES);
 
-    /// 5. merge-on-read requires format-version=2.
+    /// 5. merge-on-read requires format-version 2 or later.
     if (formatVersion === IcebergFormatVersion.V1) {
         for (const key of [
             IcebergPropertyKeys.WRITE_DELETE_MODE,

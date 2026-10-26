@@ -40,14 +40,23 @@ describe('validateIcebergProperties', () => {
         )).toThrow(/write\.format\.default.*orc.*parquet/);
     });
 
-    it('rejects format-version that disagrees with formatVersion', () => {
+    it.each([
+        [
+            IcebergFormatVersion.V2,
+            '1',
+        ],
+        [
+            IcebergFormatVersion.V3,
+            '2',
+        ],
+    ])('rejects format-version that disagrees with formatVersion %s', (formatVersion, declared) => {
         expect(() => validateIcebergProperties(
             IcebergDataFormat.PARQUET,
-            IcebergFormatVersion.V2,
+            formatVersion,
             {
-                [IcebergPropertyKeys.FORMAT_VERSION]: '1',
+                [IcebergPropertyKeys.FORMAT_VERSION]: declared,
             },
-        )).toThrow(/format-version.*1.*2/);
+        )).toThrow(new RegExp(`format-version.*'${declared}'.*formatVersion is '${formatVersion}'`));
     });
 
     it('rejects compression codec set on wrong format', () => {
@@ -124,16 +133,6 @@ describe('validateIcebergProperties', () => {
                 [IcebergPropertyKeys.WRITE_MERGE_MODE]: 'merge-on-read',
             },
         )).not.toThrow();
-    });
-
-    it('rejects a format-version property that disagrees with V3', () => {
-        expect(() => validateIcebergProperties(
-            IcebergDataFormat.PARQUET,
-            IcebergFormatVersion.V3,
-            {
-                [IcebergPropertyKeys.FORMAT_VERSION]: '2',
-            },
-        )).toThrow(/format-version.*'2'.*formatVersion is '3'/);
     });
 
     it('rejects invalid write mode', () => {
