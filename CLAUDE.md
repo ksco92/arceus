@@ -114,9 +114,11 @@ stopping a slip.
 `e2e-consumer/` consumes the **published** npm package, so every
 version bump in `packages/cdk-glue-iceberg-table/package.json` should
 be followed by bumping `e2e-consumer/package-lock.json` to the same
-version once the publish workflow completes. The `^x.y.z` range in
-`e2e-consumer/package.json` will keep the spec compatible; only the
-lockfile needs updating, in a small follow-up PR. The surface-anchor
+version once the publish workflow completes. While the package is
+pre-1.0 a `^0.y.z` range does not cross a minor, so bump both the range
+in `e2e-consumer/package.json` and the lockfile (`npm install
+cdk-glue-iceberg-table@<version> --package-lock-only` in
+`e2e-consumer/`), in a small follow-up PR. The surface-anchor
 test only catches a rename when the lock pin matches the version
 being reviewed, so a stale pin silently weakens the guarantee.
 
