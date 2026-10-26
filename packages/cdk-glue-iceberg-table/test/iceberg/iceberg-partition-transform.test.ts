@@ -180,4 +180,117 @@ describe('IcebergPartitionTransform — source type validation', () => {
     ])('truncate rejects %s', (type) => {
         expect(() => IcebergPartitionTransform.truncate(8)._validateSourceType('c', type)).toThrow(/truncate/);
     });
+
+    it.each([
+        [
+            IcebergPartitionTransform.YEAR,
+            IcebergType.TIMESTAMP_NS,
+        ],
+        [
+            IcebergPartitionTransform.YEAR,
+            IcebergType.TIMESTAMPTZ_NS,
+        ],
+        [
+            IcebergPartitionTransform.MONTH,
+            IcebergType.TIMESTAMP_NS,
+        ],
+        [
+            IcebergPartitionTransform.MONTH,
+            IcebergType.TIMESTAMPTZ_NS,
+        ],
+        [
+            IcebergPartitionTransform.DAY,
+            IcebergType.TIMESTAMP_NS,
+        ],
+        [
+            IcebergPartitionTransform.DAY,
+            IcebergType.TIMESTAMPTZ_NS,
+        ],
+        [
+            IcebergPartitionTransform.HOUR,
+            IcebergType.TIMESTAMP_NS,
+        ],
+        [
+            IcebergPartitionTransform.HOUR,
+            IcebergType.TIMESTAMPTZ_NS,
+        ],
+        [
+            IcebergPartitionTransform.bucket(4),
+            IcebergType.TIMESTAMP_NS,
+        ],
+        [
+            IcebergPartitionTransform.bucket(4),
+            IcebergType.TIMESTAMPTZ_NS,
+        ],
+    ])('%s accepts %s', (transform, type) => {
+        expect(() => transform._validateSourceType('c', type)).not.toThrow();
+    });
+
+    it.each([
+        IcebergType.TIMESTAMP_NS,
+        IcebergType.TIMESTAMPTZ_NS,
+    ])('truncate rejects %s', (type) => {
+        expect(() => IcebergPartitionTransform.truncate(4)._validateSourceType('c', type)).toThrow(/truncate/);
+    });
+
+    it.each([
+        IcebergPartitionTransform.IDENTITY,
+        IcebergPartitionTransform.VOID,
+        IcebergPartitionTransform.YEAR,
+        IcebergPartitionTransform.bucket(4),
+        IcebergPartitionTransform.truncate(4),
+    ])('%s rejects variant', (transform) => {
+        expect(() => transform._validateSourceType('c', IcebergType.VARIANT))
+            .toThrow(/column 'c' has type variant, which cannot be a partition or sort source/);
+    });
+
+    it.each([
+        [
+            IcebergPartitionTransform.IDENTITY,
+            IcebergType.geometry(),
+        ],
+        [
+            IcebergPartitionTransform.IDENTITY,
+            IcebergType.geography(),
+        ],
+        [
+            IcebergPartitionTransform.IDENTITY,
+            IcebergType.UNKNOWN,
+        ],
+        [
+            IcebergPartitionTransform.bucket(4),
+            IcebergType.geometry(),
+        ],
+        [
+            IcebergPartitionTransform.bucket(4),
+            IcebergType.geography(),
+        ],
+        [
+            IcebergPartitionTransform.bucket(4),
+            IcebergType.UNKNOWN,
+        ],
+        [
+            IcebergPartitionTransform.YEAR,
+            IcebergType.geometry(),
+        ],
+        [
+            IcebergPartitionTransform.YEAR,
+            IcebergType.geography(),
+        ],
+        [
+            IcebergPartitionTransform.YEAR,
+            IcebergType.UNKNOWN,
+        ],
+    ])('%s rejects %s with only void allowed', (transform, type) => {
+        expect(() => transform._validateSourceType('c', type))
+            .toThrow(`'${transform.toTransformString()}' on column 'c' is not allowed on ${type.kind}; only 'void' is`);
+    });
+
+    it.each([
+        IcebergType.geometry(),
+        IcebergType.geography(),
+        IcebergType.UNKNOWN,
+    ])('void accepts %s', (type) => {
+        expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', type)).not.toThrow();
+    });
 });
