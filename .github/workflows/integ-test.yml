@@ -2,7 +2,7 @@ name: Integration test
 
 # Runs the Spark smoke check and the evolution, DML, surface, and
 # v3-evolution scripts against real AWS: real `cdk deploy`s plus Spark
-# and Athena queries through the IcebergTable construct.
+# queries through the IcebergTable construct.
 #
 # Triggers:
 #   - Label `run-integ-test` applied to an open PR.

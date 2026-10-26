@@ -2,8 +2,8 @@
 
 `.github/workflows/integ-test.yml` drives the Spark smoke check and the
 evolution, DML, surface, and v3-evolution scripts under `scripts/` against real AWS —
-real `cdk deploy`s through the `IcebergTable` construct, then Spark and
-Athena queries. The workflow runs when:
+real `cdk deploy`s through the `IcebergTable` construct, then Spark
+queries. The workflow runs when:
 
 - a PR is labeled `run-integ-test` **and the PR's head branch is on the same repo** (fork PRs are refused at the workflow's gate; use `workflow_dispatch` after manual review of the diff), OR
 - a repo collaborator comments `/run-integ-test` on a PR, OR
@@ -36,7 +36,7 @@ The integ-test workflow assumes two things already exist in the target AWS accou
    **This deploy REPLACES the LF admin / grantee installed by the
    step above.** `ArceusStack` writes the LF admin list with REPLACE
    semantics, so after this command only the OIDC role is privileged.
-   To restore your local user's grants for ad-hoc Athena queries,
+   To restore your local user's grants for ad-hoc queries,
    re-run `cdk deploy ArceusStack` with `PRINCIPAL_ARN` set back to
    your user ARN.
 
@@ -122,10 +122,9 @@ The integration test does the following AWS actions:
 | --- | --- |
 | CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
-| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`); read + write the Athena results bucket. |
+| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`). |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
 | Lake Formation | Read settings + grant the test table to the developer principal. |
-| Athena | Start queries, poll status, fetch results (the evolution script). |
 | KMS | Encrypt / decrypt the bucket KMS keys, including the `S3FileIO` writes from Spark. |
 | SSM | Read `/cdk-bootstrap/hnb659fds/version` parameter. |
 | STS | `GetCallerIdentity` for the script. |
@@ -173,7 +172,7 @@ aws iam put-role-policy \
 
 If you'd rather not use `PowerUserAccess` (it's wide), the alternative
 is a hand-written policy granting `cloudformation:*`, `s3:*`,
-`glue:*`, `lakeformation:*`, `athena:*`, `kms:*`, `ssm:GetParameter`,
+`glue:*`, `lakeformation:*`, `kms:*`, `ssm:GetParameter`,
 `sts:GetCallerIdentity`, and `iam:PassRole` on the bootstrap roles.
 Same blast radius, more typing — useful only if you also want to
 scope each `Resource:` line. For a single-purpose integ-test role in
@@ -222,4 +221,4 @@ its stack at the end so the account is left clean.
 
 Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.
 
-After the surface script, the workflow runs `scripts/integration-test-v3-evolution.sh`: CDK deploys `IcebergV3EvolutionStack` four times with `--context v3EvolutionStep=N`, and the script reads the table's `metadata.json` from the Glue `metadata_location` after each deploy. It uses no Athena or Spark query, so it needs only the Glue, S3, and CloudFormation permissions the other scripts already use.
+After the surface script, the workflow runs `scripts/integration-test-v3-evolution.sh`: CDK deploys `IcebergV3EvolutionStack` four times with `--context v3EvolutionStep=N`, and the script reads the table's `metadata.json` from the Glue `metadata_location` after each deploy. It runs no Spark query, so it needs only the Glue, S3, and CloudFormation permissions the other scripts already use.

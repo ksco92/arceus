@@ -6,17 +6,6 @@ from pyspark.sql import SparkSession
 TABLE = "glue.sample_database.evolution_test"
 
 
-def expect(label: str, expected: object, actual: object) -> None:
-    if expected != actual:
-        raise AssertionError(f"{label}: expected {expected!r}, got {actual!r}")
-
-
-def expect_min_rows(spark: SparkSession, query: str, minimum: int) -> None:
-    rows = spark.sql(query).collect()
-    if len(rows) < minimum:
-        raise AssertionError(f"expected at least {minimum} rows, got {len(rows)}: {rows}")
-
-
 def phase_1(spark: SparkSession) -> None:
     spark.sql(
         f"""INSERT INTO {TABLE} VALUES
@@ -28,22 +17,24 @@ def phase_1(spark: SparkSession) -> None:
 
 def phase_2(spark: SparkSession) -> None:
     rows = spark.sql(f"SELECT customer_id, region FROM {TABLE} ORDER BY customer_id").collect()
-    expect("pre-existing rows", [(10, None), (11, None), (12, None)], [tuple(r) for r in rows])
+    assert rows == [(10, None), (11, None), (12, None)], f"pre-existing rows: expected region NULL for ids 10-12, got {rows}"
     spark.sql(f"INSERT INTO {TABLE} VALUES (13, 'd@example.com', TIMESTAMP '2026-02-01 09:00:00+00:00', 'us-east-1')")
 
 
 def phase_3(spark: SparkSession) -> None:
     rows = spark.sql(f"SELECT contact_email FROM {TABLE} WHERE customer_id = 10").collect()
-    expect("contact_email for customer_id 10", [("a@example.com",)], [tuple(r) for r in rows])
+    assert rows == [("a@example.com",)], f"contact_email for customer_id 10: expected a@example.com, got {rows}"
 
 
 def phase_4(spark: SparkSession) -> None:
-    expect_min_rows(spark, f"SELECT customer_id, contact_email FROM {TABLE} ORDER BY customer_id", 4)
+    rows = spark.sql(f"SELECT customer_id, contact_email FROM {TABLE} ORDER BY customer_id").collect()
+    assert len(rows) >= 4, f"row count: expected at least 4, got {len(rows)}: {rows}"
 
 
 def phase_5(spark: SparkSession) -> None:
     spark.sql(f"INSERT INTO {TABLE} VALUES (14, 'e@example.com', TIMESTAMP '2026-03-05 09:00:00+00:00')")
-    expect_min_rows(spark, f"SELECT customer_id FROM {TABLE} ORDER BY customer_id", 5)
+    rows = spark.sql(f"SELECT customer_id FROM {TABLE} ORDER BY customer_id").collect()
+    assert len(rows) >= 5, f"row count: expected at least 5, got {len(rows)}: {rows}"
 
 
 PHASES = {1: phase_1, 2: phase_2, 3: phase_3, 4: phase_4, 5: phase_5}
