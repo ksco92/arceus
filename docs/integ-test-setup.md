@@ -125,7 +125,7 @@ The integration test does the following AWS actions:
 | S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`); read + write the Athena results bucket. |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
 | Lake Formation | Read settings + grant the test table to the developer principal. |
-| Athena | Start queries, poll status, fetch results (the evolution, DML, and surface scripts). |
+| Athena | Start queries, poll status, fetch results (the evolution and DML scripts). |
 | KMS | Encrypt / decrypt the bucket KMS keys, including the `S3FileIO` writes from Spark. |
 | SSM | Read `/cdk-bootstrap/hnb659fds/version` parameter. |
 | STS | `GetCallerIdentity` for the script. |

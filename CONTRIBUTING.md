@@ -65,7 +65,8 @@ arceus/
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
-│       └── smoke.py                    # PySpark INSERT + count against the Glue catalog
+│       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
+│       └── verify_surface.py           # PySpark engine steps for the surface harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
@@ -274,11 +275,13 @@ construct surface the evolution and DML stacks don't reach.
 `IcebergSurfaceStack` defines three small tables that each isolate
 one concern:
 
+The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above).
+
 | Concern | Table | What the script checks |
 | --- | --- | --- |
 | **Every partition transform** | `transforms_test` (separate `year_source` / `month_source` / `day_source` / `hour_source` timestamps to avoid Iceberg's redundant-temporal-transform rejection, plus `user_id` / `email` / `value`) | `metadata.json` contains all seven transforms (`year`, `month`, `day`, `hour`, `bucket[8]`, `truncate[4]`, `identity`); INSERT one row and verify the resulting S3 prefix contains the expected multi-transform layout (`year_source_year=...`, `month_source_month=...`, etc.) |
 | **Sort order** | `sorted_test` (`tenant`, `created_at`, `amount`) | `metadata.json`'s `sort-orders` block has three fields with the expected direction + null-order pairs: `asc/nulls-first`, `desc/nulls-last`, `desc/nulls-last` |
-| **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | INSERT two rows using `ARRAY[...]`, `CAST(ROW(...) AS ROW(...))`, and `MAP(ARRAY[...], ARRAY[...])`. SELECT verifies `tags[1]`, `profile.first_name`, and `element_at(attrs, 'tier')` all roundtrip correctly |
+| **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | Spark INSERTs two rows using `array(...)`, `named_struct(...)`, and `map(...)`. SELECT verifies `tags[0]`, `profile.first_name`, and `attrs['tier']` all roundtrip correctly |
 | **`grantRead` S3 statements at runtime** | `transforms_test` + a `GranteeRole` trusted by the deployer | Assume the role and call S3 directly (Lake Formation doesn't gate S3 calls when the bucket is registered with `hybridAccessEnabled: true`, so the IAM grants the construct produces are what's being tested). `s3:ListBucket` on the table's own prefix succeeds. `s3:ListBucket` on a foreign table's prefix is denied — the `s3:prefix` condition kicks in. The Glue action grants are validated by the unit tests, not at runtime, because LF gates `glue:*` against tables in LF-registered locations regardless of the principal's IAM policy |
 | **`fromIcebergTableAttributes(...)` + `grantRead`** | imported handle on `transforms_test` + a second `ImportedGranteeRole` | Same S3 checks under the import-factory grantee. Verifies the import path produces a symmetric IAM split |
 

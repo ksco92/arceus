@@ -59,7 +59,7 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *   - `sorted_test` — multi-field write order with mixed directions
  *     and null orderings.
  *   - `nested_test` — list, struct, and map columns inserted and
- *     queried via Athena's nested-type SQL.
+ *     queried via Spark SQL.
  *   - `transforms_test.grantRead(granteeRole)` — the four-statement
  *     IAM split exercised at runtime by assuming the role from the
  *     integ script and calling Glue / S3 directly.
@@ -235,7 +235,7 @@ export class IcebergSurfaceStack extends Stack {
             database: importedDatabase,
             tableName: 'nested_test',
             formatVersion: IcebergFormatVersion.V2,
-            comment: 'Exercises list, struct, and map column types end-to-end via Athena.',
+            comment: 'Exercises list, struct, and map column types end-to-end via Spark.',
             columns: [
                 {
                     name: 'id',
