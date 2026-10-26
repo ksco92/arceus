@@ -55,7 +55,7 @@ closed unmerged in September 2026.
 | --- | --- | --- | --- | --- |
 | Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ you own both footguns | ❌ |
 | CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
-| Spark SQL DDL, or Athena SQL DDL (v1/v2 only), at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
+| Spark SQL DDL, or Athena SQL DDL, at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
 | **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ both prevented by construction | ✅ |
 
 ## Install
@@ -540,6 +540,7 @@ Which engines read a v3 table created by the construct:
 | --- | --- | --- |
 | Spark 4.1 + Iceberg 1.12 (the integration-test runner) | Yes | Reads and writes tables the construct creates, including deletion vectors, row lineage, `variant`, `unknown`, and `geometry` / `geography`. Upstream Spark 4.1 fails to open a table with any `timestamp_ns` or `timestamptz_ns` column, and accepts only `OGC:CRS84` (or bare `geometry`) as a geometry CRS; see [Known limitations](#known-limitations). |
 | AWS Glue 6.0 | Documented | The [AWS Glue versions](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) page lists "Iceberg format version 3 with VARIANT data type, deletion vectors, row lineage tracking, nanosecond timestamps, and geo types". The integration suites do not run on Glue 6.0. |
+| Amazon EMR Spark 8.1.0 (Spark 4.1.1, Iceberg 1.11.0-amzn-0) | Documented | The [emr-spark-8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) state "Amazon EMR Spark 8.1.0 extends Iceberg v3 spec support for Spark workloads" and list geospatial types, nanosecond-precision timestamps, the `UNKNOWN` data type, and default values. They also list the known issue "Transforms that take more than one argument are not supported for Iceberg v3 tables." The integration suites do not run on EMR 8.1. |
 | Athena SQL | No | The [Athena Iceberg page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states "Athena only creates and operates on Iceberg v2 tables." |
 
 The `arceus` repo's v3 integration suites deploy v3 tables with the construct and check
@@ -687,7 +688,7 @@ the construct does **not** prevent. See the next section.)
 - **Format version is immutable after CREATE.** The `formatVersion` prop is read once at table creation; changing it later requires a destroy + recreate. An engine can upgrade a v2 table in place with `ALTER TABLE … SET TBLPROPERTIES ('format-version' = '3')`. Every deploy submits `formatVersion` as the template's `version` and as the `format-version` table property, so set `formatVersion` to `V3` before the next deploy.
 - **`merge-on-read` requires v2 or later.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
 - **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property (an `AWS::EarlyValidation::PropertyValidation` failure, checked 2026-10-25). Revisit when that schema gains the two properties.
-- **Nanosecond timestamps are catalog-only for upstream Spark 4.1.** A table with any `timestamp_ns` or `timestamptz_ns` column fails to open in upstream Spark 4.1 with Iceberg 1.12. The integration suite for these columns asserts from `metadata.json` only.
+- **Nanosecond timestamps are catalog-only for upstream Spark 4.1.** A table with any `timestamp_ns` or `timestamptz_ns` column fails to open in upstream Spark 4.1 with Iceberg 1.12. The integration suite for these columns asserts from `metadata.json` only. The Glue 6.0 and EMR Spark 8.1.0 pages cited in [Format version 3](#format-version-3) list nanosecond timestamps as supported ("nanosecond timestamps"; "Iceberg v3 tables support nanosecond-precision timestamp columns").
 - **Geometry CRS other than `OGC:CRS84` is catalog-only for upstream Spark 4.1.** Spark 4.1 accepts `OGC:CRS84`, or bare `geometry`, as the geometry CRS; a table declaring another CRS, such as `EPSG:3857`, cannot be read there.
 - **Athena DDL features that don't surface through CFN** (e.g. `ALTER TABLE WRITE ORDERED BY`, `ALTER TABLE … SET LOCATION`, `bucketed_by` / `bucket_count` Hive clauses) are not exposed. Use `IcebergPartitionTransform.bucket(N)` instead of Hive bucketing.
 - **Dropping a partition column requires a `void` intermediate per the Iceberg spec**, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, but Athena queries against the result will fail with `Type cannot be null`. The safe pattern is to drop partitions that source from a column while keeping that column in the schema, and only drop a column once it is no longer partitioning anything.
@@ -743,8 +744,10 @@ validated against their source column's type at synth time. See
 
 ### Does it work with Athena and Lake Formation?
 
-Yes for v1 and v2 tables, no for v3: Athena reads and writes v1 and v2, including v2
-merge-on-read `INSERT` / `UPDATE` / `DELETE` / `MERGE`, time travel,
+Yes for v2 tables, no for v3. The [Athena Iceberg
+page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html)
+states "Athena only creates and operates on Iceberg v2 tables." On v2,
+Athena reads and writes, including merge-on-read `INSERT` / `UPDATE` / `DELETE` / `MERGE`, time travel,
 `OPTIMIZE`, and `VACUUM`. The demo app in the
 [`arceus`](https://github.com/ksco92/arceus) repo registers its tables
 with Lake Formation and exercises the same operations through Spark in
