@@ -69,6 +69,7 @@ arceus/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
 │       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
+│       ├── verify_dml.py               # PySpark engine steps for the DML harness
 │       └── verify_surface.py           # PySpark engine steps for the surface harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
