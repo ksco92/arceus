@@ -17,7 +17,7 @@ The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `bas
 
 The integ-test workflow assumes two things already exist in the target AWS account:
 
-1. **`ArceusStack` is deployed.** `IcebergEvolutionStack` (the stack the workflow deploys) imports the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
+1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
 
    ```bash
    export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
@@ -29,8 +29,8 @@ The integ-test workflow assumes two things already exist in the target AWS accou
 
    For the integ-test workflow specifically, deploy `ArceusStack`
    one more time with `PRINCIPAL_ARN` set to the OIDC role ARN — the
-   workflow itself doesn't deploy `ArceusStack`, only
-   `IcebergEvolutionStack`, so the LF admin / table grants for the
+   workflow itself doesn't deploy `ArceusStack`, only the test
+   stacks, so the LF admin / table grants for the
    role have to be installed by a prior `ArceusStack` deploy.
 
    **This deploy REPLACES the LF admin / grantee installed by the
@@ -120,12 +120,12 @@ The integration test does the following AWS actions:
 
 | Service | Why |
 | --- | --- |
-| CloudFormation | Create / update / delete `IcebergEvolutionStack`. |
+| CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
 | S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`); read + write the Athena results bucket. |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
 | Lake Formation | Read settings + grant the test table to the developer principal. |
-| Athena | Start queries, poll status, fetch results (the existing scripts until they move to Spark). |
+| Athena | Start queries, poll status, fetch results (the evolution, DML, and surface scripts). |
 | KMS | Encrypt / decrypt the bucket KMS keys, including the `S3FileIO` writes from Spark. |
 | SSM | Read `/cdk-bootstrap/hnb659fds/version` parameter. |
 | STS | `GetCallerIdentity` for the script. |
@@ -220,10 +220,4 @@ The workflow comments back on the PR with success / failure plus a
 link to the run logs. The script teardown step (`DESTROY=1`) deletes
 the `IcebergEvolutionStack` at the end so the account is left clean.
 
-Before the Athena scripts run, the workflow installs Java 17 and the
-Spark toolchain (`scripts/spark/install-spark.sh`), then runs
-`scripts/integration-test-spark-smoke.sh`. That script deploys
-`IcebergSparkSmokeStack` (CDK creates the table and grants the role) and
-has `scripts/spark/smoke.py` insert into and count the table through the
-Glue catalog and the lake bucket. Spark never creates tables. The role
-needs no Spark-specific policy beyond the Glue, S3, and KMS rows above.
+Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.
