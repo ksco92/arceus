@@ -267,6 +267,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 7 | `CALL glue.system.rewrite_data_files(...)` | succeeds, row count unchanged |
 | 8 | `CALL glue.system.expire_snapshots(...)` with a future `older_than` | snapshots reduced to the current one; 6 rows unchanged |
 | 9 | final `SELECT` | 6 rows with the expected balances |
+
 The smoke check and the four scripts run sequentially in the same `integ-test.yml`
 job; evolution takes ~5 minutes, DML ~3, surface ~4, and v3 evolution ~3.
 
