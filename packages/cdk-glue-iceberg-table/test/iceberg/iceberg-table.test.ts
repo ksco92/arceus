@@ -17,6 +17,7 @@ import {
 import {
     IcebergColumn,
     IcebergDataFormat,
+    IcebergEdgeAlgorithm,
     IcebergFormatVersion,
     IcebergNullOrder,
     IcebergPartitionField,
@@ -1406,6 +1407,236 @@ describe('IcebergTable — validation', () => {
                 'write.format.default': 'orc',
             },
         })).toThrow(/write\.format\.default.*orc/);
+    });
+});
+
+describe('IcebergTable — v3 types', () => {
+    function build(
+        formatVersion: IcebergFormatVersion,
+        column: Omit<IcebergColumn, 'id' | 'name'>,
+        identifierFieldNames?: string[],
+    ): IcebergTable {
+        const {
+            stack, database,
+        } = makeStack();
+        return new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'v3',
+            formatVersion,
+            columns: [
+                ...MINIMAL_COLUMNS,
+                {
+                    ...column,
+                    name: 'c',
+                    id: 2,
+                },
+            ],
+            location: 's3://my-bucket/v3/',
+            identifierFieldNames,
+        });
+    }
+
+    it('renders v3 type strings into the schema', () => {
+        const table = build(IcebergFormatVersion.V3, {
+            type: IcebergType.geography('EPSG:4326', IcebergEdgeAlgorithm.KARNEY),
+        });
+        Template.fromStack(Stack.of(table)).hasResourceProperties('AWS::Glue::Table', {
+            OpenTableFormatInput: {
+                IcebergInput: Match.objectLike({
+                    IcebergTableInput: Match.objectLike({
+                        Schema: Match.objectLike({
+                            Fields: Match.arrayWith([
+                                Match.objectLike({
+                                    Name: 'c',
+                                    Type: 'geography(EPSG:4326, karney)',
+                                }),
+                            ]),
+                        }),
+                    }),
+                }),
+            },
+        });
+    });
+
+    it.each([
+        [
+            'unknown',
+            IcebergType.UNKNOWN,
+            'c',
+        ],
+        [
+            'timestamp_ns',
+            IcebergType.TIMESTAMP_NS,
+            'c',
+        ],
+        [
+            'timestamptz_ns',
+            IcebergType.TIMESTAMPTZ_NS,
+            'c',
+        ],
+        [
+            'variant',
+            IcebergType.VARIANT,
+            'c',
+        ],
+        [
+            'geometry',
+            IcebergType.geometry('EPSG:3857'),
+            'c',
+        ],
+        [
+            'geography',
+            IcebergType.geography(),
+            'c',
+        ],
+        [
+            'variant',
+            IcebergType.list(IcebergType.VARIANT),
+            'c.element',
+        ],
+        [
+            'timestamp_ns',
+            IcebergType.map(IcebergType.TIMESTAMP_NS, IcebergType.STRING),
+            'c.key',
+        ],
+        [
+            'timestamptz_ns',
+            IcebergType.map(IcebergType.STRING, IcebergType.TIMESTAMPTZ_NS),
+            'c.value',
+        ],
+        [
+            'geography',
+            IcebergType.struct([
+                {
+                    name: 'inner',
+                    type: IcebergType.struct([
+                        {
+                            name: 'shape',
+                            type: IcebergType.geography(),
+                        },
+                    ]),
+                },
+            ]),
+            'c.inner.shape',
+        ],
+    ])('rejects %s at %s below v3 and accepts it at v3', (kind, type, path) => {
+        for (const formatVersion of [
+            IcebergFormatVersion.V1,
+            IcebergFormatVersion.V2,
+        ]) {
+            expect(() => build(formatVersion, {
+                type,
+            })).toThrow(`column '${path}' has type '${kind}', which requires formatVersion v3; got v${formatVersion}`);
+        }
+        expect(() => build(IcebergFormatVersion.V3, {
+            type,
+        })).not.toThrow();
+    });
+
+    it.each([
+        [
+            'a required column',
+            {
+                type: IcebergType.UNKNOWN,
+                required: true,
+            },
+            {
+                type: IcebergType.UNKNOWN,
+                required: false,
+            },
+            'c',
+        ],
+        [
+            'a required struct field',
+            {
+                type: IcebergType.struct([
+                    {
+                        name: 'f',
+                        type: IcebergType.UNKNOWN,
+                        required: true,
+                    },
+                ]),
+            },
+            {
+                type: IcebergType.struct([
+                    {
+                        name: 'f',
+                        type: IcebergType.UNKNOWN,
+                    },
+                ]),
+            },
+            'c.f',
+        ],
+        [
+            'a required list element',
+            {
+                type: IcebergType.list(IcebergType.UNKNOWN),
+            },
+            {
+                type: IcebergType.list(IcebergType.UNKNOWN, false),
+            },
+            'c.element',
+        ],
+        [
+            'a required map value',
+            {
+                type: IcebergType.map(IcebergType.STRING, IcebergType.UNKNOWN),
+            },
+            {
+                type: IcebergType.map(IcebergType.STRING, IcebergType.UNKNOWN, false),
+            },
+            'c.value',
+        ],
+    ])('rejects unknown as %s and accepts it optional', (_label, rejected, accepted, path) => {
+        expect(() => build(IcebergFormatVersion.V3, rejected))
+            .toThrow(`column '${path}' has type 'unknown', which must be optional`);
+        expect(() => build(IcebergFormatVersion.V3, accepted)).not.toThrow();
+    });
+
+    it('rejects unknown as a map key, which is always required', () => {
+        expect(() => build(IcebergFormatVersion.V3, {
+            type: IcebergType.map(IcebergType.UNKNOWN, IcebergType.STRING),
+        })).toThrow("column 'c.key' has type 'unknown', which must be optional");
+    });
+
+    it.each([
+        [
+            'variant',
+            IcebergType.VARIANT,
+        ],
+        [
+            'unknown',
+            IcebergType.UNKNOWN,
+        ],
+        [
+            'geometry',
+            IcebergType.geometry(),
+        ],
+        [
+            'geography',
+            IcebergType.geography(),
+        ],
+    ])('rejects a %s column in identifierFieldNames and accepts it outside them', (kind, type) => {
+        expect(() => build(IcebergFormatVersion.V3, {
+            type,
+        }, [
+            'id',
+            'c',
+        ])).toThrow(`identifierFieldNames references column 'c' of type '${kind}', which cannot identify a row`);
+        expect(() => build(IcebergFormatVersion.V3, {
+            type,
+        }, [
+            'id',
+        ])).not.toThrow();
+    });
+
+    it('accepts a nanosecond timestamp in identifierFieldNames', () => {
+        expect(() => build(IcebergFormatVersion.V3, {
+            type: IcebergType.TIMESTAMP_NS,
+            required: true,
+        }, [
+            'c',
+        ])).not.toThrow();
     });
 });
 
