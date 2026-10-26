@@ -234,7 +234,7 @@ The smoke script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`;
 without `DESTROY=1` it leaves the stack deployed.
 
 `IcebergV3DmlStack` deploys `v3_dml_test` (v3, merge-on-read) and `v3_upgrade_test` (v2).
-`scripts/integration-test-v3-dml.sh` checks deletion vectors, row lineage, variant, geo, MERGE, time travel, compaction, snapshot expiry, the v2→v3 upgrade, and `next-row-id` on `v3_dml_test` from `metadata.json`.
+`scripts/integration-test-v3-dml.sh` checks deletion vectors, row lineage, variant, geo, MERGE, time travel, compaction, snapshot expiry and the v2→v3 upgrade through Spark, and the format versions and `next-row-id` on `v3_dml_test` from `metadata.json`.
 Install the Spark toolchain first (see "Spark toolchain" above); with `PRINCIPAL_ARN` set and `ArceusStack` deployed with the same principal, run `DESTROY=1 scripts/integration-test-v3-dml.sh` (without `DESTROY=1` it leaves `IcebergV3DmlStack` deployed).
 
 ## Demo: schema + partition evolution
