@@ -30,7 +30,7 @@ describe('IcebergV3DmlStack', () => {
         template = synth();
     });
 
-    it('creates two Glue tables', () => {
+    it('creates two Glue tables and two Lake Formation grants', () => {
         template.resourceCountIs('AWS::Glue::Table', 2);
         template.resourceCountIs('AWS::LakeFormation::Permissions', 2);
     });

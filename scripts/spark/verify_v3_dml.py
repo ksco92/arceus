@@ -46,12 +46,10 @@ def lineage() -> dict[int, tuple[int, int]]:
 
 
 def row_ids() -> dict[int, int]:
-    """account_id -> _row_id for every live row of DML."""
     return {account_id: row_id for account_id, (row_id, _) in lineage().items()}
 
 
 def balances() -> list[tuple]:
-    """(account_id, balance as string) for every live row of DML, ordered."""
     return query(f"SELECT account_id, CAST(balance AS STRING) FROM {DML} ORDER BY account_id")
 
 
