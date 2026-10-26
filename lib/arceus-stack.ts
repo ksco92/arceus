@@ -31,9 +31,6 @@ import {
     CfnResource,
 } from 'aws-cdk-lib/aws-lakeformation';
 import {
-    CfnWorkGroup,
-} from 'aws-cdk-lib/aws-athena';
-import {
     IcebergDataFormat,
     IcebergFormatVersion,
     IcebergNullOrder,
@@ -69,11 +66,6 @@ export class ArceusStack extends Stack {
         const principal = new ArnPrincipal(props.principalArn);
 
         const dataLakeBucketKmsKey = new Key(this, 'DataLakeBucketKmsKey', {
-            enableKeyRotation: true,
-            removalPolicy: RemovalPolicy.DESTROY,
-        });
-
-        const athenaResultsBucketKmsKey = new Key(this, 'AthenaResultsBucketKmsKey', {
             enableKeyRotation: true,
             removalPolicy: RemovalPolicy.DESTROY,
         });
@@ -119,25 +111,11 @@ export class ArceusStack extends Stack {
             serverAccessLogsPrefix: `data-lake-bucket-${this.account}/`,
         });
 
-        const athenaResultsBucket = new Bucket(this, 'AthenaResultsBucket', {
-            bucketName: `athena-results-bucket-${this.account}`,
-            encryptionKey: athenaResultsBucketKmsKey,
-            removalPolicy: RemovalPolicy.DESTROY,
-            autoDeleteObjects: true,
-            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
-            enforceSSL: true,
-            objectOwnership: ObjectOwnership.BUCKET_OWNER_ENFORCED,
-            bucketKeyEnabled: true,
-            serverAccessLogsBucket: loggingBucket,
-            serverAccessLogsPrefix: `athena-results-bucket-${this.account}/`,
-        });
-
         /// /////////////////////////////////////////////////
         /// /////////////////////////////////////////////////
         // Bucket permissions
 
         const buckets = [
-            athenaResultsBucket,
             dataLakeBucket,
         ];
 
@@ -190,23 +168,6 @@ export class ArceusStack extends Stack {
             useServiceLinkedRole: true,
             hybridAccessEnabled: true,
             roleArn: lfServiceRoleArn,
-        });
-
-        /// /////////////////////////////////////////////////
-        /// /////////////////////////////////////////////////
-        /// /////////////////////////////////////////////////
-        /// /////////////////////////////////////////////////
-        // Athena WG
-
-        new CfnWorkGroup(this, 'ReadOnlyWorkGroup', {
-            name: 'ReadOnly',
-            workGroupConfiguration: {
-                publishCloudWatchMetricsEnabled: true,
-                resultConfiguration: {
-                    outputLocation: `s3://${athenaResultsBucket.bucketName}/ReadOnlyWorkGroup`,
-                },
-            },
-            recursiveDeleteOption: true,
         });
 
         /// /////////////////////////////////////////////////
@@ -484,11 +445,6 @@ export class ArceusStack extends Stack {
         new CfnOutput(this, 'DataLakeBucketNameOutput', {
             value: dataLakeBucket.bucketName,
             description: 'Data lake bucket where Iceberg tables will be stored.',
-        });
-
-        new CfnOutput(this, 'AthenaResultsBucketNameOutput', {
-            value: athenaResultsBucket.bucketName,
-            description: 'Athena query results bucket.',
         });
 
         new CfnOutput(this, 'DatabaseNameOutput', {

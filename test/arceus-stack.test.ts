@@ -24,15 +24,15 @@ describe('ArceusStack', () => {
         template = Template.fromStack(stack);
     });
 
-    it('creates the three KMS keys with rotation enabled', () => {
-        template.resourceCountIs('AWS::KMS::Key', 3);
+    it('creates the two KMS keys with rotation enabled', () => {
+        template.resourceCountIs('AWS::KMS::Key', 2);
         template.allResourcesProperties('AWS::KMS::Key', {
             EnableKeyRotation: true,
         });
     });
 
-    it('creates the data lake, athena results, and logging buckets', () => {
-        template.resourceCountIs('AWS::S3::Bucket', 3);
+    it('creates the data lake and logging buckets', () => {
+        template.resourceCountIs('AWS::S3::Bucket', 2);
     });
 
     it('creates the Glue database with the expected name', () => {
@@ -50,10 +50,8 @@ describe('ArceusStack', () => {
         });
     });
 
-    it('creates the Athena workgroup', () => {
-        template.hasResourceProperties('AWS::Athena::WorkGroup', {
-            Name: 'ReadOnly',
-        });
+    it('creates no Athena workgroup', () => {
+        template.resourceCountIs('AWS::Athena::WorkGroup', 0);
     });
 
     it('creates Lake Formation settings and registered location', () => {
