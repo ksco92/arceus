@@ -9,6 +9,9 @@
 # Prereqs: same as scripts/integration-test-evolution.sh (AWS credentials,
 # PRINCIPAL_ARN, ArceusStack deployed with the same principal).
 #
+# Usage:
+#   scripts/integration-test-v3-evolution.sh
+#
 # Optional env vars:
 #   AWS_REGION — default us-east-1
 #   DESTROY    — set to 1 to teardown at the end
@@ -49,6 +52,7 @@ print('format-version', m['format-version'])
 print('next-row-id', m['next-row-id'])
 print('schema-id', m['current-schema-id'])
 print('schemas-count', len(m['schemas']))
+print('last-partition-id', m['last-partition-id'])
 print('last-column-id', m['last-column-id'])
 print('columns', ','.join(f\"{f['id']}:{f['name']}:{f['type']}\" for f in schema['fields']))
 print('partitions', ','.join(f\"{f['field-id']}:{f['transform']}\" for f in spec['fields']))
@@ -171,8 +175,7 @@ assert_equals "last-column-id" "6" "$(summary_value last-column-id)"
 deploy_step 4
 header "VERIFY step 4 (CHANGE day -> month under fresh id 1002)"
 verify_step "$STEP3_COLUMNS" "1002:month,1001:hour"
-assert_equals "last-partition-id" "1002" \
-    "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['last-partition-id'])" "$META_FILE")"
+assert_equals "last-partition-id" "1002" "$(summary_value last-partition-id)"
 
 if [ "${DESTROY:-0}" = "1" ]; then
     header "TEARDOWN"

@@ -25,10 +25,11 @@ on:
   workflow_dispatch:
 
 # Single global slot — the job deploys fixed-name CloudFormation
-# stacks (`IcebergEvolutionStack`, `IcebergDmlStack`,
-# `IcebergSurfaceStack`, `IcebergV3EvolutionStack`) to one account/region, so two concurrent
-# runs would race on the same stacks and Glue tables. Don't cancel
-# in-progress: an interrupted run leaves stacks partially deployed.
+# stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`,
+# `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`)
+# to one account/region, so two concurrent runs would race on the
+# same stacks and Glue tables. Don't cancel in-progress: an
+# interrupted run leaves stacks partially deployed.
 concurrency:
   group: integ-test-stacks
   cancel-in-progress: false

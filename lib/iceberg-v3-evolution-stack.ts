@@ -158,36 +158,28 @@ function buildColumns(step: number): IcebergColumn[] {
 }
 
 function buildPartitionSpec(step: number): IcebergPartitionField[] {
-    const hourReceived: IcebergPartitionField = {
-        sourceColumn: 'received_at',
-        transform: IcebergPartitionTransform.HOUR,
-        fieldId: 1001,
-    };
-    if (step === 1) {
-        return [
-            {
-                sourceColumn: 'occurred_at',
-                transform: IcebergPartitionTransform.DAY,
-                fieldId: 1000,
-            },
-        ];
-    }
-    if (step === 4) {
-        return [
-            {
-                sourceColumn: 'occurred_at',
-                transform: IcebergPartitionTransform.MONTH,
-                fieldId: 1002,
-            },
-            hourReceived,
-        ];
-    }
-    return [
-        {
+    const occurredAt: IcebergPartitionField = step === 4
+        ? {
+            sourceColumn: 'occurred_at',
+            transform: IcebergPartitionTransform.MONTH,
+            fieldId: 1002,
+        }
+        : {
             sourceColumn: 'occurred_at',
             transform: IcebergPartitionTransform.DAY,
             fieldId: 1000,
+        };
+    if (step === 1) {
+        return [
+            occurredAt,
+        ];
+    }
+    return [
+        occurredAt,
+        {
+            sourceColumn: 'received_at',
+            transform: IcebergPartitionTransform.HOUR,
+            fieldId: 1001,
         },
-        hourReceived,
     ];
 }
