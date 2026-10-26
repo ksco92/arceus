@@ -29,7 +29,7 @@ export interface IcebergSparkSmokeStackProps extends StackProps {
     /** Name of the existing Glue database to publish the table to. */
     readonly importedDatabaseName: string;
 
-    /** ARN of the IAM principal granted SELECT/INSERT/DESCRIBE on the table. */
+    /** ARN of the IAM principal granted SELECT/INSERT/ALTER/DESCRIBE on the table. */
     readonly principalArn: string;
 }
 
@@ -69,6 +69,7 @@ export class IcebergSparkSmokeStack extends Stack {
             permissions: [
                 'SELECT',
                 'INSERT',
+                'ALTER',
                 'DESCRIBE',
             ],
             permissionsWithGrantOption: [],

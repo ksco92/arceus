@@ -56,11 +56,12 @@ describe('IcebergSparkSmokeStack', () => {
         });
     });
 
-    it('grants the test principal SELECT/INSERT/DESCRIBE via Lake Formation', () => {
+    it('grants the test principal SELECT/INSERT/ALTER/DESCRIBE via Lake Formation', () => {
         template.hasResourceProperties('AWS::LakeFormation::Permissions', {
             Permissions: [
                 'SELECT',
                 'INSERT',
+                'ALTER',
                 'DESCRIBE',
             ],
             DataLakePrincipal: {
