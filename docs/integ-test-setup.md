@@ -221,3 +221,5 @@ link to the run logs. Each script's teardown step (`DESTROY=1`) deletes
 its stack at the end so the account is left clean.
 
 Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.
+
+After the surface script, the workflow runs `scripts/integration-test-v3-evolution.sh`: CDK deploys `IcebergV3EvolutionStack` four times with `--context v3EvolutionStep=N`, and the script reads the table's `metadata.json` from the Glue `metadata_location` after each deploy. It uses no Athena or Spark query, so it needs only the Glue, S3, and CloudFormation permissions the other scripts already use.

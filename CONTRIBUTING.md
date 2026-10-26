@@ -62,6 +62,7 @@ arceus/
 │   ├── integration-test-dml.sh         # End-to-end DML harness
 │   ├── integration-test-surface.sh     # End-to-end surface harness
 │   ├── integration-test-spark-smoke.sh # Spark toolchain smoke check (1 deploy + INSERT/SELECT)
+│   ├── integration-test-v3-evolution.sh # v3 catalog-level evolution harness
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
@@ -281,6 +282,21 @@ one concern:
 | **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | INSERT two rows using `ARRAY[...]`, `CAST(ROW(...) AS ROW(...))`, and `MAP(ARRAY[...], ARRAY[...])`. SELECT verifies `tags[1]`, `profile.first_name`, and `element_at(attrs, 'tier')` all roundtrip correctly |
 | **`grantRead` S3 statements at runtime** | `transforms_test` + a `GranteeRole` trusted by the deployer | Assume the role and call S3 directly (Lake Formation doesn't gate S3 calls when the bucket is registered with `hybridAccessEnabled: true`, so the IAM grants the construct produces are what's being tested). `s3:ListBucket` on the table's own prefix succeeds. `s3:ListBucket` on a foreign table's prefix is denied — the `s3:prefix` condition kicks in. The Glue action grants are validated by the unit tests, not at runtime, because LF gates `glue:*` against tables in LF-registered locations regardless of the principal's IAM policy |
 | **`fromIcebergTableAttributes(...)` + `grantRead`** | imported handle on `transforms_test` + a second `ImportedGranteeRole` | Same S3 checks under the import-factory grantee. Verifies the import path produces a symmetric IAM split |
+
+## Demo: v3 evolution
+
+`scripts/integration-test-v3-evolution.sh` drives `IcebergV3EvolutionStack`
+(`--context v3EvolutionStep=N`) through four `cdk deploy`s and asserts
+`metadata.json` after each, with no engine step: Spark cannot open a
+table with nanosecond timestamp columns, and the two promotions are
+schema changes. Step 1 creates `timestamp_ns`, `timestamptz_ns`,
+`unknown`, and `date` columns with `day(occurred_at)`; step 2 adds
+`source` and `hour(received_at)`; step 3 promotes `raw` to `string` and
+`event_date` to `timestamp` (original ids, new schema id); step 4
+replaces the day partition with `month(occurred_at)` under a fresh field
+id. Each step checks `format-version`, `next-row-id`, the exact
+`(id, name, type)` columns, the exact `(field-id, transform)`
+partitions, and the partition-spec history invariants.
 
 ## The e2e-consumer app
 
