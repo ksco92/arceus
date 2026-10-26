@@ -156,7 +156,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-evolution.sh 2>&1 | tee -a /tmp/integ-test.log
-      - name: Run integration test — DML (1 deploy + UPDATE/DELETE/MERGE/time-travel/OPTIMIZE/VACUUM)
+      - name: Run integration test — DML via Spark (1 deploy + UPDATE/DELETE/MERGE/time-travel/compaction/expiry)
         run: |
           set -o pipefail
           bash scripts/integration-test-dml.sh 2>&1 | tee -a /tmp/integ-test.log

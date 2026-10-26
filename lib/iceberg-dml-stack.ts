@@ -48,8 +48,8 @@ export interface IcebergDmlStackProps extends StackProps {
 /**
  * Stack that owns a single Iceberg v2 table sized for exercising the
  * full Iceberg-v2 DML surface: identifier fields, merge-on-read
- * delete / update / merge, time travel, OPTIMIZE compaction, and
- * VACUUM snapshot expiration. Used as the target of
+ * delete / update / merge, time travel, compaction, and
+ * snapshot expiration. Used as the target of
  * `scripts/integration-test-dml.sh`.
  *
  * The schema is intentionally simple — the test is about the DML
@@ -74,7 +74,7 @@ export class IcebergDmlStack extends Stack {
         const table = new IcebergTable(this, 'DmlTable', {
             database: importedDatabase,
             tableName: 'dml_test',
-            comment: 'Integration-test target for DML (update / delete / merge / time-travel / optimize / vacuum).',
+            comment: 'Integration-test target for DML (update / delete / merge / time-travel / compaction / snapshot expiry).',
             columns: [
                 {
                     name: 'account_id',
@@ -124,10 +124,6 @@ export class IcebergDmlStack extends Stack {
                 'write.delete.mode': 'merge-on-read',
                 'write.update.mode': 'merge-on-read',
                 'write.merge.mode': 'merge-on-read',
-                /// Aggressive snapshot expiration so VACUUM has something
-                /// to do on a fresh table that's only existed for ~minutes.
-                'history.expire.min-snapshots-to-keep': '1',
-                'history.expire.max-snapshot-age-ms': '60000',
             },
             removalPolicy: RemovalPolicy.DESTROY,
         });

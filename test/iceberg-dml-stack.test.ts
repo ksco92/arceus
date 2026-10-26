@@ -122,14 +122,6 @@ describe('IcebergDmlStack', () => {
         expect(properties['format-version']).toBe('2');
     });
 
-    it('configures aggressive snapshot expiration for VACUUM', () => {
-        const tables = template.findResources('AWS::Glue::Table');
-        const props = Object.values(tables)[0].Properties;
-        const properties = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.Properties;
-        expect(properties['history.expire.min-snapshots-to-keep']).toBe('1');
-        expect(properties['history.expire.max-snapshot-age-ms']).toBe('60000');
-    });
-
     it('grants the test principal SELECT/INSERT/DELETE/ALTER/DESCRIBE via Lake Formation', () => {
         template.hasResourceProperties('AWS::LakeFormation::Permissions', {
             Permissions: [
