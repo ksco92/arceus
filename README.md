@@ -5,31 +5,31 @@
 [![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![PyPI](https://img.shields.io/pypi/v/cdk-glue-iceberg-table.svg)](https://pypi.org/project/cdk-glue-iceberg-table/)
 [![Construct Hub](https://img.shields.io/badge/Construct%20Hub-available-blueviolet)](https://constructs.dev/packages/cdk-glue-iceberg-table)
-[![types](https://img.shields.io/npm/types/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![downloads](https://img.shields.io/npm/dw/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
-[![last commit](https://img.shields.io/github/last-commit/ksco92/arceus.svg)](https://github.com/ksco92/arceus/commits/main)
 [![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](https://github.com/ksco92/arceus/blob/main/LICENSE)
 
-**`cdk-glue-iceberg-table` is the AWS CDK L2 construct for creating
-and evolving Apache Iceberg tables in the AWS Glue Data Catalog.** It
-emits the exact `AWS::Glue::Table` / `OpenTableFormatInput` shape that
-survives a CloudFormation `Update`, so a single `cdk deploy` creates a
-table, evolves its schema and partitions, and destroys it, the same
-lifecycle CDK gives any other resource. No custom resource, no Lambda,
-no "`cdk deploy` and then run this SQL by hand" two-step. Table
-changes (new columns, renames, drops, new partition fields) land as
-a reviewed diff in a pull request and apply through `cdk deploy`.
+**`cdk-glue-iceberg-table` is an AWS CDK L2 construct to create and
+evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and
+partition changes that survive CloudFormation updates, via cdk
+deploy.** It supports Iceberg format version 3 (`variant`, nanosecond
+timestamps, `geometry` / `geography`, `unknown`). It emits the exact
+`AWS::Glue::Table` / `OpenTableFormatInput` shape, so a single `cdk
+deploy` creates, evolves, and destroys a table like any other CDK
+resource. No custom resource, no Lambda, no "`cdk deploy` and then run
+this SQL by hand" two-step. Table changes (new columns, renames, drops,
+new partition fields) land as a reviewed diff in a pull request and
+apply through `cdk deploy`.
 
-Status (October 2026): published on npm (TypeScript/JavaScript) and PyPI
-(Python), pre-1.0, with a public surface guarded by an end-to-end
-consumer test on every PR plus three real-AWS integration suites. The
-multi-language packages are generated from one TypeScript source with
-[jsii](https://aws.github.io/jsii/) and indexed on
-[Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
-Developed in the
-[`ksco92/arceus`](https://github.com/ksco92/arceus) monorepo, which
-also holds a CDK demo app that dogfoods the construct against a real
-AWS account.
+Status (October 2026): published on npm (TypeScript/JavaScript) and
+PyPI (Python), pre-1.0, with a public surface guarded by an end-to-end
+consumer test on every PR plus real-AWS integration suites, including
+ones for format version 3. The multi-language packages are generated
+from one TypeScript source with [jsii](https://aws.github.io/jsii/)
+and indexed on [Construct
+Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
+Developed in the [`ksco92/arceus`](https://github.com/ksco92/arceus)
+monorepo, which also holds a CDK demo app that dogfoods the construct
+against a real AWS account.
 
 ### Why this exists
 
@@ -54,7 +54,7 @@ closed unmerged in September 2026.
 | --- | --- | --- | --- | --- |
 | Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ you own both footguns | ❌ |
 | CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
-| Spark / Athena SQL DDL at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
+| Spark SQL DDL, or Athena SQL DDL, at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
 | **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ both prevented by construction | ✅ |
 
 ## Install
@@ -163,22 +163,23 @@ Consumer-facing reference sections:
 
 - [How it compares](#how-it-compares) — `cdk-glue-iceberg-table` vs raw `CfnTable`, custom resources, and runtime SQL DDL.
 - [Using `IcebergTable`](#using-icebergtable) — full API reference with examples.
+- [Format version 3](#format-version-3) — the six v3 types, which engines read them, and the accepted limits.
 - [Two footguns the construct prevents](#two-footguns-the-construct-prevents) — the silent-corruption traps that motivated this construct.
 - [Known limitations](#known-limitations) — what the construct does and doesn't enforce.
 - [FAQ](#faq) — common "how do I … in CDK / CloudFormation" questions.
 
 ## Exported surface
 
-The package entry point re-exports everything you import from
+The package entry point re-exports the main types you import from
 `cdk-glue-iceberg-table`. In TypeScript / JavaScript the compiled
 surface lives under `dist/lib/iceberg/` after `npm install`; in Python
 the same surface is imported from the `cdk_glue_iceberg_table` module
 after `pip install`:
 
 - **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite` and the `fromIcebergTableAttributes(...)` import factory.
-- **`IcebergType`** — primitive types (including the v3 `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, and `VARIANT`) plus `list` / `map` / `struct` / `decimal` / `fixed` / `geometry` / `geography` factories. Renders to the JSON shape Glue's `IcebergStructField.type` expects.
+- **`IcebergType`** — primitive types, the v3 constants `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, and `VARIANT`, and the `list` / `map` / `struct` / `decimal` / `fixed` / `geometry(crs?)` / `geography(crs?, algorithm?)` factories. Renders to the string Glue's `IcebergStructField.type` expects.
 - **`IcebergPartitionTransform`** — identity / `bucket(N)` / `truncate(W)` / year / month / day / hour / void. Each transform validates against the source column type at synth time.
-- **`IcebergDataFormat`** (parquet/orc/avro, default parquet), **`IcebergFormatVersion`** (v1/v2/v3, required — set explicitly per table; Athena cannot query v3 tables), **`IcebergSortDirection`**, **`IcebergNullOrder`**, **`IcebergEdgeAlgorithm`** (for `geography`), plus a `tableProperties` validator that catches misconfigured properties before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
+- **`IcebergDataFormat`** (parquet/orc/avro, default parquet), **`IcebergFormatVersion`** (v1/v2/v3, required — set explicitly per table; Athena cannot query v3 tables), **`IcebergSortDirection`**, **`IcebergNullOrder`**, **`IcebergEdgeAlgorithm`** (`SPHERICAL`, `VINCENTY`, `THOMAS`, `ANDOYER`, `KARNEY`; the second argument of `IcebergType.geography`), plus a `tableProperties` validator that catches misconfigured properties before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
 
 ## Using `IcebergTable`
 
@@ -447,6 +448,93 @@ feature you set:
 }
 ```
 
+### Format version 3
+
+Set `formatVersion: IcebergFormatVersion.V3` to create a v3 table. The
+six v3 types (below) are only accepted on a V3 table, at any nesting
+depth: inside a struct, as a list element, or as a map key or value.
+Synth fails on a V1 or V2 table that uses one.
+
+```typescript
+import {
+    IcebergEdgeAlgorithm,
+    IcebergFormatVersion,
+    IcebergTable,
+    IcebergType,
+} from 'cdk-glue-iceberg-table';
+
+new IcebergTable(this, 'Events', {
+    database: db,
+    tableName: 'events',
+    location: `s3://${bucket.bucketName}/analytics/events/`,
+    columns: [
+        { name: 'occurred_at', type: IcebergType.TIMESTAMP_NS, id: 1 },
+        { name: 'payload',     type: IcebergType.VARIANT,      id: 2 },
+        {
+            name: 'origin',
+            type: IcebergType.geography('OGC:CRS84', IcebergEdgeAlgorithm.SPHERICAL),
+            id: 3,
+        },
+    ],
+    formatVersion: IcebergFormatVersion.V3,
+});
+```
+
+The same table in Python:
+
+```python
+from cdk_glue_iceberg_table import (
+    IcebergEdgeAlgorithm,
+    IcebergFormatVersion,
+    IcebergTable,
+    IcebergType,
+)
+
+IcebergTable(self, "Events",
+    database=db,
+    table_name="events",
+    location=f"s3://{bucket.bucket_name}/analytics/events/",
+    columns=[
+        {"name": "occurred_at", "type": IcebergType.TIMESTAMP_NS, "id": 1},
+        {"name": "payload", "type": IcebergType.VARIANT, "id": 2},
+        {
+            "name": "origin",
+            "type": IcebergType.geography("OGC:CRS84", IcebergEdgeAlgorithm.SPHERICAL),
+            "id": 3,
+        },
+    ],
+    format_version=IcebergFormatVersion.V3,
+)
+```
+
+This table has a `timestamp_ns` column; see [Known limitations](#known-limitations)
+before reading it from upstream Spark.
+
+The v3 types, with the rules `cdk synth` enforces:
+
+| Type | Factory | Rendered string | Partition and identifier rules |
+| --- | --- | --- | --- |
+| unknown | `IcebergType.UNKNOWN` | `unknown` | Must be optional, as a column, list element, or map value; never a map key. Partition source only with `void`. Not an identifier field. |
+| timestamp with nanoseconds | `IcebergType.TIMESTAMP_NS` | `timestamp_ns` | `identity`, `year`, `month`, `day`, `hour`, `bucket(N)`, `void`; not `truncate(W)`. Allowed as an identifier field. |
+| timestamptz with nanoseconds | `IcebergType.TIMESTAMPTZ_NS` | `timestamptz_ns` | Same as `timestamp_ns`. |
+| variant | `IcebergType.VARIANT` | `variant` | Never a partition or sort source, `void` included. Not an identifier field. |
+| geometry | `IcebergType.geometry(crs?)` | `geometry`, or `geometry(<crs>)` when a CRS is given | Partition source only with `void`. Not an identifier field. |
+| geography | `IcebergType.geography(crs?, algorithm?)` | `geography`, `geography(<crs>)`, or `geography(<crs>, <algorithm>)` when an algorithm is given, such as `geography(OGC:CRS84, spherical)` | Same as `geometry`. |
+
+A geometry or geography `crs` is an identifier such as `OGC:CRS84` or
+`EPSG:3857`; whitespace, parentheses, braces, and commas are rejected.
+When `algorithm` is set without a `crs`, the rendered string spells out
+`OGC:CRS84`.
+
+Which engines read a v3 table created by the construct:
+
+| Engine | v3 tables | Notes |
+| --- | --- | --- |
+| Spark 4.1 + Iceberg 1.12 (the integration-test runner) | Yes | Reads and writes tables the construct creates, including deletion vectors, row lineage, `variant`, `unknown`, and `geometry` / `geography`, except tables with nanosecond-timestamp columns or a geometry CRS other than `OGC:CRS84` (checked by `scripts/spark/verify_v3_dml.py`; details in [Known limitations](#known-limitations)). |
+| AWS Glue 6.0 | Documented | The [AWS Glue versions](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) page lists "Iceberg format version 3 with VARIANT data type, deletion vectors, row lineage tracking, nanosecond timestamps, and geo types". The integration suites do not run on Glue 6.0. |
+| Amazon EMR Spark 8.1.0 (Spark 4.1.1, Iceberg 1.11.0-amzn-0) | Documented | The [emr-spark-8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) state "Amazon EMR Spark 8.1.0 extends Iceberg v3 spec support for Spark workloads". The integration suites do not run on EMR 8.1. |
+| Athena SQL | No | The [Athena Iceberg page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states "Athena only creates and operates on Iceberg v2 tables." |
+
 ### Granting access
 
 ```typescript
@@ -585,8 +673,11 @@ the construct does **not** prevent. See the next section.)
 - **Partition field-id reuse is not detected across deploys either.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), but it cannot tell that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. The safe workflow: treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id.
 - **`last-partition-id` is written by Glue, not by the construct.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The repo's integration test asserts the counter keeps up with the highest supplied field id after a partition evolution, but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter — if you mix CDK-managed and engine-managed partition evolution, verify the counter in `metadata.json` before trusting engine-side changes.
 - **CREATE-only metadata operation.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that. Subsequent deploys use Glue's normal `UpdateTable` path, which writes new Iceberg metadata in-place.
-- **Format version is immutable after CREATE.** The `formatVersion` prop is read once at table creation; changing it later requires a destroy + recreate.
+- **Format version is immutable after CREATE.** CloudFormation does not change an existing table's format version, so changing `formatVersion` on a table no engine has upgraded means destroy + recreate. An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
 - **`merge-on-read` requires v2 or later.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
+- **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property. Revisit when that schema gains the two properties.
+- **Nanosecond timestamps are catalog-only for upstream Spark 4.1.** A table with any `timestamp_ns` or `timestamptz_ns` column fails to open in upstream Spark 4.1 with Iceberg 1.12. The integration suite for these columns asserts from `metadata.json` only. The [engine matrix](#format-version-3) lists the engines that document support.
+- **Geometry CRS other than `OGC:CRS84` is catalog-only for upstream Spark 4.1.** Spark 4.1 accepts `OGC:CRS84`, or bare `geometry`, as the geometry CRS; a table declaring another CRS, such as `EPSG:3857`, cannot be read there.
 - **Athena DDL features that don't surface through CFN** (e.g. `ALTER TABLE WRITE ORDERED BY`, `ALTER TABLE … SET LOCATION`, `bucketed_by` / `bucket_count` Hive clauses) are not exposed. Use `IcebergPartitionTransform.bucket(N)` instead of Hive bucketing.
 - **Dropping a partition column requires a `void` intermediate per the Iceberg spec**, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, but Athena queries against the result will fail with `Type cannot be null`. The safe pattern is to drop partitions that source from a column while keeping that column in the schema, and only drop a column once it is no longer partitioning anything.
 
@@ -641,9 +732,10 @@ validated against their source column's type at synth time. See
 
 ### Does it work with Athena and Lake Formation?
 
-Yes for v1 and v2 tables: Athena reads and writes them, including v2
-merge-on-read `INSERT` / `UPDATE` / `DELETE` / `MERGE`, time travel,
-`OPTIMIZE`, and `VACUUM`. The demo app in the
+Yes for v2 tables, no for v3 (see the engine matrix in [Format
+version 3](#format-version-3)). On v2, Athena reads and writes,
+including merge-on-read `INSERT` / `UPDATE` / `DELETE` / `MERGE`, time
+travel, `OPTIMIZE`, and `VACUUM`. The demo app in the
 [`arceus`](https://github.com/ksco92/arceus) repo registers its tables
 with Lake Formation and exercises the same operations through Spark in
 its integration suite. The construct's `grant*` helpers issue IAM
@@ -655,6 +747,12 @@ grants; under Lake Formation you still add the matching `SELECT` /
 Yes — set `formatVersion: IcebergFormatVersion.V2` and the
 `write.{delete,update,merge}.mode = merge-on-read` table properties.
 The construct rejects merge-on-read on a v1 table at synth time.
+
+### Can I create an Iceberg v3 table?
+
+Yes. Set `formatVersion: IcebergFormatVersion.V3`; see [Format
+version 3](#format-version-3) for the types, the engine matrix and the
+limits.
 
 ## Contributing
 
