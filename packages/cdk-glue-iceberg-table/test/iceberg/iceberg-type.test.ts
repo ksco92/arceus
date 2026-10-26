@@ -464,6 +464,7 @@ describe('IcebergType — geospatial', () => {
         'EPSG: 4326',
         'EPSG:4326\t',
         'srid(4326)',
+        'EPSG:4326,karney',
         '{"type":"GeographicCRS"}',
     ])('rejects CRS %j on geometry and geography', (crs) => {
         expect(() => IcebergType.geometry(crs)).toThrow(/geometry CRS must be a non-empty identifier/);

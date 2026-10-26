@@ -401,10 +401,10 @@ export class IcebergType {
                 break;
             case IcebergTypeKind.GEOMETRY:
             case IcebergTypeKind.GEOGRAPHY:
-                if (options.geoCrs !== undefined && !/^[^\s(){}]+$/.test(options.geoCrs)) {
+                if (options.geoCrs !== undefined && !/^[^\s(){},]+$/.test(options.geoCrs)) {
                     throw new Error(
                         `${options.kind} CRS must be a non-empty identifier such as 'EPSG:4326' with no whitespace, `
-                        + `parentheses, or braces (inline PROJJSON is not allowed), got '${options.geoCrs}'`,
+                        + `parentheses, braces, or commas (inline PROJJSON is not allowed), got '${options.geoCrs}'`,
                     );
                 }
                 this.geoCrs = options.geoCrs;
