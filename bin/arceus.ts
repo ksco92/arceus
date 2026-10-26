@@ -12,6 +12,9 @@ import {
     IcebergEvolutionStack,
 } from '../lib/iceberg-evolution-stack';
 import {
+    IcebergV3EvolutionStack,
+} from '../lib/iceberg-v3-evolution-stack';
+import {
     IcebergSurfaceStack,
 } from '../lib/iceberg-surface-stack';
 import {
@@ -74,6 +77,13 @@ new IcebergSurfaceStack(app, 'IcebergSurfaceStack', {
 });
 
 new IcebergSparkSmokeStack(app, 'IcebergSparkSmokeStack', {
+    env,
+    importedDataLakeBucketName: `data-lake-bucket-${account}`,
+    importedDatabaseName: 'sample_database',
+    principalArn,
+});
+
+new IcebergV3EvolutionStack(app, 'IcebergV3EvolutionStack', {
     env,
     importedDataLakeBucketName: `data-lake-bucket-${account}`,
     importedDatabaseName: 'sample_database',

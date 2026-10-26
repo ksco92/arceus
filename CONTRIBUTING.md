@@ -14,7 +14,7 @@ The repo has two parts:
   an AWS CDK L2 construct for creating and evolving Apache Iceberg
   tables in the AWS Glue Data Catalog.
 - **The CDK demo app at the repo root** (`bin/`, `lib/arceus-stack.ts`,
-  the evolution / DML / surface / Spark-smoke stacks, `scripts/`) — dogfoods the
+  the evolution / DML / surface / Spark-smoke / v3-evolution stacks, `scripts/`) — dogfoods the
   construct against a real AWS account. Repo-only, not published.
 
 The package builds with [jsii](https://aws.github.io/jsii/) and ships
@@ -50,18 +50,21 @@ arceus/
 │   ├── iceberg-evolution-stack.ts      # Parameterized stack for the evolution test
 │   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / OPTIMIZE / VACUUM test
 │   ├── iceberg-surface-stack.ts        # Stack for transforms / sort / nested types / grants test
-│   └── iceberg-spark-smoke-stack.ts    # Stack for the Spark toolchain smoke check
+│   ├── iceberg-spark-smoke-stack.ts    # Stack for the Spark toolchain smoke check
+│   └── iceberg-v3-evolution-stack.ts   # Parameterized stack for the v3 evolution test
 ├── test/                               # Demo stack tests
 │   ├── arceus-stack.test.ts
 │   ├── iceberg-evolution-stack.test.ts
 │   ├── iceberg-dml-stack.test.ts
 │   ├── iceberg-surface-stack.test.ts
-│   └── iceberg-spark-smoke-stack.test.ts
+│   ├── iceberg-spark-smoke-stack.test.ts
+│   └── iceberg-v3-evolution-stack.test.ts
 ├── scripts/
 │   ├── integration-test-evolution.sh   # End-to-end evolution harness
 │   ├── integration-test-dml.sh         # End-to-end DML harness
 │   ├── integration-test-surface.sh     # End-to-end surface harness
 │   ├── integration-test-spark-smoke.sh # Spark toolchain smoke check (1 deploy + INSERT/SELECT)
+│   ├── integration-test-v3-evolution.sh # v3 catalog-level evolution harness
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
@@ -120,7 +123,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
 - **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs three scripts back-to-back: `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM against a v2 merge-on-read table), and `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs four scripts back-to-back: `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), and `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
@@ -187,13 +190,12 @@ npx cdk deploy ArceusStack --require-approval=never
 ./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
 ```
 
-`cdk ls` will show four stacks: `ArceusStack` (the demo data lake +
-three Iceberg tables), `IcebergEvolutionStack` (the evolution test
-target), `IcebergDmlStack` (the DML test target), and
-`IcebergSurfaceStack` (the transforms / sort / nested-types /
-grants test target). Deploy only `ArceusStack` for the quickstart;
-the three test stacks are created on demand by their respective
-scripts under `scripts/`.
+`cdk ls` will show six stacks: `ArceusStack` (the demo data lake +
+three Iceberg tables) and five test targets (`IcebergEvolutionStack`,
+`IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergSparkSmokeStack`,
+`IcebergV3EvolutionStack`). Deploy only `ArceusStack` for the quickstart;
+the test stacks are created on demand by their respective scripts under
+`scripts/`.
 
 ## Demo tables (deployed by `ArceusStack`)
 
@@ -265,8 +267,8 @@ table with `identifierFieldNames: ['account_id']`:
 
 The DML table is configured with `history.expire.max-snapshot-age-ms`
 of 60 seconds so VACUUM has snapshots to expire on a fresh table.
-The smoke check and the three scripts run sequentially in the same `integ-test.yml`
-job; evolution takes ~5 minutes, DML ~3, and surface ~4.
+The smoke check and the four scripts run sequentially in the same `integ-test.yml`
+job; evolution takes ~5 minutes, DML ~3, surface ~4, and v3 evolution ~3.
 
 ## Demo: partition transforms, sort order, nested types, and grants
 
@@ -284,6 +286,22 @@ The script runs its engine steps through the Spark toolchain, so install it firs
 | **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | Spark INSERTs two rows using `array(...)`, `named_struct(...)`, and `map(...)`. SELECT verifies `tags[0]`, `profile.first_name`, and `attrs['tier']` all roundtrip correctly |
 | **`grantRead` S3 statements at runtime** | `transforms_test` + a `GranteeRole` trusted by the deployer | Assume the role and call S3 directly (Lake Formation doesn't gate S3 calls when the bucket is registered with `hybridAccessEnabled: true`, so the IAM grants the construct produces are what's being tested). `s3:ListBucket` on the table's own prefix succeeds. `s3:ListBucket` on a foreign table's prefix is denied — the `s3:prefix` condition kicks in. The Glue action grants are validated by the unit tests, not at runtime, because LF gates `glue:*` against tables in LF-registered locations regardless of the principal's IAM policy |
 | **`fromIcebergTableAttributes(...)` + `grantRead`** | imported handle on `transforms_test` + a second `ImportedGranteeRole` | Same S3 checks under the import-factory grantee. Verifies the import path produces a symmetric IAM split |
+
+## Demo: v3 evolution
+
+`scripts/integration-test-v3-evolution.sh` drives `IcebergV3EvolutionStack`
+(`--context v3EvolutionStep=N`) through four `cdk deploy`s and asserts
+`metadata.json` after each, with no engine step, because upstream Spark cannot open a table that has
+nanosecond timestamp columns. Step 1 creates `timestamp_ns`, `timestamptz_ns`,
+`unknown`, and `date` columns with `day(occurred_at)`; step 2 adds
+`source` and `hour(received_at)`; step 3 promotes `raw` to `string` and
+`event_date` to `timestamp` (original ids, new schema id); step 4
+replaces the day partition with `month(occurred_at)` under a fresh field
+id. Each step checks `format-version`, `next-row-id`, the exact
+`(id, name, type)` columns, the exact `(field-id, transform)`
+partitions, and the partition-spec history invariants. Run it like the other suites:
+`PRINCIPAL_ARN` set, `ArceusStack` deployed with the same principal, then
+`DESTROY=1 scripts/integration-test-v3-evolution.sh`.
 
 ## The e2e-consumer app
 

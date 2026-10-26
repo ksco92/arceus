@@ -1,7 +1,7 @@
 # Integration test setup
 
 `.github/workflows/integ-test.yml` drives the Spark smoke check and the
-evolution, DML, and surface scripts under `scripts/` against real AWS —
+evolution, DML, surface, and v3-evolution scripts under `scripts/` against real AWS —
 real `cdk deploy`s through the `IcebergTable` construct, then Spark and
 Athena queries. The workflow runs when:
 
@@ -17,7 +17,7 @@ The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scr
 
 The integ-test workflow assumes two things already exist in the target AWS account:
 
-1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
+1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
 
    ```bash
    export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
@@ -120,7 +120,7 @@ The integration test does the following AWS actions:
 
 | Service | Why |
 | --- | --- |
-| CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`). |
+| CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
 | S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`); read + write the Athena results bucket. |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
@@ -221,3 +221,5 @@ link to the run logs. Each script's teardown step (`DESTROY=1`) deletes
 its stack at the end so the account is left clean.
 
 Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.
+
+After the surface script, the workflow runs `scripts/integration-test-v3-evolution.sh`: CDK deploys `IcebergV3EvolutionStack` four times with `--context v3EvolutionStep=N`, and the script reads the table's `metadata.json` from the Glue `metadata_location` after each deploy. It uses no Athena or Spark query, so it needs only the Glue, S3, and CloudFormation permissions the other scripts already use.
