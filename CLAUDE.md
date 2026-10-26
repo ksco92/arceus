@@ -68,7 +68,9 @@ merging. The trigger set is:
 - `cdk.json` (feature flags + the `app:` declaration),
 - the integration scripts under `scripts/`
   (`integration-test-evolution.sh`, `integration-test-dml.sh`,
-  `integration-test-surface.sh`).
+  `integration-test-surface.sh`),
+- the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
+  `spark-env.sh`, `smoke.py`).
 
 The workflow is gated — it does not fire on every PR because it runs
 real `cdk deploy`s against a sandbox AWS account and takes ~5 min.

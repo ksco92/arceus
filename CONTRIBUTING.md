@@ -198,6 +198,25 @@ scripts under `scripts/`.
 After `cdk deploy ArceusStack`, the three tables are queryable from
 Athena (workgroup `ReadOnly`).
 
+## Spark toolchain
+
+The integration suite reads and writes Iceberg tables with Apache Spark
+(Spark 4.1.3 with the Iceberg 1.12.0 runtime and AWS bundle) running on
+the CI runner. To use it locally, put a JDK 17 on `PATH`, then:
+
+```bash
+scripts/spark/install-spark.sh        # downloads into .spark/, verifies sha512
+source scripts/spark/spark-env.sh
+spark_submit scripts/spark/smoke.py   # needs AWS credentials for ArceusStack's account
+```
+
+`spark_submit` registers the Glue Data Catalog as catalog `glue`, with
+the warehouse at `s3://data-lake-bucket-<account>/`. The smoke program
+needs `sample_database` to be visible to the calling identity, which under
+Lake Formation means the `PRINCIPAL_ARN` principal. Set `SPARK_INSTALL_DIR`
+to install somewhere other than `.spark/`. The versions and checksums are
+pinned in `scripts/spark/install-spark.sh`.
+
 ## Demo: schema + partition evolution via cdk-only
 
 `scripts/integration-test-evolution.sh` drives the
