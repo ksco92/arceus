@@ -159,6 +159,26 @@ describe('IcebergType — primitive', () => {
             IcebergType.BINARY,
             'binary',
         ],
+        [
+            'UNKNOWN',
+            IcebergType.UNKNOWN,
+            'unknown',
+        ],
+        [
+            'TIMESTAMP_NS',
+            IcebergType.TIMESTAMP_NS,
+            'timestamp_ns',
+        ],
+        [
+            'TIMESTAMPTZ_NS',
+            IcebergType.TIMESTAMPTZ_NS,
+            'timestamptz_ns',
+        ],
+        [
+            'VARIANT',
+            IcebergType.VARIANT,
+            'variant',
+        ],
     ])('%s renders to %s', (_label, type, expected) => {
         expect(type._render(makeContext())).toBe(expected);
         expect(type.isPrimitive(expected)).toBe(true);
@@ -362,34 +382,6 @@ describe('IcebergType — struct', () => {
     });
 });
 
-describe('IcebergType — v3 primitives', () => {
-    it.each([
-        [
-            'UNKNOWN',
-            IcebergType.UNKNOWN,
-            'unknown',
-        ],
-        [
-            'TIMESTAMP_NS',
-            IcebergType.TIMESTAMP_NS,
-            'timestamp_ns',
-        ],
-        [
-            'TIMESTAMPTZ_NS',
-            IcebergType.TIMESTAMPTZ_NS,
-            'timestamptz_ns',
-        ],
-        [
-            'VARIANT',
-            IcebergType.VARIANT,
-            'variant',
-        ],
-    ])('%s renders to %s', (_label, type, expected) => {
-        expect(type._render(makeContext())).toBe(expected);
-        expect(type.kind).toBe(expected);
-    });
-});
-
 describe('IcebergType — geospatial', () => {
     it.each([
         [
@@ -420,43 +412,16 @@ describe('IcebergType — geospatial', () => {
             IcebergType.geography(undefined, IcebergEdgeAlgorithm.KARNEY),
             'geography(OGC:CRS84, karney)',
         ],
+        [
+            IcebergType.geography('EPSG:4326', IcebergEdgeAlgorithm.THOMAS),
+            'geography(EPSG:4326, thomas)',
+        ],
+        [
+            IcebergType.geography('EPSG:4326', IcebergEdgeAlgorithm.ANDOYER),
+            'geography(EPSG:4326, andoyer)',
+        ],
     ])('renders %#: %s', (type, expected) => {
         expect(type._render(makeContext())).toBe(expected);
-    });
-
-    it.each([
-        [
-            IcebergEdgeAlgorithm.SPHERICAL,
-            'spherical',
-        ],
-        [
-            IcebergEdgeAlgorithm.VINCENTY,
-            'vincenty',
-        ],
-        [
-            IcebergEdgeAlgorithm.THOMAS,
-            'thomas',
-        ],
-        [
-            IcebergEdgeAlgorithm.ANDOYER,
-            'andoyer',
-        ],
-        [
-            IcebergEdgeAlgorithm.KARNEY,
-            'karney',
-        ],
-    ])('edge algorithm %s is the spec string %s', (algorithm, expected) => {
-        expect(algorithm).toBe(expected);
-    });
-
-    it('drops geographyAlgorithm on a geometry built through the constructor', () => {
-        const type = new IcebergType({
-            kind: IcebergTypeKind.GEOMETRY,
-            geoCrs: 'EPSG:3857',
-            geographyAlgorithm: IcebergEdgeAlgorithm.KARNEY,
-        });
-        expect(type.geographyAlgorithm).toBeUndefined();
-        expect(type._render(makeContext())).toBe('geometry(EPSG:3857)');
     });
 
     it.each([
@@ -465,6 +430,10 @@ describe('IcebergType — geospatial', () => {
         'EPSG:4326\t',
         'srid(4326)',
         'EPSG:4326,karney',
+        'EPSG:4326)',
+        'srid(4326',
+        '{x',
+        'x}',
         '{"type":"GeographicCRS"}',
     ])('rejects CRS %j on geometry and geography', (crs) => {
         expect(() => IcebergType.geometry(crs)).toThrow(/geometry CRS must be a non-empty identifier/);

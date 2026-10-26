@@ -1596,7 +1596,7 @@ describe('IcebergTable — v3 types', () => {
     it('rejects unknown as a map key, which is always required', () => {
         expect(() => build(IcebergFormatVersion.V3, {
             type: IcebergType.map(IcebergType.UNKNOWN, IcebergType.STRING),
-        })).toThrow("column 'c.key' has type 'unknown', which must be optional");
+        })).toThrow("column 'c.key' has type 'unknown' as a map key; map keys are always required, so use a different key type");
     });
 
     it.each([

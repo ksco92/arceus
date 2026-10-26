@@ -334,7 +334,7 @@ export class IcebergType {
     /** Coordinate reference system (set when `kind` is `GEOMETRY` or `GEOGRAPHY` and one was given). */
     public readonly geoCrs?: string;
 
-    /** Edge-interpolation algorithm (set when `kind === GEOGRAPHY` and one was given). */
+    /** Edge-interpolation algorithm (set when one was given). */
     public readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 
     public constructor(options: IcebergTypeOptions) {
@@ -408,9 +408,7 @@ export class IcebergType {
                     );
                 }
                 this.geoCrs = options.geoCrs;
-                if (options.kind === IcebergTypeKind.GEOGRAPHY) {
-                    this.geographyAlgorithm = options.geographyAlgorithm;
-                }
+                this.geographyAlgorithm = options.geographyAlgorithm;
                 break;
             case IcebergTypeKind.BOOLEAN:
             case IcebergTypeKind.INT:

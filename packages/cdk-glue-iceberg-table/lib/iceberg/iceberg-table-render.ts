@@ -61,12 +61,13 @@ const V3_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
     IcebergTypeKind.GEOGRAPHY,
 ]);
 
-const NON_IDENTIFIER_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
-    IcebergTypeKind.UNKNOWN,
-    IcebergTypeKind.VARIANT,
-    IcebergTypeKind.GEOMETRY,
-    IcebergTypeKind.GEOGRAPHY,
-]);
+const NON_IDENTIFIER_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set(
+    [
+        ...V3_TYPE_KINDS,
+    ].filter(
+        (kind) => kind !== IcebergTypeKind.TIMESTAMP_NS && kind !== IcebergTypeKind.TIMESTAMPTZ_NS,
+    ),
+);
 
 /**
  * Throws if the field at `path`, or any field nested in it, uses a v3
@@ -96,6 +97,12 @@ function validateFieldType(
         validateFieldType(`${path}.element`, type.listElement, type.listElementRequired!, formatVersion);
     }
     if (type.mapKey !== undefined) {
+        if (type.mapKey.kind === IcebergTypeKind.UNKNOWN) {
+            throw new Error(
+                `column '${path}.key' has type 'unknown' as a map key; `
+                + 'map keys are always required, so use a different key type',
+            );
+        }
         validateFieldType(`${path}.key`, type.mapKey, true, formatVersion);
         validateFieldType(`${path}.value`, type.mapValue!, type.mapValueRequired!, formatVersion);
     }
