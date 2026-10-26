@@ -1,7 +1,7 @@
 name: Integration test
 
 # Runs scripts/integration-test-evolution.sh against real AWS. Drives
-# four real `cdk deploy`s plus Athena queries through the IcebergTable
+# four real `cdk deploy`s plus Athena and Spark queries through the IcebergTable
 # construct and verifies schema + partition evolution end-to-end.
 #
 # Triggers:
@@ -138,6 +138,19 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: .spark
+          key: spark-${{ hashFiles('scripts/spark/install-spark.sh', 'scripts/spark/spark-env.sh') }}
+      - run: bash scripts/spark/install-spark.sh
+      - name: Spark smoke (Glue catalog + KMS-encrypted lake bucket through S3FileIO)
+        run: |
+          source scripts/spark/spark-env.sh
+          spark_submit scripts/spark/smoke.py
       - name: Run integration test — evolution (5 deploys + verify)
         run: |
           set -o pipefail
