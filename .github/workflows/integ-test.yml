@@ -1,15 +1,15 @@
 name: Integration test
 
-# Runs scripts/integration-test-evolution.sh against real AWS. Drives
-# four real `cdk deploy`s plus Athena queries through the IcebergTable
-# construct and verifies schema + partition evolution end-to-end.
+# Runs the Spark smoke check and the evolution, DML, and surface scripts
+# against real AWS: real `cdk deploy`s plus Spark and Athena queries through
+# the IcebergTable construct.
 #
 # Triggers:
 #   - Label `run-integ-test` applied to an open PR.
 #   - Comment `/run-integ-test` on a PR (by repo collaborators).
 #   - Manual dispatch from the Actions tab.
 #
-# Not on every push: real AWS resources, ~5 min runtime, real cost.
+# Not on every push: real AWS resources, ~15 min runtime, real cost.
 #
 # Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
 # trust-policied for this repo's GitHub Actions OIDC. See
@@ -138,10 +138,23 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: .spark/downloads
+          key: spark-${{ hashFiles('scripts/spark/install-spark.sh', 'scripts/spark/spark-env.sh') }}
+      - run: bash scripts/spark/install-spark.sh
+      - name: Run integration test — Spark smoke (1 deploy + INSERT/SELECT through S3FileIO)
+        run: |
+          set -o pipefail
+          bash scripts/integration-test-spark-smoke.sh 2>&1 | tee /tmp/integ-test.log
       - name: Run integration test — evolution (5 deploys + verify)
         run: |
           set -o pipefail
-          bash scripts/integration-test-evolution.sh 2>&1 | tee /tmp/integ-test.log
+          bash scripts/integration-test-evolution.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Run integration test — DML (1 deploy + UPDATE/DELETE/MERGE/time-travel/OPTIMIZE/VACUUM)
         run: |
           set -o pipefail

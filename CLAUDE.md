@@ -62,16 +62,20 @@ merging. The trigger set is:
   construct the demo stacks deploy),
 - any demo stack under `lib/` (`lib/arceus-stack.ts`,
   `lib/iceberg-evolution-stack.ts`, `lib/iceberg-dml-stack.ts`,
-  `lib/iceberg-surface-stack.ts`),
+  `lib/iceberg-surface-stack.ts`, `lib/iceberg-spark-smoke-stack.ts`),
 - `bin/arceus.ts` (`cdk.json`'s `app:` entry — every `cdk` invocation
   parses it),
 - `cdk.json` (feature flags + the `app:` declaration),
 - the integration scripts under `scripts/`
   (`integration-test-evolution.sh`, `integration-test-dml.sh`,
-  `integration-test-surface.sh`).
+  `integration-test-surface.sh`, `integration-test-spark-smoke.sh`),
+- the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
+  `spark-env.sh`, `smoke.py`).
+
+The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
 The workflow is gated — it does not fire on every PR because it runs
-real `cdk deploy`s against a sandbox AWS account and takes ~5 min.
+real `cdk deploy`s against a sandbox AWS account and takes about 15 min.
 Trigger it on a same-repo PR by either:
 
 - adding the label `run-integ-test` to the PR, or

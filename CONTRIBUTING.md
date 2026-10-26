@@ -14,7 +14,7 @@ The repo has two parts:
   an AWS CDK L2 construct for creating and evolving Apache Iceberg
   tables in the AWS Glue Data Catalog.
 - **The CDK demo app at the repo root** (`bin/`, `lib/arceus-stack.ts`,
-  the evolution / DML / surface stacks, `scripts/`) — dogfoods the
+  the evolution / DML / surface / Spark-smoke stacks, `scripts/`) — dogfoods the
   construct against a real AWS account. Repo-only, not published.
 
 The package builds with [jsii](https://aws.github.io/jsii/) and ships
@@ -49,16 +49,23 @@ arceus/
 │   ├── arceus-stack.ts                 # Demo stack (buckets, DB, 3 demo tables)
 │   ├── iceberg-evolution-stack.ts      # Parameterized stack for the evolution test
 │   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / OPTIMIZE / VACUUM test
-│   └── iceberg-surface-stack.ts        # Stack for transforms / sort / nested types / grants test
+│   ├── iceberg-surface-stack.ts        # Stack for transforms / sort / nested types / grants test
+│   └── iceberg-spark-smoke-stack.ts    # Stack for the Spark toolchain smoke check
 ├── test/                               # Demo stack tests
 │   ├── arceus-stack.test.ts
 │   ├── iceberg-evolution-stack.test.ts
 │   ├── iceberg-dml-stack.test.ts
-│   └── iceberg-surface-stack.test.ts
+│   ├── iceberg-surface-stack.test.ts
+│   └── iceberg-spark-smoke-stack.test.ts
 ├── scripts/
 │   ├── integration-test-evolution.sh   # End-to-end evolution harness
 │   ├── integration-test-dml.sh         # End-to-end DML harness
-│   └── integration-test-surface.sh     # End-to-end surface harness
+│   ├── integration-test-surface.sh     # End-to-end surface harness
+│   ├── integration-test-spark-smoke.sh # Spark toolchain smoke check (1 deploy + INSERT/SELECT)
+│   └── spark/
+│       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
+│       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
+│       └── smoke.py                    # PySpark INSERT + count against the Glue catalog
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
@@ -72,7 +79,7 @@ arceus/
 └── .github/workflows/
     ├── ci.yml                          # Lint + test + jsii build + Python package + pack + e2e-consumer
     ├── publish.yml                     # Trusted-publish the package to npm + PyPI on version bump
-    └── integ-test.yml                  # Real-AWS evolution/DML/surface tests (gated)
+    └── integ-test.yml                  # Real-AWS Spark smoke + evolution/DML/surface tests (gated)
 ```
 
 The demo stacks import the construct via a relative path into the
@@ -112,7 +119,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
 - **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It runs three scripts back-to-back: `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM against a v2 merge-on-read table), and `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs three scripts back-to-back: `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / OPTIMIZE / VACUUM against a v2 merge-on-read table), and `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
@@ -198,6 +205,24 @@ scripts under `scripts/`.
 After `cdk deploy ArceusStack`, the three tables are queryable from
 Athena (workgroup `ReadOnly`).
 
+## Spark toolchain
+
+The Spark smoke check (`scripts/integration-test-spark-smoke.sh`) reads
+and writes an Iceberg table with Apache Spark running on the CI runner.
+Versions are pinned in
+`scripts/spark/spark-env.sh` and checksums in
+`scripts/spark/install-spark.sh`. To use it locally you need a JDK 17,
+`python3`, `curl`, `tar`, `shasum`, the AWS CLI with credentials, and
+about 700 MB of disk for the first download:
+
+```bash
+scripts/spark/install-spark.sh               # downloads into .spark/ (SPARK_INSTALL_DIR overrides), verifies sha512
+DESTROY=1 scripts/integration-test-spark-smoke.sh   # destroys any leftover IcebergSparkSmokeStack, deploys it, runs smoke.py, tears down
+```
+
+The smoke script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`;
+without `DESTROY=1` it leaves the stack deployed.
+
 ## Demo: schema + partition evolution via cdk-only
 
 `scripts/integration-test-evolution.sh` drives the
@@ -239,7 +264,7 @@ table with `identifierFieldNames: ['account_id']`:
 
 The DML table is configured with `history.expire.max-snapshot-age-ms`
 of 60 seconds so VACUUM has snapshots to expire on a fresh table.
-All three scripts run sequentially in the same `integ-test.yml`
+The smoke check and the three scripts run sequentially in the same `integ-test.yml`
 job; evolution takes ~5 minutes, DML ~3, and surface ~4.
 
 ## Demo: partition transforms, sort order, nested types, and grants
