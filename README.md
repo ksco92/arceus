@@ -13,25 +13,23 @@ evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and
 partition changes that survive CloudFormation updates, via cdk
 deploy.** It supports Iceberg format version 3 (`variant`, nanosecond
 timestamps, `geometry` / `geography`, `unknown`). It emits the exact
-`AWS::Glue::Table` / `OpenTableFormatInput` shape that survives a
-CloudFormation `Update`, so a single `cdk deploy` creates a table,
-evolves its schema and partitions, and destroys it, the same lifecycle
-CDK gives any other resource. No custom resource, no Lambda, no "`cdk
-deploy` and then run this SQL by hand" two-step. Table changes (new
-columns, renames, drops, new partition fields) land as a reviewed diff
-in a pull request and apply through `cdk deploy`.
+`AWS::Glue::Table` / `OpenTableFormatInput` shape, so a single `cdk
+deploy` creates, evolves, and destroys a table like any other CDK
+resource. No custom resource, no Lambda, no "`cdk deploy` and then run
+this SQL by hand" two-step. Table changes (new columns, renames, drops,
+new partition fields) land as a reviewed diff in a pull request and
+apply through `cdk deploy`.
 
-Status (October 2026): published on npm (TypeScript/JavaScript) and PyPI
-(Python), pre-1.0, with a public surface guarded by an end-to-end
+Status (October 2026): published on npm (TypeScript/JavaScript) and
+PyPI (Python), pre-1.0, with a public surface guarded by an end-to-end
 consumer test on every PR plus real-AWS integration suites, including
-ones for format version 3. The
-multi-language packages are generated from one TypeScript source with
-[jsii](https://aws.github.io/jsii/) and indexed on
-[Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
-Developed in the
-[`ksco92/arceus`](https://github.com/ksco92/arceus) monorepo, which
-also holds a CDK demo app that dogfoods the construct against a real
-AWS account.
+ones for format version 3. The multi-language packages are generated
+from one TypeScript source with [jsii](https://aws.github.io/jsii/)
+and indexed on [Construct
+Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
+Developed in the [`ksco92/arceus`](https://github.com/ksco92/arceus)
+monorepo, which also holds a CDK demo app that dogfoods the construct
+against a real AWS account.
 
 ### Why this exists
 
@@ -172,7 +170,7 @@ Consumer-facing reference sections:
 
 ## Exported surface
 
-The package entry point re-exports everything you import from
+The package entry point re-exports the main types you import from
 `cdk-glue-iceberg-table`. In TypeScript / JavaScript the compiled
 surface lives under `dist/lib/iceberg/` after `npm install`; in Python
 the same surface is imported from the `cdk_glue_iceberg_table` module
@@ -532,7 +530,7 @@ Which engines read a v3 table created by the construct:
 
 | Engine | v3 tables | Notes |
 | --- | --- | --- |
-| Spark 4.1 + Iceberg 1.12 (the integration-test runner) | Yes | Reads and writes tables the construct creates, including deletion vectors, row lineage, `variant`, `unknown`, and `geometry` / `geography` (checked by `scripts/spark/verify_v3_dml.py`; limits in [Known limitations](#known-limitations)). |
+| Spark 4.1 + Iceberg 1.12 (the integration-test runner) | Yes | Reads and writes tables the construct creates, including deletion vectors, row lineage, `variant`, `unknown`, and `geometry` / `geography`, except tables with nanosecond-timestamp columns or a geometry CRS other than `OGC:CRS84` (checked by `scripts/spark/verify_v3_dml.py`; details in [Known limitations](#known-limitations)). |
 | AWS Glue 6.0 | Documented | The [AWS Glue versions](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) page lists "Iceberg format version 3 with VARIANT data type, deletion vectors, row lineage tracking, nanosecond timestamps, and geo types". The integration suites do not run on Glue 6.0. |
 | Amazon EMR Spark 8.1.0 (Spark 4.1.1, Iceberg 1.11.0-amzn-0) | Documented | The [emr-spark-8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) state "Amazon EMR Spark 8.1.0 extends Iceberg v3 spec support for Spark workloads". The integration suites do not run on EMR 8.1. |
 | Athena SQL | No | The [Athena Iceberg page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states "Athena only creates and operates on Iceberg v2 tables." |
