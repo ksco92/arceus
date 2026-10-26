@@ -17,6 +17,8 @@ export enum IcebergFormatVersion {
 
     /** v2 — adds row-level deletes. */
     V2 = '2',
+    /** v3 — adds deletion vectors, row lineage, and the variant, geospatial, and nanosecond-timestamp types. Not readable by Athena. */
+    V3 = '3',
 }
 
 /** Data-file storage format for an Iceberg table. */
@@ -166,7 +168,7 @@ export function validateIcebergProperties(
         ]) {
             if (properties[key] === 'merge-on-read') {
                 throw new Error(
-                    `tableProperties['${key}'] = 'merge-on-read' requires formatVersion v2; got v1`,
+                    `tableProperties['${key}'] = 'merge-on-read' requires formatVersion v2 or later; got v1`,
                 );
             }
         }

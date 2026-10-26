@@ -97,7 +97,7 @@ describe('validateIcebergProperties', () => {
             {
                 [IcebergPropertyKeys.WRITE_DELETE_MODE]: 'merge-on-read',
             },
-        )).toThrow(/merge-on-read.*v2/);
+        )).toThrow(/merge-on-read.*v2 or later/);
     });
 
     it.each([
@@ -111,7 +111,29 @@ describe('validateIcebergProperties', () => {
             {
                 [key]: 'merge-on-read',
             },
-        )).toThrow(/merge-on-read.*v2/);
+        )).toThrow(/merge-on-read.*v2 or later/);
+    });
+
+    it('accepts merge-on-read on a v3 table', () => {
+        expect(() => validateIcebergProperties(
+            IcebergDataFormat.PARQUET,
+            IcebergFormatVersion.V3,
+            {
+                [IcebergPropertyKeys.WRITE_DELETE_MODE]: 'merge-on-read',
+                [IcebergPropertyKeys.WRITE_UPDATE_MODE]: 'merge-on-read',
+                [IcebergPropertyKeys.WRITE_MERGE_MODE]: 'merge-on-read',
+            },
+        )).not.toThrow();
+    });
+
+    it('rejects a format-version property that disagrees with V3', () => {
+        expect(() => validateIcebergProperties(
+            IcebergDataFormat.PARQUET,
+            IcebergFormatVersion.V3,
+            {
+                [IcebergPropertyKeys.FORMAT_VERSION]: '2',
+            },
+        )).toThrow(/format-version.*'2'.*formatVersion is '3'/);
     });
 
     it('rejects invalid write mode', () => {

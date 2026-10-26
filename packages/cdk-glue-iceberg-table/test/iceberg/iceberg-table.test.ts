@@ -100,6 +100,33 @@ describe('IcebergTable — happy path', () => {
         });
     });
 
+    it('renders format version 3', () => {
+        const {
+            stack, database,
+        } = makeStack();
+
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V3,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/simple/',
+        });
+
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            OpenTableFormatInput: {
+                IcebergInput: Match.objectLike({
+                    Version: '3',
+                    IcebergTableInput: Match.objectLike({
+                        Properties: Match.objectLike({
+                            'format-version': '3',
+                        }),
+                    }),
+                }),
+            },
+        });
+    });
+
     it('defaults dataFormat to parquet and surfaces the supplied formatVersion', () => {
         const {
             stack, database,
