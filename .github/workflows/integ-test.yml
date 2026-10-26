@@ -147,14 +147,14 @@ jobs:
           path: .spark
           key: spark-${{ hashFiles('scripts/spark/install-spark.sh', 'scripts/spark/spark-env.sh') }}
       - run: bash scripts/spark/install-spark.sh
-      - name: Spark smoke (Glue catalog + KMS-encrypted lake bucket through S3FileIO)
+      - name: Run integration test — Spark smoke (1 deploy + INSERT/SELECT through S3FileIO)
         run: |
-          source scripts/spark/spark-env.sh
-          spark_submit scripts/spark/smoke.py
+          set -o pipefail
+          bash scripts/integration-test-spark-smoke.sh 2>&1 | tee /tmp/integ-test.log
       - name: Run integration test — evolution (5 deploys + verify)
         run: |
           set -o pipefail
-          bash scripts/integration-test-evolution.sh 2>&1 | tee /tmp/integ-test.log
+          bash scripts/integration-test-evolution.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Run integration test — DML (1 deploy + UPDATE/DELETE/MERGE/time-travel/OPTIMIZE/VACUUM)
         run: |
           set -o pipefail

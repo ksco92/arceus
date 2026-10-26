@@ -205,15 +205,14 @@ The integration suite reads and writes Iceberg tables with Apache Spark
 the CI runner. To use it locally, put a JDK 17 on `PATH`, then:
 
 ```bash
-scripts/spark/install-spark.sh        # downloads into .spark/, verifies sha512
-source scripts/spark/spark-env.sh
-spark_submit scripts/spark/smoke.py   # needs AWS credentials for ArceusStack's account
+scripts/spark/install-spark.sh               # downloads into .spark/, verifies sha512
+scripts/integration-test-spark-smoke.sh      # deploys IcebergSparkSmokeStack, runs smoke.py
 ```
 
-`spark_submit` registers the Glue Data Catalog as catalog `glue`, with
-the warehouse at `s3://data-lake-bucket-<account>/`. The smoke program
-needs `sample_database` to be visible to the calling identity, which under
-Lake Formation means the `PRINCIPAL_ARN` principal. Set `SPARK_INSTALL_DIR`
+`spark_submit` (from `scripts/spark/spark-env.sh`) registers the Glue Data
+Catalog as catalog `glue`, with the warehouse at
+`s3://data-lake-bucket-<account>/`. The smoke script needs the usual
+`PRINCIPAL_ARN` and a deployed `ArceusStack`. Set `SPARK_INSTALL_DIR`
 to install somewhere other than `.spark/`. The versions and checksums are
 pinned in `scripts/spark/install-spark.sh`.
 

@@ -123,7 +123,7 @@ The integration test does the following AWS actions:
 | CloudFormation | Create / update / delete `IcebergEvolutionStack`. |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
 | S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`); read + write the Athena results bucket. |
-| Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` also creates, updates, and drops tables (`glue:CreateTable`, `UpdateTable`, `DeleteTable`). |
+| Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
 | Lake Formation | Read settings + grant the test table to the developer principal. |
 | Athena | Start queries, poll status, fetch results (the existing scripts until they move to Spark). |
 | KMS | Encrypt / decrypt the bucket KMS keys, including the `S3FileIO` writes from Spark. |
@@ -220,9 +220,10 @@ The workflow comments back on the PR with success / failure plus a
 link to the run logs. The script teardown step (`DESTROY=1`) deletes
 the `IcebergEvolutionStack` at the end so the account is left clean.
 
-Before the scripts run, the workflow installs Java 17 and the Spark
-toolchain (`scripts/spark/install-spark.sh`) and runs
-`scripts/spark/smoke.py`, which creates, writes, reads, and drops an
-Iceberg table in `sample_database` through the Glue catalog and the lake
-bucket. The role needs no Spark-specific policy beyond the Glue, S3, and
-KMS rows above.
+Before the Athena scripts run, the workflow installs Java 17 and the
+Spark toolchain (`scripts/spark/install-spark.sh`), then runs
+`scripts/integration-test-spark-smoke.sh`. That script deploys
+`IcebergSparkSmokeStack` (CDK creates the table and grants the role) and
+has `scripts/spark/smoke.py` insert into and count the table through the
+Glue catalog and the lake bucket. Spark never creates tables. The role
+needs no Spark-specific policy beyond the Glue, S3, and KMS rows above.
