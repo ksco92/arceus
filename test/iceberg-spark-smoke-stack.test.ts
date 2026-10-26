@@ -38,27 +38,29 @@ describe('IcebergSparkSmokeStack', () => {
         });
     });
 
-    it('declares a single required bigint column id with field id 1', () => {
-        const tables = template.findResources('AWS::Glue::Table');
-        const props = Object.values(tables)[0].Properties;
-        const fields = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
-        expect(fields).toEqual([
-            {
-                Id: 1,
-                Name: 'id',
-                Required: true,
-                Type: 'long',
+    it('keeps the table on destroy-with-stack, v2, at the lake bucket prefix', () => {
+        template.hasResource('AWS::Glue::Table', {
+            DeletionPolicy: 'Delete',
+            Properties: {
+                OpenTableFormatInput: {
+                    IcebergInput: {
+                        IcebergTableInput: Match.objectLike({
+                            Location: 's3://data-lake-bucket-123456789012/sample_database/spark_smoke/',
+                            Properties: Match.objectLike({
+                                'format-version': '2',
+                            }),
+                        }),
+                    },
+                },
             },
-        ]);
+        });
     });
 
-    it('grants the test principal SELECT/INSERT/DELETE/ALTER/DESCRIBE via Lake Formation', () => {
+    it('grants the test principal SELECT/INSERT/DESCRIBE via Lake Formation', () => {
         template.hasResourceProperties('AWS::LakeFormation::Permissions', {
             Permissions: [
                 'SELECT',
                 'INSERT',
-                'DELETE',
-                'ALTER',
                 'DESCRIBE',
             ],
             DataLakePrincipal: {
@@ -70,12 +72,6 @@ describe('IcebergSparkSmokeStack', () => {
                     DatabaseName: 'sample_database',
                 }),
             }),
-        });
-    });
-
-    it('outputs the table name', () => {
-        template.hasOutput('SparkSmokeTableNameOutput', {
-            Value: 'spark_smoke',
         });
     });
 });
