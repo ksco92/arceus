@@ -9,7 +9,7 @@ name: Integration test
 #   - Comment `/run-integ-test` on a PR (by repo collaborators).
 #   - Manual dispatch from the Actions tab.
 #
-# Not on every push: real AWS resources, ~5 min runtime, real cost.
+# Not on every push: real AWS resources, ~15 min runtime, real cost.
 #
 # Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
 # trust-policied for this repo's GitHub Actions OIDC. See

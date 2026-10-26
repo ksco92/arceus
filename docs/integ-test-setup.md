@@ -1,9 +1,9 @@
 # Integration test setup
 
-`.github/workflows/integ-test.yml` drives
-`scripts/integration-test-evolution.sh` against real AWS — four real
-`cdk deploy`s exercising column and partition evolution through the
-`IcebergTable` construct. The workflow runs when:
+`.github/workflows/integ-test.yml` drives the Spark smoke check and the
+evolution, DML, and surface scripts under `scripts/` against real AWS —
+real `cdk deploy`s through the `IcebergTable` construct, then Spark and
+Athena queries. The workflow runs when:
 
 - a PR is labeled `run-integ-test` **and the PR's head branch is on the same repo** (fork PRs are refused at the workflow's gate; use `workflow_dispatch` after manual review of the diff), OR
 - a repo collaborator comments `/run-integ-test` on a PR, OR
@@ -11,7 +11,7 @@
 
 ## Security note
 
-The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `bash scripts/integration-test-evolution.sh`) with **cloud-admin AWS credentials**. Same-repo PRs are auto-trusted because only collaborators can push to them. Fork PRs are refused at the gate on both the label-trigger path and the `/run-integ-test`-comment path: the gate fetches `head.repo.full_name` from the API and refuses to run unless it equals the workflow's own repo. If you want to run the workflow against a fork PR, manually `workflow_dispatch` after auditing every file in the diff — especially `package.json` (postinstall scripts), `scripts/integration-test-evolution.sh`, and `bin/arceus.ts`.
+The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scripts/spark/install-spark.sh`, and every `scripts/integration-test-*.sh`) with **cloud-admin AWS credentials**. Same-repo PRs are auto-trusted because only collaborators can push to them. Fork PRs are refused at the gate on both the label-trigger path and the `/run-integ-test`-comment path: the gate fetches `head.repo.full_name` from the API and refuses to run unless it equals the workflow's own repo. If you want to run the workflow against a fork PR, manually `workflow_dispatch` after auditing every file in the diff — especially `package.json` (postinstall scripts), `scripts/spark/`, every `scripts/integration-test-*.sh`, and `bin/arceus.ts`.
 
 ## Prerequisites
 
@@ -217,7 +217,7 @@ The workflow reads it via `${{ vars.AWS_INTEG_ROLE_ARN }}`.
 - **Manually**: Actions tab → "Integration test" → Run workflow.
 
 The workflow comments back on the PR with success / failure plus a
-link to the run logs. The script teardown step (`DESTROY=1`) deletes
-the `IcebergEvolutionStack` at the end so the account is left clean.
+link to the run logs. Each script's teardown step (`DESTROY=1`) deletes
+its stack at the end so the account is left clean.
 
 Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.

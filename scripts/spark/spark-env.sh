@@ -7,6 +7,8 @@
 #   SPARK_INSTALL_DIR - default <repo>/.spark
 #   AWS_REGION        - default us-east-1
 #   ACCOUNT_ID        - default: from `aws sts get-caller-identity`
+#
+# spark.sql.geospatial.enabled: Spark 4.1 ships the ST_* functions switched off.
 
 SPARK_VERSION="4.1.3"
 ICEBERG_VERSION="1.12.0"

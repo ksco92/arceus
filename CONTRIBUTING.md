@@ -207,8 +207,9 @@ Athena (workgroup `ReadOnly`).
 
 ## Spark toolchain
 
-The integration suite reads and writes Iceberg tables with Apache Spark
-running on the CI runner. Versions are pinned in
+The Spark smoke check (`scripts/integration-test-spark-smoke.sh`) reads
+and writes an Iceberg table with Apache Spark running on the CI runner.
+Versions are pinned in
 `scripts/spark/spark-env.sh` and checksums in
 `scripts/spark/install-spark.sh`. To use it locally you need a JDK 17,
 `python3`, `curl`, `tar`, `shasum`, the AWS CLI with credentials, and
