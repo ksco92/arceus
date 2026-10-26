@@ -40,14 +40,23 @@ describe('validateIcebergProperties', () => {
         )).toThrow(/write\.format\.default.*orc.*parquet/);
     });
 
-    it('rejects format-version that disagrees with formatVersion', () => {
+    it.each([
+        [
+            IcebergFormatVersion.V2,
+            '1',
+        ],
+        [
+            IcebergFormatVersion.V3,
+            '2',
+        ],
+    ])('rejects format-version that disagrees with formatVersion %s', (formatVersion, declared) => {
         expect(() => validateIcebergProperties(
             IcebergDataFormat.PARQUET,
-            IcebergFormatVersion.V2,
+            formatVersion,
             {
-                [IcebergPropertyKeys.FORMAT_VERSION]: '1',
+                [IcebergPropertyKeys.FORMAT_VERSION]: declared,
             },
-        )).toThrow(/format-version.*1.*2/);
+        )).toThrow(new RegExp(`format-version.*'${declared}'.*formatVersion is '${formatVersion}'`));
     });
 
     it('rejects compression codec set on wrong format', () => {
@@ -97,7 +106,7 @@ describe('validateIcebergProperties', () => {
             {
                 [IcebergPropertyKeys.WRITE_DELETE_MODE]: 'merge-on-read',
             },
-        )).toThrow(/merge-on-read.*v2/);
+        )).toThrow(/merge-on-read.*v2 or later/);
     });
 
     it.each([
@@ -111,7 +120,19 @@ describe('validateIcebergProperties', () => {
             {
                 [key]: 'merge-on-read',
             },
-        )).toThrow(/merge-on-read.*v2/);
+        )).toThrow(/merge-on-read.*v2 or later/);
+    });
+
+    it('accepts merge-on-read on a v3 table', () => {
+        expect(() => validateIcebergProperties(
+            IcebergDataFormat.PARQUET,
+            IcebergFormatVersion.V3,
+            {
+                [IcebergPropertyKeys.WRITE_DELETE_MODE]: 'merge-on-read',
+                [IcebergPropertyKeys.WRITE_UPDATE_MODE]: 'merge-on-read',
+                [IcebergPropertyKeys.WRITE_MERGE_MODE]: 'merge-on-read',
+            },
+        )).not.toThrow();
     });
 
     it('rejects invalid write mode', () => {
