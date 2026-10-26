@@ -63,16 +63,16 @@ merging. The trigger set is:
 - any demo stack under `lib/` (`lib/arceus-stack.ts`,
   `lib/iceberg-evolution-stack.ts`, `lib/iceberg-dml-stack.ts`,
   `lib/iceberg-surface-stack.ts`, `lib/iceberg-spark-smoke-stack.ts`,
-  `lib/iceberg-v3-evolution-stack.ts`),
+  `lib/iceberg-v3-evolution-stack.ts`, `lib/iceberg-v3-dml-stack.ts`),
 - `bin/arceus.ts` (`cdk.json`'s `app:` entry — every `cdk` invocation
   parses it),
 - `cdk.json` (feature flags + the `app:` declaration),
 - the integration scripts under `scripts/`
   (`integration-test-evolution.sh`, `integration-test-dml.sh`,
   `integration-test-surface.sh`, `integration-test-spark-smoke.sh`,
-  `integration-test-v3-evolution.sh`),
+  `integration-test-v3-evolution.sh`, `integration-test-v3-dml.sh`),
 - the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
-  `spark-env.sh`, `smoke.py`).
+  `spark-env.sh`, `smoke.py`, `verify_v3_dml.py`).
 
 The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 

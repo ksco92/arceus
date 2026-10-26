@@ -1,7 +1,7 @@
 name: Integration test
 
-# Runs the Spark smoke check and the evolution, DML, surface, and
-# v3-evolution scripts against real AWS: real `cdk deploy`s plus Spark
+# Runs the Spark smoke check and the evolution, DML, surface, v3-evolution,
+# and v3 DML scripts against real AWS: real `cdk deploy`s plus Spark
 # queries through the IcebergTable construct.
 #
 # Triggers:
@@ -24,12 +24,12 @@ on:
     types: [created]
   workflow_dispatch:
 
-# Single global slot — the job deploys fixed-name CloudFormation
-# stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`,
-# `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`)
-# to one account/region, so two concurrent runs would race on the
-# same stacks and Glue tables. Don't cancel in-progress: an
-# interrupted run leaves stacks partially deployed.
+# Single global slot — the job deploys fixed-name CloudFormation stacks
+# (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`,
+# `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`)
+# to one account/region, so two concurrent runs would race on the same
+# stacks and Glue tables. Don't cancel in-progress: an interrupted run
+# leaves stacks partially deployed.
 concurrency:
   group: integ-test-stacks
   cancel-in-progress: false
@@ -168,6 +168,10 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-v3-evolution.sh 2>&1 | tee -a /tmp/integ-test.log
+      - name: Run integration test — v3 DML (1 deploy + Spark deletion vectors / row lineage / variant / geo / v2 to v3 upgrade)
+        run: |
+          set -o pipefail
+          bash scripts/integration-test-v3-dml.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
         uses: actions/github-script@v7
