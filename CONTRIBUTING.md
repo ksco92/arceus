@@ -208,8 +208,7 @@ the test stacks are created on demand by their respective scripts under
 | `events` | parquet, v2 | `event_id(1)`, `event_name(2)`, `session_id(3)`, `occurred_at(4)`, `attributes(5)` (map) | `hour(occurred_at)` | (none) | high-cardinality hourly partitioning |
 | `customers` | parquet, v2 | `customer_id(1)`, `email(2)`, `signed_up_at(4)`, `loyalty_tier(5)` (id 3 retired) | (none) | (none) | identifier-field-ids = `[customer_id]` — the stack's `customers` block carries inline comments narrating the schema-evolution journey that landed here (drop `full_name`, add `loyalty_tier`); the live evolution loop runs against the separate `IcebergEvolutionStack` |
 
-After `cdk deploy ArceusStack`, the three tables are queryable from
-Athena (workgroup `ReadOnly`).
+After `cdk deploy ArceusStack`, the three tables are queryable from Spark or Athena.
 
 ## Spark toolchain
 
