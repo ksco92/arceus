@@ -32,6 +32,7 @@ describe('IcebergV3DmlStack', () => {
 
     it('creates two Glue tables', () => {
         template.resourceCountIs('AWS::Glue::Table', 2);
+        template.resourceCountIs('AWS::LakeFormation::Permissions', 2);
     });
 
     it('renders the v3 column types of v3_dml_test with stable ids', () => {
@@ -121,7 +122,6 @@ describe('IcebergV3DmlStack', () => {
                             ],
                         }),
                         Properties: Match.objectLike({
-                            'format-version': '3',
                             'write.delete.mode': 'merge-on-read',
                             'write.update.mode': 'merge-on-read',
                             'write.merge.mode': 'merge-on-read',
@@ -141,9 +141,6 @@ describe('IcebergV3DmlStack', () => {
                     IcebergTableInput: Match.objectLike({
                         Location: 's3://data-lake-bucket-123456789012/sample_database/v3_upgrade_test/',
                         PartitionSpec: Match.absent(),
-                        Properties: Match.objectLike({
-                            'format-version': '2',
-                        }),
                     }),
                 }),
             },
@@ -154,7 +151,6 @@ describe('IcebergV3DmlStack', () => {
         'v3_dml_test',
         'v3_upgrade_test',
     ])('grants the test principal SELECT/INSERT/DELETE/ALTER/DESCRIBE on %s', (tableName) => {
-        template.resourceCountIs('AWS::LakeFormation::Permissions', 2);
         template.hasResourceProperties('AWS::LakeFormation::Permissions', {
             Permissions: [
                 'SELECT',

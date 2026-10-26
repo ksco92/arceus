@@ -129,7 +129,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
 - **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs four scripts back-to-back: `scripts/integration-test-evolution.sh` (five `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (five `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
@@ -197,10 +197,10 @@ scripts/spark/install-spark.sh               # Spark toolchain for the Spark che
 ./scripts/integration-test-evolution.sh   # add + rename + drop + partition change via cdk, Spark checks between deploys
 ```
 
-`cdk ls` will show six stacks: `ArceusStack` (the demo data lake +
-three Iceberg tables) and five test targets (`IcebergEvolutionStack`,
+`cdk ls` will show seven stacks: `ArceusStack` (the demo data lake +
+three Iceberg tables) and six test targets (`IcebergEvolutionStack`,
 `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergSparkSmokeStack`,
-`IcebergV3EvolutionStack`). Deploy only `ArceusStack` for the quickstart;
+`IcebergV3EvolutionStack`, `IcebergV3DmlStack`). Deploy only `ArceusStack` for the quickstart;
 the test stacks are created on demand by their respective scripts under
 `scripts/`.
 
@@ -283,8 +283,8 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 8 | `CALL glue.system.expire_snapshots(...)` with a future `older_than` | snapshots reduced to the current one; 6 rows unchanged |
 | 9 | final `SELECT` | 6 rows with the expected balances |
 
-The smoke check and the four scripts run sequentially in the same `integ-test.yml`
-job; evolution takes ~4 minutes, DML ~3, surface ~4, and v3 evolution ~3.
+The smoke check and the five scripts run sequentially in the same `integ-test.yml`
+job; evolution takes ~4 minutes, DML ~3, surface ~4, v3 evolution ~3, and v3 DML ~N.
 
 ## Demo: partition transforms, sort order, nested types, and grants
 

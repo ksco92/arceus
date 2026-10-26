@@ -38,7 +38,7 @@ cleanup_table_prefixes() {
 }
 
 assert_metadata() {
-    local table="$1" format_version="$2" min_next_row_id="$3"
+    local table="$1" format_version="$2" min_next_row_id="${3:-0}"
     local meta_loc
     meta_loc=$(aws glue get-table \
         --database-name "$DATABASE" \
@@ -68,15 +68,15 @@ header "DEPLOY ${STACK}"
 npx cdk deploy "$STACK" --require-approval=never 2>&1 | tail -5
 
 header "VERIFY metadata.json as CloudFormation wrote it"
-assert_metadata v3_dml_test 3 0
-assert_metadata v3_upgrade_test 2 0
+assert_metadata v3_dml_test 3
+assert_metadata v3_upgrade_test 2
 
 header "SPARK verify_v3_dml.py"
 spark_submit "$(dirname "${BASH_SOURCE[0]}")/spark/verify_v3_dml.py"
 
 header "VERIFY metadata.json after the Spark writes"
 assert_metadata v3_dml_test 3 1
-assert_metadata v3_upgrade_test 3 0
+assert_metadata v3_upgrade_test 3
 
 if [ "${DESTROY:-0}" = "1" ]; then
     header "TEARDOWN"

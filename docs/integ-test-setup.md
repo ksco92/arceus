@@ -1,7 +1,7 @@
 # Integration test setup
 
 `.github/workflows/integ-test.yml` drives the Spark smoke check and the
-evolution, DML, surface, and v3-evolution scripts under `scripts/` against real AWS —
+evolution, DML, surface, v3-evolution, and v3 DML scripts under `scripts/` against real AWS —
 real `cdk deploy`s through the `IcebergTable` construct, then Spark
 queries. The workflow runs when:
 

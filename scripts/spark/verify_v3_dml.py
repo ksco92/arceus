@@ -12,12 +12,10 @@ spark = SparkSession.builder.appName("verify-v3-dml").getOrCreate()
 
 
 def query(sql: str) -> list[tuple]:
-    """Run `sql` and return its rows as tuples."""
     return [tuple(row) for row in spark.sql(sql).collect()]
 
 
 def check(actual: object, expected: object, label: str) -> None:
-    """Fail the run unless `actual == expected`."""
     assert actual == expected, f"{label}: expected {expected!r}, got {actual!r}"
     print(f"  ok  {label}: {actual!r}")
 
