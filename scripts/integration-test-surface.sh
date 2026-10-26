@@ -3,7 +3,7 @@
 # End-to-end integration test for IcebergTable's Tier-2 surface:
 #   - every IcebergPartitionTransform exercised on one table.
 #   - multi-field sortOrder rendered in metadata.json.
-#   - nested types (list, struct, map) inserted and queried via Athena.
+#   - nested types (list, struct, map) inserted and queried via Spark.
 #   - grantRead's four-statement IAM split exercised at runtime by
 #     assuming the grantee role and calling Glue / S3 directly (this
 #     bypasses Lake Formation, which is exactly what isolates the
@@ -20,19 +20,18 @@
 #     for both grantee roles, so the script can `sts:AssumeRole`
 #     them under its own creds.
 #   - ArceusStack already deployed with the same `PRINCIPAL_ARN`.
+#   - The Spark toolchain installed (scripts/spark/install-spark.sh).
 #
 # Usage:
 #   scripts/integration-test-surface.sh
 #
 # Optional env vars:
-#   AWS_REGION       — default us-east-1
-#   ATHENA_WORKGROUP — default ReadOnly
-#   DESTROY          — set to 1 to teardown at the end
+#   AWS_REGION — default us-east-1
+#   DESTROY    — set to 1 to teardown at the end
 #
 set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
-ATHENA_WORKGROUP="${ATHENA_WORKGROUP:-ReadOnly}"
 DATABASE="sample_database"
 STACK="IcebergSurfaceStack"
 
@@ -41,52 +40,8 @@ green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 header() { printf '\n=== %s ===\n' "$*"; }
 
-run_athena() {
-    local sql="$1"
-    local qid
-    if ! qid=$(aws athena start-query-execution \
-        --region "$AWS_REGION" \
-        --work-group "$ATHENA_WORKGROUP" \
-        --query-string "$sql" \
-        --query 'QueryExecutionId' \
-        --output text 2>&1); then
-        red "Athena start-query-execution failed:" >&2
-        echo "$qid" >&2
-        red "Query SQL:" >&2
-        echo "$sql" >&2
-        return 1
-    fi
-    if [ -z "$qid" ]; then
-        red "Athena returned empty query id for SQL:" >&2
-        echo "$sql" >&2
-        return 1
-    fi
-    local state
-    until state=$(aws athena get-query-execution \
-            --region "$AWS_REGION" \
-            --query-execution-id "$qid" \
-            --query 'QueryExecution.Status.State' \
-            --output text 2>/dev/null) \
-        && [[ "$state" =~ ^(SUCCEEDED|FAILED|CANCELLED)$ ]]; do
-        sleep 2
-    done
-    if [ "$state" != "SUCCEEDED" ]; then
-        red "Athena query failed (state=$state):" >&2
-        aws athena get-query-execution \
-            --region "$AWS_REGION" \
-            --query-execution-id "$qid" \
-            --query 'QueryExecution.Status.StateChangeReason' \
-            --output text >&2
-        red "Query SQL:" >&2
-        echo "$sql" >&2
-        return 1
-    fi
-    aws athena get-query-results \
-        --region "$AWS_REGION" \
-        --query-execution-id "$qid" \
-        --query 'ResultSet.Rows[1:].Data[].VarCharValue' \
-        --output text
-}
+# shellcheck source=scripts/spark/spark-env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
 
 cleanup_table_prefix() {
     local table="$1"
@@ -178,23 +133,14 @@ print('sort fields:', [f\"{f['direction']}/{f['null-order']}\" for f in fields])
 green "  sort fields match (asc/nulls-first, desc/nulls-last, desc/nulls-last) ✓"
 
 ################################################
-# Test 3 — INSERT into transforms_test and verify partition files
-# land in the expected S3 prefix.
+# Tests 3-4 — Spark INSERTs and SELECTs (transforms_test, nested_test),
+# then the transforms_test partition files in the expected S3 prefix.
 
-header "TEST 3 — INSERT one row into transforms_test"
-run_athena "INSERT INTO ${DATABASE}.transforms_test VALUES
-  (TIMESTAMP '2026-03-15 14:30:00 UTC',
-   TIMESTAMP '2026-03-15 14:30:00 UTC',
-   TIMESTAMP '2026-03-15 14:30:00 UTC',
-   TIMESTAMP '2026-03-15 14:30:00 UTC',
-   12345, 'alice@example.com', 99)" > /dev/null
-yellow "  1 row inserted"
-COUNT=$(run_athena "SELECT CAST(COUNT(*) AS VARCHAR) FROM ${DATABASE}.transforms_test")
-if [ "$COUNT" = "1" ]; then
-    green "  row count == 1 ✓"
-else
-    red "  expected count=1, got $COUNT"; exit 1
-fi
+header "TEST 3 — Spark: transforms_test INSERT + count, nested_test INSERT + SELECTs"
+spark_submit "$(dirname "${BASH_SOURCE[0]}")/spark/verify_surface.py"
+green "  transforms_test count == 1, nested list / struct / map roundtrip ✓"
+
+header "TEST 4 — transforms_test partition files land in the expected S3 prefix"
 if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/data/" --recursive --region "$AWS_REGION" \
     | grep -q "year_source_year=2026/month_source_month=2026-03/day_source_day=2026-03-15/hour_source_hour=2026-03-15-14"; then
     green "  multi-transform partition prefix written to S3 ✓"
@@ -202,40 +148,6 @@ else
     red "  expected partition prefix not found in S3"
     aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/data/" --recursive --region "$AWS_REGION" | head -5
     exit 1
-fi
-
-################################################
-# Test 4 — INSERT + SELECT nested types end-to-end.
-
-header "TEST 4 — INSERT nested types (list, struct, map) into nested_test"
-run_athena "INSERT INTO ${DATABASE}.nested_test VALUES
-  (1, ARRAY['x', 'y', 'z'],
-   CAST(ROW('Ada', 'Lovelace', 36) AS ROW(first_name VARCHAR, last_name VARCHAR, age INTEGER)),
-   MAP(ARRAY['country','tier'], ARRAY['UK','gold'])),
-  (2, ARRAY['only-one'],
-   CAST(ROW('Grace', 'Hopper', NULL) AS ROW(first_name VARCHAR, last_name VARCHAR, age INTEGER)),
-   MAP(ARRAY['country'], ARRAY['US']))" > /dev/null
-yellow "  2 nested rows inserted"
-
-TAGS=$(run_athena "SELECT tags[1] FROM ${DATABASE}.nested_test WHERE id = 1")
-if [ "$TAGS" = "x" ]; then
-    green "  list subscript: tags[1] == 'x' ✓"
-else
-    red "  expected tags[1]='x', got '$TAGS'"; exit 1
-fi
-
-PROFILE=$(run_athena "SELECT profile.first_name, profile.last_name FROM ${DATABASE}.nested_test WHERE id = 2")
-if echo "$PROFILE" | grep -q "Grace" && echo "$PROFILE" | grep -q "Hopper"; then
-    green "  struct field access: profile.first_name + last_name ✓"
-else
-    red "  struct access broken: '$PROFILE'"; exit 1
-fi
-
-ATTR=$(run_athena "SELECT element_at(attrs, 'tier') FROM ${DATABASE}.nested_test WHERE id = 1")
-if [ "$ATTR" = "gold" ]; then
-    green "  map element_at: attrs['tier'] == 'gold' ✓"
-else
-    red "  expected attrs.tier='gold', got '$ATTR'"; exit 1
 fi
 
 ################################################
