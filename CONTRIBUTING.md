@@ -229,6 +229,23 @@ DESTROY=1 scripts/integration-test-spark-smoke.sh   # destroys any leftover Iceb
 The smoke script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`;
 without `DESTROY=1` it leaves the stack deployed.
 
+`scripts/integration-test-v3-dml.sh` uses the same toolchain against
+`IcebergV3DmlStack`: a v3 merge-on-read table (`v3_dml_test`, with
+`variant`, `unknown`, `geography`, and `geometry` columns) and a v2 table
+(`v3_upgrade_test`). After checking that the `metadata.json` CloudFormation
+wrote is at format version 3 (and 2 for the upgrade table),
+`scripts/spark/verify_v3_dml.py` inserts rows, then asserts that UPDATE
+and DELETE write Puffin deletion vectors (and no Parquet position-delete
+files), that `_row_id` survives UPDATE and `rewrite_data_files` while
+`_last_updated_sequence_number` rises, that MERGE INTO and
+`VERSION AS OF` work, that `variant_get` / `to_json` and the geo values
+round-trip with SRID 4326, that `placeholder` reads NULL, and that
+`expire_snapshots` leaves one snapshot. On `v3_upgrade_test` it inserts at
+v2, sets `format-version` to 3, inserts again, and checks the row ids. The
+script then checks `metadata.json` again (`next-row-id > 0`, and format
+version 3 on both tables). Nanosecond timestamp columns are left out
+because Spark cannot open a table that has one.
+
 ## Demo: schema + partition evolution
 
 `scripts/integration-test-evolution.sh` drives the
