@@ -20,6 +20,9 @@ import {
 import {
     IcebergSparkSmokeStack,
 } from '../lib/iceberg-spark-smoke-stack';
+import {
+    IcebergV3DmlStack,
+} from '../lib/iceberg-v3-dml-stack';
 
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 const region = process.env.CDK_DEFAULT_REGION;
@@ -84,6 +87,13 @@ new IcebergSparkSmokeStack(app, 'IcebergSparkSmokeStack', {
 });
 
 new IcebergV3EvolutionStack(app, 'IcebergV3EvolutionStack', {
+    env,
+    importedDataLakeBucketName: `data-lake-bucket-${account}`,
+    importedDatabaseName: 'sample_database',
+    principalArn,
+});
+
+new IcebergV3DmlStack(app, 'IcebergV3DmlStack', {
     env,
     importedDataLakeBucketName: `data-lake-bucket-${account}`,
     importedDatabaseName: 'sample_database',
