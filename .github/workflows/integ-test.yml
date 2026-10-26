@@ -152,7 +152,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-spark-smoke.sh 2>&1 | tee /tmp/integ-test.log
-      - name: Run integration test — evolution (5 deploys + verify)
+      - name: Run integration test — evolution (5 deploys + Spark verify)
         run: |
           set -o pipefail
           bash scripts/integration-test-evolution.sh 2>&1 | tee -a /tmp/integ-test.log

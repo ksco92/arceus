@@ -231,7 +231,8 @@ without `DESTROY=1` it leaves the stack deployed.
 
 `scripts/integration-test-evolution.sh` drives the
 `IcebergEvolutionStack` through four `cdk deploy`s and verifies the
-underlying Iceberg `metadata.json` after each:
+underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
+checks (`scripts/spark/verify_evolution.py`) between deploys:
 
 | Step | Change | Columns | Partitions |
 | ---: | --- | --- | --- |
