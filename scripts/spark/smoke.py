@@ -14,5 +14,4 @@ spark.sql(f"INSERT INTO {TABLE} VALUES (1)")
 count = spark.sql(f"SELECT count(*) FROM {TABLE}").first()[0]
 assert count == 1, f"expected 1 row, got {count}"
 
-print("spark smoke OK")
 spark.stop()

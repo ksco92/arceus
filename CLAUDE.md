@@ -72,6 +72,11 @@ merging. The trigger set is:
 - the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
   `spark-env.sh`, `smoke.py`).
 
+The workflow caches only the sha512-verified downloads under
+`.spark/downloads`; the Spark tree is extracted from the verified archive
+on every run and nothing restored from the cache is executed without
+re-verification.
+
 The workflow is gated — it does not fire on every PR because it runs
 real `cdk deploy`s against a sandbox AWS account and takes ~5 min.
 Trigger it on a same-repo PR by either:

@@ -1,8 +1,8 @@
 name: Integration test
 
-# Runs scripts/integration-test-evolution.sh against real AWS. Drives
-# four real `cdk deploy`s plus Athena and Spark queries through the IcebergTable
-# construct and verifies schema + partition evolution end-to-end.
+# Runs the Spark smoke check and the evolution, DML, and surface scripts
+# against real AWS: real `cdk deploy`s plus Spark and Athena queries through
+# the IcebergTable construct.
 #
 # Triggers:
 #   - Label `run-integ-test` applied to an open PR.
@@ -144,7 +144,7 @@ jobs:
           java-version: '17'
       - uses: actions/cache@v4
         with:
-          path: .spark
+          path: .spark/downloads
           key: spark-${{ hashFiles('scripts/spark/install-spark.sh', 'scripts/spark/spark-env.sh') }}
       - run: bash scripts/spark/install-spark.sh
       - name: Run integration test — Spark smoke (1 deploy + INSERT/SELECT through S3FileIO)
