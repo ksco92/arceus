@@ -641,13 +641,14 @@ validated against their source column's type at synth time. See
 
 ### Does it work with Athena and Lake Formation?
 
-Yes. The demo app in the [`arceus`](https://github.com/ksco92/arceus)
-repo registers the tables with Lake Formation and queries them from
-Athena, including v2 merge-on-read `INSERT` / `UPDATE` / `DELETE` /
-`MERGE`, time travel, `OPTIMIZE`, and `VACUUM`. The construct's
-`grant*` helpers issue IAM grants; under Lake Formation you still add
-the matching `SELECT` / `INSERT` LF grants. See [Granting
-access](#granting-access).
+Yes for v1 and v2 tables: Athena reads and writes them, including v2
+merge-on-read `INSERT` / `UPDATE` / `DELETE` / `MERGE`, time travel,
+`OPTIMIZE`, and `VACUUM`; Athena cannot query v3 tables. The demo app in
+the [`arceus`](https://github.com/ksco92/arceus) repo registers its
+tables with Lake Formation and exercises the same operations through
+Spark in its integration suite. The construct's `grant*` helpers issue
+IAM grants; under Lake Formation you still add the matching `SELECT` /
+`INSERT` LF grants. See [Granting access](#granting-access).
 
 ### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
 
