@@ -2,7 +2,7 @@ name: Integration test
 
 # Runs the Spark smoke check and the evolution, DML, surface, and
 # v3-evolution scripts against real AWS: real `cdk deploy`s plus Spark
-# and Athena queries through the IcebergTable construct.
+# queries through the IcebergTable construct.
 #
 # Triggers:
 #   - Label `run-integ-test` applied to an open PR.
@@ -152,7 +152,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-spark-smoke.sh 2>&1 | tee /tmp/integ-test.log
-      - name: Run integration test — evolution (5 deploys + verify)
+      - name: Run integration test — evolution (5 deploys + Spark verify)
         run: |
           set -o pipefail
           bash scripts/integration-test-evolution.sh 2>&1 | tee -a /tmp/integ-test.log

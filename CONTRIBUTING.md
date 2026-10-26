@@ -70,6 +70,7 @@ arceus/
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
 │       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
 │       ├── verify_dml.py               # PySpark engine steps for the DML harness
+│       ├── verify_evolution.py         # PySpark engine steps for the evolution harness
 │       └── verify_surface.py           # PySpark engine steps for the surface harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
@@ -124,14 +125,14 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
 - **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs four scripts back-to-back: `scripts/integration-test-evolution.sh` (four `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), and `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs four scripts back-to-back: `scripts/integration-test-evolution.sh` (five `cdk deploy`s exercising schema + partition evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), and `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
 Before running the quickstart you need:
 
 1. AWS credentials in the default profile with permissions to manage
-   CloudFormation, KMS, S3, Glue, Lake Formation, Athena, and IAM
+   CloudFormation, KMS, S3, Glue, Lake Formation, and IAM
    policies. `aws sts get-caller-identity` must return successfully.
 2. `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` set in the
    environment (the AWS CLI sets these automatically for most
@@ -142,7 +143,7 @@ Before running the quickstart you need:
    it per-table `SELECT/INSERT/DELETE/ALTER/DESCRIBE` on the demo
    Iceberg tables. Without it the deploy fails when LF can't resolve
    the principal. The same ARN must also be the identity running
-   `cdk deploy` and any subsequent Athena queries. Local devs
+   `cdk deploy` and the Spark queries the integration scripts run. Local devs
    typically set this to their IAM user ARN; CI (`integ-test.yml`)
    sets it to the OIDC role ARN.
    - **Only one principal is privileged at a time.** `ArceusStack`
@@ -170,9 +171,9 @@ Before running the quickstart you need:
 # PRINCIPAL_ARN is the ARN of the IAM principal (user, role, or
 # federated identity) that the stack should make a Lake Formation
 # admin and per-table grantee. It must equal the identity running
-# `cdk deploy` and any subsequent Athena queries — otherwise the
-# integration script's INSERT/SELECT calls fail with `Principal does
-# not have any privilege on specified resource`.
+# `cdk deploy` and the Spark queries the integration scripts run —
+# otherwise the integration script's INSERT/SELECT calls fail with
+# `Principal does not have any privilege on specified resource`.
 #
 # For a direct IAM-user session, the line below returns the right ARN
 # (`arn:aws:iam::<acct>:user/<name>`).
@@ -188,7 +189,8 @@ export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
 npm install
 npm test                                  # package + demo stack tests
 npx cdk deploy ArceusStack --require-approval=never
-./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
+scripts/spark/install-spark.sh               # Spark toolchain for the Spark checks between deploys
+./scripts/integration-test-evolution.sh   # add + rename + drop + partition change via cdk, Spark checks between deploys
 ```
 
 `cdk ls` will show six stacks: `ArceusStack` (the demo data lake +
@@ -227,18 +229,22 @@ DESTROY=1 scripts/integration-test-spark-smoke.sh   # destroys any leftover Iceb
 The smoke script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`;
 without `DESTROY=1` it leaves the stack deployed.
 
-## Demo: schema + partition evolution via cdk-only
+## Demo: schema + partition evolution
 
 `scripts/integration-test-evolution.sh` drives the
-`IcebergEvolutionStack` through four `cdk deploy`s and verifies the
-underlying Iceberg `metadata.json` after each:
+`IcebergEvolutionStack` through five `cdk deploy`s and verifies the
+underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
+checks (`scripts/spark/verify_evolution.py`) between deploys.
 
-| Step | Change | Columns | Partitions |
-| ---: | --- | --- | --- |
-| 1 | Initial deploy | `customer_id(1)`, `email(2)`, `signed_up_at(3)` | `day(signed_up_at)` |
-| 2 | **ADD** column `region(4)` | + `region(4)` | unchanged |
-| 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` |
-| 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` |
+Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
+
+| Step | Change | Columns | Partitions | Spark phase after the deploy |
+| ---: | --- | --- | --- | --- |
+| 1 | Initial deploy | `customer_id(1)`, `email(2)`, `signed_up_at(3)` | `day(signed_up_at)` | seed INSERT of ids 10-12 |
+| 2 | **ADD** column `region(4)` | + `region(4)` | unchanged | old rows read with `region` NULL, then INSERT of id 13 with `region` |
+| 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` | `contact_email` for id 10 is `a@example.com` |
+| 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` | at least 4 rows read |
+| 5 | **CHANGE** the `signed_up_at` transform from day to month under fresh field id 1002; partition-history invariants asserted | unchanged | `month(signed_up_at)` | INSERT of id 14 under the month spec, at least 5 rows read |
 
 The construct passes each new column list + partition spec to Glue
 `UpdateTable` via `OpenTableFormatInput`. Glue computes the Iceberg
@@ -270,7 +276,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 9 | final `SELECT` | 6 rows with the expected balances |
 
 The smoke check and the four scripts run sequentially in the same `integ-test.yml`
-job; evolution takes ~5 minutes, DML ~3, surface ~4, and v3 evolution ~3.
+job; evolution takes ~4 minutes, DML ~3, surface ~4, and v3 evolution ~3.
 
 ## Demo: partition transforms, sort order, nested types, and grants
 

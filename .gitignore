@@ -23,3 +23,6 @@ cdk_repo_setup.md
 
 # Spark toolchain installed by scripts/spark/install-spark.sh
 .spark
+
+# Python bytecode caches
+__pycache__/
