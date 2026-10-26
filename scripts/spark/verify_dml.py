@@ -1,6 +1,4 @@
-"""DML checks for IcebergDmlStack's v2 merge-on-read table: INSERT, UPDATE,
-DELETE, MERGE INTO, time travel, compaction, and snapshot expiration, in order
-in one Spark session."""
+"""Spark DML, time-travel, compaction and snapshot-expiry checks against dml_test."""
 from datetime import datetime, timedelta, timezone
 
 from pyspark.sql import SparkSession

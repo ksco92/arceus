@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 #
-# End-to-end integration test for IcebergTable's v2 DML surface.
-# Deploys `IcebergDmlStack` once, then runs scripts/spark/verify_dml.py,
-# which exercises INSERT, UPDATE, DELETE, MERGE INTO, time travel,
-# compaction, and snapshot expiration against the same Iceberg table
-# through Spark.
+# End-to-end integration test for IcebergTable's v2 DML surface. Deploys
+# `IcebergDmlStack` once, then runs scripts/spark/verify_dml.py against it.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -55,7 +52,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
 header "DEPLOY IcebergDmlStack"
 npx cdk deploy "$STACK" --require-approval=never 2>&1 | tail -5
 
-header "SPARK DML steps 1-9"
+header "SPARK DML"
 spark_submit "$(dirname "${BASH_SOURCE[0]}")/spark/verify_dml.py"
 
 ################################################

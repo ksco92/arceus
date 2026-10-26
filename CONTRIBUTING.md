@@ -48,7 +48,7 @@ arceus/
 ├── lib/                                # Demo stacks (import the construct from packages/)
 │   ├── arceus-stack.ts                 # Demo stack (buckets, DB, 3 demo tables)
 │   ├── iceberg-evolution-stack.ts      # Parameterized stack for the evolution test
-│   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / OPTIMIZE / VACUUM test
+│   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / compaction / snapshot-expiry test
 │   ├── iceberg-surface-stack.ts        # Stack for transforms / sort / nested types / grants test
 │   ├── iceberg-spark-smoke-stack.ts    # Stack for the Spark toolchain smoke check
 │   └── iceberg-v3-evolution-stack.ts   # Parameterized stack for the v3 evolution test
@@ -246,13 +246,15 @@ metadata delta (new `schema-id`, new `spec-id`) and writes a new
 the construct pins (`id: N` on each `IcebergColumn`) never change
 across deploys.
 
-## Demo: DML, time travel, OPTIMIZE, and VACUUM
+## Demo: DML, time travel, compaction, and snapshot expiry
 
 `scripts/integration-test-dml.sh` covers the v2 surface that the
 evolution test doesn't. The harness deploys `IcebergDmlStack` once,
 then runs a sequence of Spark SQL statements (one PySpark program,
 `scripts/spark/verify_dml.py`) against a v2 merge-on-read
-table with `identifierFieldNames: ['account_id']`:
+table with `identifierFieldNames: ['account_id']`.
+
+The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above); it needs `PRINCIPAL_ARN` and a deployed `ArceusStack` with the same principal, and without `DESTROY=1` it leaves `IcebergDmlStack` deployed.
 
 | Step | Statement | Verify |
 | ---: | --- | --- |
@@ -263,11 +265,8 @@ table with `identifierFieldNames: ['account_id']`:
 | 5 | `MERGE INTO ... USING ... ON account_id` (update id=3, insert id=6 + id=7) | row count == 6, id=3 balance updated, ids 6 and 7 present |
 | 6 | `SELECT ... VERSION AS OF <pre-MERGE snapshot>` | time-travel still sees 4 rows, no id=6 |
 | 7 | `CALL glue.system.rewrite_data_files(...)` | succeeds, row count unchanged |
-| 8 | `CALL glue.system.expire_snapshots(...)` with a future `older_than` | at least one snapshot expired, row count unchanged |
+| 8 | `CALL glue.system.expire_snapshots(...)` with a future `older_than` | snapshots reduced to the current one; 6 rows unchanged |
 | 9 | final `SELECT` | 6 rows with the expected balances |
-
-The DML table is configured with `history.expire.max-snapshot-age-ms`
-of 60 seconds; the Spark procedure takes an explicit `older_than`, so the script does not wait for it.
 The smoke check and the four scripts run sequentially in the same `integ-test.yml`
 job; evolution takes ~5 minutes, DML ~3, surface ~4, and v3 evolution ~3.
 
