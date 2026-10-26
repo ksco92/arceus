@@ -1630,9 +1630,12 @@ describe('IcebergTable — v3 types', () => {
         ])).not.toThrow();
     });
 
-    it('accepts a nanosecond timestamp in identifierFieldNames', () => {
+    it.each([
+        IcebergType.TIMESTAMP_NS,
+        IcebergType.TIMESTAMPTZ_NS,
+    ])('accepts nanosecond timestamp %s in identifierFieldNames', (type) => {
         expect(() => build(IcebergFormatVersion.V3, {
-            type: IcebergType.TIMESTAMP_NS,
+            type,
             required: true,
         }, [
             'c',
