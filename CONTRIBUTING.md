@@ -65,7 +65,8 @@ arceus/
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
-│       └── smoke.py                    # PySpark INSERT + count against the Glue catalog
+│       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
+│       └── verify_surface.py           # PySpark engine steps for the surface harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package
 │   ├── bin/app.ts
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
@@ -273,6 +274,8 @@ job; evolution takes ~5 minutes, DML ~3, and surface ~4.
 construct surface the evolution and DML stacks don't reach.
 `IcebergSurfaceStack` defines three small tables that each isolate
 one concern:
+
+The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above).
 
 | Concern | Table | What the script checks |
 | --- | --- | --- |

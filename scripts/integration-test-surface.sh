@@ -133,12 +133,8 @@ print('sort fields:', [f\"{f['direction']}/{f['null-order']}\" for f in fields])
 green "  sort fields match (asc/nulls-first, desc/nulls-last, desc/nulls-last) ✓"
 
 ################################################
-# Tests 3-4 — Spark INSERTs and SELECTs (transforms_test, nested_test),
-# then the transforms_test partition files in the expected S3 prefix.
-
 header "TEST 3 — Spark: transforms_test INSERT + count, nested_test INSERT + SELECTs"
 spark_submit "$(dirname "${BASH_SOURCE[0]}")/spark/verify_surface.py"
-green "  transforms_test count == 1, nested list / struct / map roundtrip ✓"
 
 header "TEST 4 — transforms_test partition files land in the expected S3 prefix"
 if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/data/" --recursive --region "$AWS_REGION" \
