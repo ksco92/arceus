@@ -254,7 +254,7 @@ then runs a sequence of Spark SQL statements (one PySpark program,
 `scripts/spark/verify_dml.py`) against a v2 merge-on-read
 table with `identifierFieldNames: ['account_id']`.
 
-Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and tears `IcebergDmlStack` down only with `DESTROY=1`.
+Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and leaves `IcebergDmlStack` deployed unless `DESTROY=1` is set.
 
 | Step | Statement | Verify |
 | ---: | --- | --- |
