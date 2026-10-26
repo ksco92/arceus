@@ -189,7 +189,8 @@ export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
 npm install
 npm test                                  # package + demo stack tests
 npx cdk deploy ArceusStack --require-approval=never
-./scripts/integration-test-evolution.sh   # add + rename + drop, via cdk only
+scripts/spark/install-spark.sh               # Spark toolchain for the Spark checks between deploys
+./scripts/integration-test-evolution.sh   # add + rename + drop + partition change via cdk, Spark checks between deploys
 ```
 
 `cdk ls` will show six stacks: `ArceusStack` (the demo data lake +
@@ -228,14 +229,14 @@ DESTROY=1 scripts/integration-test-spark-smoke.sh   # destroys any leftover Iceb
 The smoke script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`;
 without `DESTROY=1` it leaves the stack deployed.
 
-## Demo: schema + partition evolution via cdk-only
+## Demo: schema + partition evolution
 
 `scripts/integration-test-evolution.sh` drives the
 `IcebergEvolutionStack` through five `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys.
 
-Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and tears `IcebergEvolutionStack` down only with `DESTROY=1`.
+Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
 | Step | Change | Columns | Partitions | Spark phase after the deploy |
 | ---: | --- | --- | --- | --- |
@@ -275,7 +276,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 9 | final `SELECT` | 6 rows with the expected balances |
 
 The smoke check and the four scripts run sequentially in the same `integ-test.yml`
-job; evolution takes ~5 minutes, DML ~3, surface ~4, and v3 evolution ~3.
+job; evolution takes ~4 minutes, DML ~3, surface ~4, and v3 evolution ~3.
 
 ## Demo: partition transforms, sort order, nested types, and grants
 
