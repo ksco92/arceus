@@ -44,7 +44,7 @@ install_jar() {
         return
     fi
     header "Downloading $jar"
-    curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 -o "${dest}.part" "$url"
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 600 -o "${dest}.part" "$url"
     verify "${dest}.part" "$sha"
     mv "${dest}.part" "$dest"
 }
@@ -56,7 +56,7 @@ if [ -x "${SPARK_HOME}/bin/spark-submit" ]; then
 else
     header "Downloading ${SPARK_DIST}.tgz"
     work=$(mktemp -d "${SPARK_INSTALL_DIR}/extract.XXXXXX")
-    curl -fsSL --retry 3 --connect-timeout 30 --max-time 1800 -o "${work}/spark.tgz" "$SPARK_URL"
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 1800 -o "${work}/spark.tgz" "$SPARK_URL"
     verify "${work}/spark.tgz" "$SPARK_SHA512"
     tar -xzf "${work}/spark.tgz" -C "$work"
     rm -rf "$SPARK_HOME"
