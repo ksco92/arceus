@@ -51,22 +51,22 @@ export class IcebergPartitionTransform {
         kind: IcebergPartitionTransformKind.IDENTITY,
     });
 
-    /** `year` — extracts the year of a date/timestamp. */
+    /** `year` — extracts the year of a date or timestamp (nanosecond timestamps included). */
     public static readonly YEAR: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.YEAR,
     });
 
-    /** `month` — extracts the month of a date/timestamp. */
+    /** `month` — extracts the month of a date or timestamp (nanosecond timestamps included). */
     public static readonly MONTH: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.MONTH,
     });
 
-    /** `day` — extracts the day of a date/timestamp. */
+    /** `day` — extracts the day of a date or timestamp (nanosecond timestamps included). */
     public static readonly DAY: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.DAY,
     });
 
-    /** `hour` — extracts the hour of a timestamp (not a date). */
+    /** `hour` — extracts the hour of a timestamp (nanosecond timestamps included, not a date). */
     public static readonly HOUR: IcebergPartitionTransform = new IcebergPartitionTransform({
         kind: IcebergPartitionTransformKind.HOUR,
     });
@@ -173,7 +173,9 @@ export class IcebergPartitionTransform {
      */
     public _validateSourceType(sourceColumnName: string, sourceType: IcebergType): void {
         if (sourceType.kind === IcebergTypeKind.VARIANT) {
-            throw new Error(`column '${sourceColumnName}' has type variant, which cannot be a partition or sort source`);
+            throw new Error(
+                `column '${sourceColumnName}' has type variant, which cannot be a partition or sort source`,
+            );
         }
         if (
             (
@@ -214,7 +216,8 @@ export class IcebergPartitionTransform {
                 if (!isBucketLegal(sourceType)) {
                     throw new Error(
                         `partition transform 'bucket[${this.bucketCount}]' on column '${sourceColumnName}' requires `
-                        + 'an int/long/decimal/date/time/timestamp/timestamptz/timestamp_ns/timestamptz_ns/string/uuid/fixed/binary column',
+                        + 'an int/long/decimal/date/time/timestamp/timestamptz/timestamp_ns/timestamptz_ns/'
+                        + 'string/uuid/fixed/binary column',
                     );
                 }
                 return;

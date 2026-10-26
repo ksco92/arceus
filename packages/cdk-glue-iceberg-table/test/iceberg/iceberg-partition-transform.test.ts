@@ -144,6 +144,8 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.TIME,
         IcebergType.TIMESTAMP,
         IcebergType.TIMESTAMPTZ,
+        IcebergType.TIMESTAMP_NS,
+        IcebergType.TIMESTAMPTZ_NS,
         IcebergType.STRING,
         IcebergType.UUID,
         IcebergType.BINARY,
@@ -177,6 +179,8 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.DOUBLE,
         IcebergType.DATE,
         IcebergType.TIMESTAMP,
+        IcebergType.TIMESTAMP_NS,
+        IcebergType.TIMESTAMPTZ_NS,
     ])('truncate rejects %s', (type) => {
         expect(() => IcebergPartitionTransform.truncate(8)._validateSourceType('c', type)).toThrow(/truncate/);
     });
@@ -214,23 +218,8 @@ describe('IcebergPartitionTransform — source type validation', () => {
             IcebergPartitionTransform.HOUR,
             IcebergType.TIMESTAMPTZ_NS,
         ],
-        [
-            IcebergPartitionTransform.bucket(4),
-            IcebergType.TIMESTAMP_NS,
-        ],
-        [
-            IcebergPartitionTransform.bucket(4),
-            IcebergType.TIMESTAMPTZ_NS,
-        ],
     ])('%s accepts %s', (transform, type) => {
         expect(() => transform._validateSourceType('c', type)).not.toThrow();
-    });
-
-    it.each([
-        IcebergType.TIMESTAMP_NS,
-        IcebergType.TIMESTAMPTZ_NS,
-    ])('truncate rejects %s', (type) => {
-        expect(() => IcebergPartitionTransform.truncate(4)._validateSourceType('c', type)).toThrow(/truncate/);
     });
 
     it.each([
