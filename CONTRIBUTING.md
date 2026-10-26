@@ -280,7 +280,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 9 | final `SELECT` | 6 rows with the expected balances |
 
 The smoke check and the five scripts run sequentially in the same `integ-test.yml`
-job; evolution takes ~4 minutes, DML ~3, surface ~4, v3 evolution ~3, and v3 DML ~N.
+job; evolution takes ~4 minutes, DML ~3, surface ~4, v3 evolution ~3, and v3 DML ~2.
 
 ## Demo: partition transforms, sort order, nested types, and grants
 
