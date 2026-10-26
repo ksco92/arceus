@@ -1,4 +1,5 @@
 import {
+    IcebergEdgeAlgorithm,
     IcebergRenderContext,
     IcebergType,
     IcebergTypeKind,
@@ -358,5 +359,122 @@ describe('IcebergType — struct', () => {
         expect(outerAField.id).toBe(100);
         expect(outerAField.type.fields[0].id).toBe(101);
         expect(outerBField.id).toBe(102);
+    });
+});
+
+describe('IcebergType — v3 primitives', () => {
+    it.each([
+        [
+            'UNKNOWN',
+            IcebergType.UNKNOWN,
+            'unknown',
+        ],
+        [
+            'TIMESTAMP_NS',
+            IcebergType.TIMESTAMP_NS,
+            'timestamp_ns',
+        ],
+        [
+            'TIMESTAMPTZ_NS',
+            IcebergType.TIMESTAMPTZ_NS,
+            'timestamptz_ns',
+        ],
+        [
+            'VARIANT',
+            IcebergType.VARIANT,
+            'variant',
+        ],
+    ])('%s renders to %s', (_label, type, expected) => {
+        expect(type._render(makeContext())).toBe(expected);
+        expect(type.kind).toBe(expected);
+    });
+});
+
+describe('IcebergType — geospatial', () => {
+    it.each([
+        [
+            IcebergType.geometry(),
+            'geometry',
+        ],
+        [
+            IcebergType.geometry('EPSG:3857'),
+            'geometry(EPSG:3857)',
+        ],
+        [
+            IcebergType.geography(),
+            'geography',
+        ],
+        [
+            IcebergType.geography('EPSG:4326'),
+            'geography(EPSG:4326)',
+        ],
+        [
+            IcebergType.geography('EPSG:4326', IcebergEdgeAlgorithm.SPHERICAL),
+            'geography(EPSG:4326, spherical)',
+        ],
+        [
+            IcebergType.geography('OGC:CRS84', IcebergEdgeAlgorithm.VINCENTY),
+            'geography(OGC:CRS84, vincenty)',
+        ],
+        [
+            IcebergType.geography(undefined, IcebergEdgeAlgorithm.KARNEY),
+            'geography(OGC:CRS84, karney)',
+        ],
+    ])('renders %#: %s', (type, expected) => {
+        expect(type._render(makeContext())).toBe(expected);
+    });
+
+    it.each([
+        [
+            IcebergEdgeAlgorithm.SPHERICAL,
+            'spherical',
+        ],
+        [
+            IcebergEdgeAlgorithm.VINCENTY,
+            'vincenty',
+        ],
+        [
+            IcebergEdgeAlgorithm.THOMAS,
+            'thomas',
+        ],
+        [
+            IcebergEdgeAlgorithm.ANDOYER,
+            'andoyer',
+        ],
+        [
+            IcebergEdgeAlgorithm.KARNEY,
+            'karney',
+        ],
+    ])('edge algorithm %s is the spec string %s', (algorithm, expected) => {
+        expect(algorithm).toBe(expected);
+    });
+
+    it('drops geographyAlgorithm on a geometry built through the constructor', () => {
+        const type = new IcebergType({
+            kind: IcebergTypeKind.GEOMETRY,
+            geoCrs: 'EPSG:3857',
+            geographyAlgorithm: IcebergEdgeAlgorithm.KARNEY,
+        });
+        expect(type.geographyAlgorithm).toBeUndefined();
+        expect(type._render(makeContext())).toBe('geometry(EPSG:3857)');
+    });
+
+    it.each([
+        '',
+        'EPSG: 4326',
+        'EPSG:4326\t',
+        'srid(4326)',
+        '{"type":"GeographicCRS"}',
+    ])('rejects CRS %j on geometry and geography', (crs) => {
+        expect(() => IcebergType.geometry(crs)).toThrow(/geometry CRS must be a non-empty identifier/);
+        expect(() => IcebergType.geography(crs)).toThrow(/geography CRS must be a non-empty identifier/);
+    });
+
+    it.each([
+        'srid:3857',
+        'EPSG:4326',
+        'projjson:my_crs_property',
+    ])('accepts CRS %s', (crs) => {
+        expect(IcebergType.geometry(crs).geoCrs).toBe(crs);
     });
 });
