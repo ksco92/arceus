@@ -88,7 +88,7 @@ export interface IcebergColumn {
      */
     readonly required?: boolean;
 
-    /** Optional documentation string. */
+    /** Optional documentation string; must not start with `(PK) `. */
     readonly doc?: string;
 
     /**
@@ -180,9 +180,8 @@ export interface IcebergTableProps {
      * `IcebergSchema.identifierFieldIds`. Per the Iceberg spec these
      * must be primitive, non-nullable, non-floating-point fields; an
      * optional column is rejected at synth. The construct prefixes each
-     * identifier column's `doc` with `(PK) `, shown as the column comment
-     * in Glue, so a change to this list reaches a deployed table; no
-     * column's own `doc` may start with that prefix.
+     * identifier column's `doc` with `(PK) `, so no column's own `doc`
+     * may start with that prefix.
      */
     readonly identifierFieldNames?: string[];
 

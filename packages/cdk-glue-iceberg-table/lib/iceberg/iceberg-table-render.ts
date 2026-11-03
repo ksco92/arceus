@@ -27,11 +27,7 @@ import {
 /// /////////////////////////////////////////////////
 // Validation
 
-/**
- * Doc prefix the construct puts on identifier columns. Glue reuses an
- * earlier schema whose fields match, so the marker keeps an identifier
- * change from being a no-op.
- */
+/** Doc prefix that marks identifier columns, so an identifier change is a field change. */
 const IDENTIFIER_DOC_PREFIX = '(PK) ';
 
 /** @internal */

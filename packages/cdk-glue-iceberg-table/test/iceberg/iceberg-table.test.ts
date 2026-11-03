@@ -1495,71 +1495,108 @@ describe('IcebergTable — identifier doc marker', () => {
         ]);
     });
 
-    it('rejects an optional column in identifierFieldNames', () => {
+    function synthTable(columns: IcebergColumn[], identifierFieldNames?: string[]): Template {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
+        new IcebergTable(stack, 'Tbl', {
             database,
             tableName: 'simple',
             formatVersion: IcebergFormatVersion.V2,
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-            ],
+            columns,
             location: 's3://my-bucket/simple/',
+            identifierFieldNames,
+        });
+        return Template.fromStack(stack);
+    }
+
+    it.each([
+        {
+            label: 'rejects an optional identifier column',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                required: false,
+            },
             identifierFieldNames: [
                 'id',
             ],
-        })).toThrow(
-            "identifierFieldNames references optional column 'id'; "
-            + 'set required: true on the column or remove it from identifierFieldNames',
-        );
+            error: "identifierFieldNames references optional column 'id'; "
+                + 'set required: true on the column or remove it from identifierFieldNames',
+        },
+        {
+            label: 'rejects a bare (PK) doc',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                doc: '(PK) ',
+            },
+            identifierFieldNames: undefined,
+            error: "column 'id' has a doc starting with '(PK) ', a prefix the construct adds to identifier columns; "
+                + 'remove it and list the column in identifierFieldNames instead',
+        },
+        {
+            label: 'rejects a (PK) doc on an identifier column',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                doc: '(PK) key',
+            },
+            identifierFieldNames: [
+                'id',
+            ],
+            error: "column 'id' has a doc starting with '(PK) ', a prefix the construct adds to identifier columns; "
+                + 'remove it and list the column in identifierFieldNames instead',
+        },
+        {
+            label: 'accepts a doc that only resembles the marker',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                doc: '(PK)key',
+            },
+            identifierFieldNames: undefined,
+            error: undefined,
+        },
+    ])('$label', ({
+        column, identifierFieldNames, error,
+    }) => {
+        let thrown: string | undefined;
+        try {
+            synthTable([
+                column,
+            ], identifierFieldNames);
+        } catch (e) {
+            thrown = (e as Error).message;
+        }
+        expect(thrown).toBe(error);
     });
 
-    it.each([
-        '(PK) ',
-        '(PK) key',
-    ])('rejects a column doc of %p, which starts with the marker', (doc) => {
-        const {
-            stack, database,
-        } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: [
-                {
-                    ...MINIMAL_COLUMNS[0],
-                    doc,
-                },
-            ],
-            location: 's3://my-bucket/simple/',
-        })).toThrow(
-            "column 'id' has a doc starting with '(PK) ', a prefix the construct adds to identifier columns; "
-            + 'remove it and list the column in identifierFieldNames instead',
-        );
-    });
-
-    it('accepts a doc that only resembles the marker', () => {
-        const {
-            stack, database,
-        } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: [
-                {
-                    ...MINIMAL_COLUMNS[0],
-                    doc: '(PK)key',
-                },
-            ],
-            location: 's3://my-bucket/simple/',
-        })).not.toThrow();
+    it('leaves nested struct field docs and names unmarked', () => {
+        const template = synthTable([
+            MINIMAL_COLUMNS[0],
+            {
+                name: 'detail',
+                type: IcebergType.struct([
+                    {
+                        name: 'note',
+                        type: IcebergType.STRING,
+                        doc: '(PK) x',
+                    },
+                    {
+                        name: 'id',
+                        type: IcebergType.LONG,
+                        doc: 'Nested id.',
+                    },
+                ]),
+                id: 2,
+            },
+        ], [
+            'id',
+        ]);
+        const tables = template.findResources('AWS::Glue::Table');
+        const fields = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+        const nested = JSON.parse(fields[1].Type).fields.map((field: { doc: string }) => field.doc);
+        expect(nested).toEqual([
+            '(PK) x',
+            'Nested id.',
+        ]);
     });
 });
 
