@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # End-to-end integration test for IcebergTable schema + partition
-# evolution. Drives the `IcebergEvolutionStack` through five real
+# evolution. Drives the `IcebergEvolutionStack` through six real
 # `cdk deploy`s and verifies the resulting Glue / Iceberg metadata
 # after each.
 #
@@ -61,6 +61,8 @@ print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
+print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
+print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
 }
 
@@ -141,6 +143,21 @@ if m['last-partition-id'] < max_field_id:
     fi
 }
 
+assert_identifiers() {
+    local expected="$1 $2"
+    local listing actual
+    listing=$(table_column_names)
+    actual="$(echo "$listing" | grep ^identifier-field-ids | cut -d' ' -f2) $(echo "$listing" | grep ^pk-marked | cut -d' ' -f2)"
+    if [ "$actual" = "$expected" ]; then
+        green "  identifier-field-ids and (PK) docs ✓ ($actual)"
+    else
+        red   "  identifier-field-ids or (PK) docs ✗"
+        red   "    expected: $expected"
+        red   "    actual:   $actual"
+        return 1
+    fi
+}
+
 deploy_step() {
     local step="$1"
     header "STEP $step — cdk deploy"
@@ -170,6 +187,7 @@ deploy_step 1
 header "VERIFY step 1"
 assert_columns "1:customer_id,2:email,3:signed_up_at"
 assert_partitions "signed_up_at_day"
+assert_identifiers "1" "customer_id"
 
 header "SPARK step 1 (INSERT seed rows)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
@@ -241,6 +259,17 @@ assert_partition_history
 
 header "SPARK step 5 (INSERT under the month spec, rows queryable)"
 spark_submit "$VERIFY_PROGRAM" --phase 5
+
+################################################
+################################################
+# Step 6: CHANGE identifierFieldNames from customer_id to contact_email only.
+
+deploy_step 6
+
+header "VERIFY step 6 (CHANGE identifier fields only)"
+assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
+assert_partitions "signed_up_at_month"
+assert_identifiers "2" "contact_email"
 
 ################################################
 ################################################

@@ -27,6 +27,9 @@ import {
 /// /////////////////////////////////////////////////
 // Validation
 
+/** Doc prefix that marks identifier columns, so an identifier change is a field change. */
+const IDENTIFIER_DOC_PREFIX = '(PK) ';
+
 /** @internal */
 export function validateProps(props: IcebergTableProps): void {
     if (!props.tableName.match(/^[a-z0-9_]+$/)) {
@@ -43,6 +46,12 @@ export function validateProps(props: IcebergTableProps): void {
             throw new Error(`duplicate column name: ${column.name}`);
         }
         names.add(column.name);
+        if (column.doc?.startsWith(IDENTIFIER_DOC_PREFIX)) {
+            throw new Error(
+                `column '${column.name}' has a doc starting with '${IDENTIFIER_DOC_PREFIX}', a prefix the construct `
+                + 'adds to identifier columns; remove it and list the column in identifierFieldNames instead',
+            );
+        }
     }
     if (!props.location.startsWith('s3://')) {
         throw new Error(`location must start with 's3://', got '${props.location}'`);
@@ -135,6 +144,7 @@ export function parseS3Uri(uri: string): { bucket: string; key: string } {
 interface RenderedColumn {
     readonly id: number;
     readonly type: IcebergType;
+    readonly required: boolean;
 }
 
 /** @internal */
@@ -143,8 +153,16 @@ export interface RenderedSchema {
     readonly columnByName: Map<string, RenderedColumn>;
 }
 
-/** @internal */
-export function renderSchema(columns: IcebergColumn[]): RenderedSchema {
+/**
+ * Render the top-level fields, prefixing the doc of every column named
+ * in `identifierFieldNames` with the identifier marker.
+ *
+ * @internal
+ */
+export function renderSchema(
+    columns: IcebergColumn[],
+    identifierFieldNames: string[] | undefined,
+): RenderedSchema {
     /// First pass: collect and validate the caller-provided top-level
     /// ids (every column pins its own; the construct never fills them).
     /// Nested-type ids continue above the highest top-level id so they
@@ -158,20 +176,23 @@ export function renderSchema(columns: IcebergColumn[]): RenderedSchema {
             return id;
         },
     };
+    const identifierNames = new Set(identifierFieldNames);
     const columnByName = new Map<string, RenderedColumn>();
     const fields: CfnTable.IcebergStructFieldProperty[] = columns.map((column, index) => {
         const id = topLevelIds[index];
         const typeString = column.type._render(ctx);
+        const required = column.required ?? false;
         columnByName.set(column.name, {
             id,
             type: column.type,
+            required,
         });
         return {
             id,
             name: column.name,
             type: typeString,
-            required: column.required ?? false,
-            doc: column.doc,
+            required,
+            doc: identifierNames.has(column.name) ? `${IDENTIFIER_DOC_PREFIX}${column.doc ?? ''}` : column.doc,
         };
     });
     return {
@@ -348,6 +369,12 @@ export function resolveIdentifierFieldIds(
             throw new Error(
                 `identifierFieldNames references column '${name}' of type '${column.type.kind}', `
                 + 'which cannot identify a row; remove it from identifierFieldNames',
+            );
+        }
+        if (!column.required) {
+            throw new Error(
+                `identifierFieldNames references optional column '${name}'; `
+                + 'set required: true on the column or remove it from identifierFieldNames',
             );
         }
         return column.id;

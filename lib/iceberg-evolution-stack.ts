@@ -69,8 +69,9 @@ export class IcebergEvolutionStack extends Stack {
             3,
             4,
             5,
+            6,
         ].includes(step)) {
-            throw new Error(`evolutionStep must be 1, 2, 3, 4, or 5, got '${stepRaw}'`);
+            throw new Error(`evolutionStep must be 1, 2, 3, 4, 5, or 6, got '${stepRaw}'`);
         }
 
         const importedBucket = Bucket.fromBucketName(
@@ -95,9 +96,7 @@ export class IcebergEvolutionStack extends Stack {
             columns,
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
-            identifierFieldNames: [
-                'customer_id',
-            ],
+            identifierFieldNames: buildIdentifierFieldNames(step),
             removalPolicy: RemovalPolicy.DESTROY,
         });
 
@@ -201,7 +200,7 @@ function buildColumns(step: number): IcebergColumn[] {
     if (step === 3) {
         return renamed;
     }
-    /// Step 4: DROP `region`. Id 4 stays retired — filter it out
+    /// Steps 4 to 6: DROP `region`. Id 4 stays retired — filter it out
     /// rather than index-slicing so the intent is explicit.
     return renamed.filter((column) => column.name !== 'region');
 }
@@ -249,8 +248,21 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
             dayPartition,
         ];
     }
-    /// Step 5: CHANGE the transform on signed_up_at (day -> month).
+    /// Steps 5 and 6: CHANGE the transform on signed_up_at (day -> month).
     return [
         monthPartition,
+    ];
+}
+
+/// Step 6 changes only the identifier set; columns and partitions match
+/// step 5.
+function buildIdentifierFieldNames(step: number): string[] {
+    if (step === 6) {
+        return [
+            'contact_email',
+        ];
+    }
+    return [
+        'customer_id',
     ];
 }

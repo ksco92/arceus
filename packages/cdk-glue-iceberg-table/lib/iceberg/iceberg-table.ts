@@ -88,7 +88,7 @@ export interface IcebergColumn {
      */
     readonly required?: boolean;
 
-    /** Optional documentation string. */
+    /** Optional documentation string; must not start with `(PK) `. */
     readonly doc?: string;
 
     /**
@@ -178,7 +178,10 @@ export interface IcebergTableProps {
     /**
      * Names of columns that together identify a row. Maps to
      * `IcebergSchema.identifierFieldIds`. Per the Iceberg spec these
-     * must be primitive, non-nullable, non-floating-point fields.
+     * must be primitive, non-nullable, non-floating-point fields; an
+     * optional column is rejected at synth. The construct prefixes each
+     * identifier column's `doc` with `(PK) `, so no column's own `doc`
+     * may start with that prefix.
      */
     readonly identifierFieldNames?: string[];
 
@@ -306,7 +309,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         );
         validateIcebergProperties(this.dataFormat, this.formatVersion, mergedProperties);
 
-        const rendered = renderSchema(props.columns);
+        const rendered = renderSchema(props.columns, props.identifierFieldNames);
         validatePartitionSpec(props.partitionSpec, rendered.columnByName);
         validateSortOrder(props.sortOrder, rendered.columnByName);
         const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);

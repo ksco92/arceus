@@ -26,11 +26,13 @@ function synthAt(step: number | string): Template {
     return Template.fromStack(stack);
 }
 
+function icebergInputAt(step: number | string) {
+    const tables = synthAt(step).findResources('AWS::Glue::Table');
+    return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
+}
+
 function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
-    const template = synthAt(step);
-    const tables = template.findResources('AWS::Glue::Table');
-    const props = Object.values(tables)[0].Properties;
-    const fields = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+    const fields = icebergInputAt(step).Schema.Fields;
     return fields.map((field: { Id: number; Name: string }) => ({
         Id: field.Id,
         Name: field.Name,
@@ -38,10 +40,7 @@ function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
 }
 
 function partitionsAt(step: number | string): Array<{ Name: string; FieldId: number }> {
-    const template = synthAt(step);
-    const tables = template.findResources('AWS::Glue::Table');
-    const props = Object.values(tables)[0].Properties;
-    const fields = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.PartitionSpec.Fields;
+    const fields = icebergInputAt(step).PartitionSpec.Fields;
     return fields.map((field: { Name: string; FieldId: number }) => ({
         Name: field.Name,
         FieldId: field.FieldId,
@@ -170,6 +169,45 @@ describe('IcebergEvolutionStack — partition evolution', () => {
     });
 });
 
+describe('IcebergEvolutionStack — identifier evolution', () => {
+    function schemaAt(step: number): { IdentifierFieldIds: number[]; Fields: Array<Record<string, unknown>> } {
+        return icebergInputAt(step).Schema;
+    }
+
+    it('step 5 identifies rows by customer_id, marked in its doc', () => {
+        const schema = schemaAt(5);
+        expect(schema.IdentifierFieldIds).toEqual([
+            1,
+        ]);
+        expect(schema.Fields.map((field) => field.Doc)).toEqual([
+            '(PK) Primary key.',
+            undefined,
+            undefined,
+        ]);
+    });
+
+    it('step 6 moves the identifier to contact_email and changes nothing else', () => {
+        const before = schemaAt(5);
+        const after = schemaAt(6);
+        expect(after.IdentifierFieldIds).toEqual([
+            2,
+        ]);
+        expect(after.Fields.map((field) => field.Doc)).toEqual([
+            'Primary key.',
+            '(PK) ',
+            undefined,
+        ]);
+        const shapeOf = (fields: Array<Record<string, unknown>>): unknown[] => fields.map((field) => [
+            field.Id,
+            field.Name,
+            field.Type,
+            field.Required,
+        ]);
+        expect(shapeOf(after.Fields)).toEqual(shapeOf(before.Fields));
+        expect(partitionsAt(6)).toEqual(partitionsAt(5));
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -189,7 +227,7 @@ describe('IcebergEvolutionStack — wiring', () => {
     });
 
     it('rejects an out-of-range step', () => {
-        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, or 5/);
+        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, or 6/);
     });
 
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {

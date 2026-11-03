@@ -388,6 +388,13 @@ spec. Reusing a retired id (or reassigning an id to a different field)
 produces a table that Athena still reads but Spark and Trino reject
 with `ValidationException: Conflicting partition fields`.
 
+`identifierFieldNames` lists the columns that together identify a row
+and renders as the schema's `identifier-field-ids`. Each one must be a
+`required: true` column (Glue rejects an optional one). The construct
+prefixes each identifier column's `doc` with `(PK) `, so a `doc` you
+write must not start with `(PK) `; see [Evolving schema and
+partitions](#evolving-schema-and-partitions).
+
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:
 
@@ -401,7 +408,7 @@ feature you set:
       "schema-id": 0,
       "identifier-field-ids": [1],
       "fields": [
-        { "id": 1, "name": "order_id", "required": true, "type": "long" },
+        { "id": 1, "name": "order_id", "required": true, "type": "long", "doc": "(PK) " },
         { "id": 2, "name": "customer_id", "required": true, "type": "long" },
         { "id": 3, "name": "order_amount", "required": true, "type": "decimal(12, 2)" },
         { "id": 4, "name": "currency", "required": true, "type": "string" },
@@ -567,6 +574,15 @@ data files stay readable because each column's `id` is pinned and
 never reused. Adds, renames (same `id`, new `name`), and drops all
 flow through `cdk deploy` alone — no out-of-band SQL DDL.
 
+Glue's `UpdateTable` reuses an earlier schema whose fields (name,
+type, `required`, `doc`) match the request, together with that
+schema's `identifier-field-ids`. The construct therefore prefixes the
+`doc` of every identifier column with `(PK) ` (just `(PK) ` when the
+column has no `doc`), shown as the column comment, so every
+identifier change is a field change. On a table whose schema history
+was written with the marker, identifier changes flow through `cdk
+deploy` like column changes.
+
 Partition evolution flows the same way, with one extra rule on
 `fieldId`: a changed partition field is a new partition field. To move
 a table from `month(placed_at)` to `day(placed_at)`, drop the month
@@ -670,10 +686,11 @@ the construct does **not** prevent. See the next section.)
 ## Known limitations
 
 - **Field-id reuse is not detected across deploys.** If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate column id N` validator), but it doesn't compare against the live table state. The safe workflow is to always pin `id` explicitly and treat dropped ids as retired forever; never let CDK reassign an id that has ever been used.
-- **Partition field-id reuse is not detected across deploys either.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), but it cannot tell that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. The safe workflow: treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id.
+- **Partition field-id reuse is not detected across deploys either.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), but it cannot tell that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. The safe workflow: treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id. A partition change needs a new source column or transform; Glue ignores a `fieldId`-only change.
 - **`last-partition-id` is written by Glue, not by the construct.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The repo's integration test asserts the counter keeps up with the highest supplied field id after a partition evolution, but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter — if you mix CDK-managed and engine-managed partition evolution, verify the counter in `metadata.json` before trusting engine-side changes.
+- **Removing the last identifier from a table created with identifiers before 0.11.0 can bring the old ids back.** That table's history holds an unmarked schema with ids, and Glue reuses it when the rendered fields match it again. Change a column `doc` in the same deploy that removes the last identifier.
 - **CREATE-only metadata operation.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that. Subsequent deploys use Glue's normal `UpdateTable` path, which writes new Iceberg metadata in-place.
-- **Format version is immutable after CREATE.** CloudFormation does not change an existing table's format version, so changing `formatVersion` on a table no engine has upgraded means destroy + recreate. An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
+- **Format version is immutable after CREATE.** Glue ignores a V2 to V3 `formatVersion` change, though `properties.format-version` then reads `3`. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it. An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
 - **`merge-on-read` requires v2 or later.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
 - **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property. Revisit when that schema gains the two properties.
 - **Nanosecond timestamps are catalog-only for upstream Spark 4.1.** A table with any `timestamp_ns` or `timestamptz_ns` column fails to open in upstream Spark 4.1 with Iceberg 1.12. The integration suite for these columns asserts from `metadata.json` only. The [engine matrix](#format-version-3) lists the engines that document support.

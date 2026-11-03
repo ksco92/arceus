@@ -1435,6 +1435,171 @@ describe('IcebergTable — validation', () => {
     });
 });
 
+describe('IcebergTable — identifier doc marker', () => {
+    function docsOf(identifierFieldNames?: string[]): Array<string | undefined> {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'order_id',
+                    type: IcebergType.LONG,
+                    required: true,
+                    id: 1,
+                    doc: 'Order key.',
+                },
+                {
+                    name: 'line_no',
+                    type: IcebergType.INT,
+                    required: true,
+                    id: 2,
+                },
+                {
+                    name: 'note',
+                    type: IcebergType.STRING,
+                    id: 3,
+                    doc: 'Free text.',
+                },
+            ],
+            location: 's3://my-bucket/orders/',
+            identifierFieldNames,
+        });
+        const tables = Template.fromStack(stack).findResources('AWS::Glue::Table');
+        const fields = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+        return fields.map((field: { Doc?: string }) => field.Doc);
+    }
+
+    it('prefixes identifier docs with (PK) and leaves other columns unchanged', () => {
+        expect(docsOf([
+            'order_id',
+            'line_no',
+        ])).toEqual([
+            '(PK) Order key.',
+            '(PK) ',
+            'Free text.',
+        ]);
+    });
+
+    it.each([
+        undefined,
+        [],
+    ])('leaves every doc unchanged when identifierFieldNames is %p', (identifierFieldNames) => {
+        expect(docsOf(identifierFieldNames)).toEqual([
+            'Order key.',
+            undefined,
+            'Free text.',
+        ]);
+    });
+
+    function synthTable(columns: IcebergColumn[], identifierFieldNames?: string[]): Template {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns,
+            location: 's3://my-bucket/simple/',
+            identifierFieldNames,
+        });
+        return Template.fromStack(stack);
+    }
+
+    it.each([
+        {
+            label: 'rejects an optional identifier column',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                required: false,
+            },
+            identifierFieldNames: [
+                'id',
+            ],
+            error: "identifierFieldNames references optional column 'id'; "
+                + 'set required: true on the column or remove it from identifierFieldNames',
+        },
+        {
+            label: 'rejects a bare (PK) doc',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                doc: '(PK) ',
+            },
+            identifierFieldNames: undefined,
+            error: "column 'id' has a doc starting with '(PK) ', a prefix the construct adds to identifier columns; "
+                + 'remove it and list the column in identifierFieldNames instead',
+        },
+        {
+            label: 'rejects a (PK) doc on an identifier column',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                doc: '(PK) key',
+            },
+            identifierFieldNames: [
+                'id',
+            ],
+            error: "column 'id' has a doc starting with '(PK) ', a prefix the construct adds to identifier columns; "
+                + 'remove it and list the column in identifierFieldNames instead',
+        },
+        {
+            label: 'accepts a doc that only resembles the marker',
+            column: {
+                ...MINIMAL_COLUMNS[0],
+                doc: '(PK)key',
+            },
+            identifierFieldNames: undefined,
+            error: undefined,
+        },
+    ])('$label', ({
+        column, identifierFieldNames, error,
+    }) => {
+        let thrown: string | undefined;
+        try {
+            synthTable([
+                column,
+            ], identifierFieldNames);
+        } catch (e) {
+            thrown = (e as Error).message;
+        }
+        expect(thrown).toBe(error);
+    });
+
+    it('leaves nested struct field docs and names unmarked', () => {
+        const template = synthTable([
+            MINIMAL_COLUMNS[0],
+            {
+                name: 'detail',
+                type: IcebergType.struct([
+                    {
+                        name: 'note',
+                        type: IcebergType.STRING,
+                        doc: '(PK) x',
+                    },
+                    {
+                        name: 'id',
+                        type: IcebergType.LONG,
+                        doc: 'Nested id.',
+                    },
+                ]),
+                id: 2,
+            },
+        ], [
+            'id',
+        ]);
+        const tables = template.findResources('AWS::Glue::Table');
+        const fields = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+        const nested = JSON.parse(fields[1].Type).fields.map((field: { doc: string }) => field.doc);
+        expect(nested).toEqual([
+            '(PK) x',
+            'Nested id.',
+        ]);
+    });
+});
+
 describe('IcebergTable — v3 types', () => {
     function build(
         formatVersion: IcebergFormatVersion,
