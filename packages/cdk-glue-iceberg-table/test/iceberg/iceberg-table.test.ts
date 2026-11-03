@@ -1435,6 +1435,134 @@ describe('IcebergTable — validation', () => {
     });
 });
 
+describe('IcebergTable — identifier doc marker', () => {
+    function docsOf(identifierFieldNames?: string[]): Array<string | undefined> {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'order_id',
+                    type: IcebergType.LONG,
+                    required: true,
+                    id: 1,
+                    doc: 'Order key.',
+                },
+                {
+                    name: 'line_no',
+                    type: IcebergType.INT,
+                    required: true,
+                    id: 2,
+                },
+                {
+                    name: 'note',
+                    type: IcebergType.STRING,
+                    id: 3,
+                    doc: 'Free text.',
+                },
+            ],
+            location: 's3://my-bucket/orders/',
+            identifierFieldNames,
+        });
+        const tables = Template.fromStack(stack).findResources('AWS::Glue::Table');
+        const fields = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+        return fields.map((field: { Doc?: string }) => field.Doc);
+    }
+
+    it('prefixes identifier docs with (PK) and leaves other columns unchanged', () => {
+        expect(docsOf([
+            'order_id',
+            'line_no',
+        ])).toEqual([
+            '(PK) Order key.',
+            '(PK) ',
+            'Free text.',
+        ]);
+    });
+
+    it.each([
+        undefined,
+        [],
+    ])('leaves every doc unchanged when identifierFieldNames is %p', (identifierFieldNames) => {
+        expect(docsOf(identifierFieldNames)).toEqual([
+            'Order key.',
+            undefined,
+            'Free text.',
+        ]);
+    });
+
+    it('rejects an optional column in identifierFieldNames', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'id',
+                    type: IcebergType.LONG,
+                    id: 1,
+                },
+            ],
+            location: 's3://my-bucket/simple/',
+            identifierFieldNames: [
+                'id',
+            ],
+        })).toThrow(
+            "identifierFieldNames references optional column 'id'; "
+            + 'set required: true on the column or remove it from identifierFieldNames',
+        );
+    });
+
+    it.each([
+        '(PK) ',
+        '(PK) key',
+    ])('rejects a column doc of %p, which starts with the marker', (doc) => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    ...MINIMAL_COLUMNS[0],
+                    doc,
+                },
+            ],
+            location: 's3://my-bucket/simple/',
+        })).toThrow(
+            "column 'id' has a doc starting with '(PK) ', a prefix the construct adds to identifier columns; "
+            + 'remove it and list the column in identifierFieldNames instead',
+        );
+    });
+
+    it('accepts a doc that only resembles the marker', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'simple',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    ...MINIMAL_COLUMNS[0],
+                    doc: '(PK)key',
+                },
+            ],
+            location: 's3://my-bucket/simple/',
+        })).not.toThrow();
+    });
+});
+
 describe('IcebergTable — v3 types', () => {
     function build(
         formatVersion: IcebergFormatVersion,
