@@ -26,11 +26,13 @@ function synthAt(step: number | string): Template {
     return Template.fromStack(stack);
 }
 
+function icebergInputAt(step: number | string) {
+    const tables = synthAt(step).findResources('AWS::Glue::Table');
+    return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
+}
+
 function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
-    const template = synthAt(step);
-    const tables = template.findResources('AWS::Glue::Table');
-    const props = Object.values(tables)[0].Properties;
-    const fields = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+    const fields = icebergInputAt(step).Schema.Fields;
     return fields.map((field: { Id: number; Name: string }) => ({
         Id: field.Id,
         Name: field.Name,
@@ -38,10 +40,7 @@ function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
 }
 
 function partitionsAt(step: number | string): Array<{ Name: string; FieldId: number }> {
-    const template = synthAt(step);
-    const tables = template.findResources('AWS::Glue::Table');
-    const props = Object.values(tables)[0].Properties;
-    const fields = props.OpenTableFormatInput.IcebergInput.IcebergTableInput.PartitionSpec.Fields;
+    const fields = icebergInputAt(step).PartitionSpec.Fields;
     return fields.map((field: { Name: string; FieldId: number }) => ({
         Name: field.Name,
         FieldId: field.FieldId,
@@ -172,8 +171,7 @@ describe('IcebergEvolutionStack — partition evolution', () => {
 
 describe('IcebergEvolutionStack — identifier evolution', () => {
     function schemaAt(step: number): { IdentifierFieldIds: number[]; Fields: Array<Record<string, unknown>> } {
-        const tables = synthAt(step).findResources('AWS::Glue::Table');
-        return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema;
+        return icebergInputAt(step).Schema;
     }
 
     it('step 5 identifies rows by customer_id, marked in its doc', () => {

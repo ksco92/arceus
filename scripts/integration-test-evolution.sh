@@ -61,6 +61,8 @@ print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
+print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
+print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
 }
 
@@ -141,32 +143,16 @@ if m['last-partition-id'] < max_field_id:
     fi
 }
 
-# Checks the current schema's identifier-field-ids and that exactly the
-# named columns carry the construct's `(PK) ` doc marker.
 assert_identifiers() {
-    local expected_ids="$1"
-    local expected_marked="$2"
-    local actual
-    META_LOC=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "$TABLE" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
-    actual=$(aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null \
-        | python3 -c "
-import json, sys
-m = json.load(sys.stdin)
-current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
-ids = ','.join(str(i) for i in current_schema.get('identifier-field-ids', []))
-marked = ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) '))
-print(f'{ids} {marked}')
-")
-    if [ "$actual" = "$expected_ids $expected_marked" ]; then
+    local expected="$1 $2"
+    local listing actual
+    listing=$(table_column_names)
+    actual="$(echo "$listing" | grep ^identifier-field-ids | cut -d' ' -f2) $(echo "$listing" | grep ^pk-marked | cut -d' ' -f2)"
+    if [ "$actual" = "$expected" ]; then
         green "  identifier-field-ids and (PK) docs ✓ ($actual)"
     else
         red   "  identifier-field-ids or (PK) docs ✗"
-        red   "    expected: $expected_ids $expected_marked"
+        red   "    expected: $expected"
         red   "    actual:   $actual"
         return 1
     fi
@@ -276,10 +262,7 @@ spark_submit "$VERIFY_PROGRAM" --phase 5
 
 ################################################
 ################################################
-# Step 6: CHANGE identifierFieldNames from customer_id to contact_email
-# with no column or partition change. Glue reuses an earlier schema
-# whose fields match, so only the moved (PK) doc marker makes this a
-# new schema carrying the new identifier-field-ids.
+# Step 6: CHANGE identifierFieldNames from customer_id to contact_email only.
 
 deploy_step 6
 
