@@ -170,6 +170,46 @@ describe('IcebergEvolutionStack — partition evolution', () => {
     });
 });
 
+describe('IcebergEvolutionStack — identifier evolution', () => {
+    function schemaAt(step: number): { IdentifierFieldIds: number[]; Fields: Array<Record<string, unknown>> } {
+        const tables = synthAt(step).findResources('AWS::Glue::Table');
+        return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema;
+    }
+
+    it('step 5 identifies rows by customer_id, marked in its doc', () => {
+        const schema = schemaAt(5);
+        expect(schema.IdentifierFieldIds).toEqual([
+            1,
+        ]);
+        expect(schema.Fields.map((field) => field.Doc)).toEqual([
+            '(PK) Primary key.',
+            undefined,
+            undefined,
+        ]);
+    });
+
+    it('step 6 moves the identifier to contact_email and changes nothing else', () => {
+        const before = schemaAt(5);
+        const after = schemaAt(6);
+        expect(after.IdentifierFieldIds).toEqual([
+            2,
+        ]);
+        expect(after.Fields.map((field) => field.Doc)).toEqual([
+            'Primary key.',
+            '(PK) ',
+            undefined,
+        ]);
+        const shapeOf = (fields: Array<Record<string, unknown>>): unknown[] => fields.map((field) => [
+            field.Id,
+            field.Name,
+            field.Type,
+            field.Required,
+        ]);
+        expect(shapeOf(after.Fields)).toEqual(shapeOf(before.Fields));
+        expect(partitionsAt(6)).toEqual(partitionsAt(5));
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -189,7 +229,7 @@ describe('IcebergEvolutionStack — wiring', () => {
     });
 
     it('rejects an out-of-range step', () => {
-        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, or 5/);
+        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, or 6/);
     });
 
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {

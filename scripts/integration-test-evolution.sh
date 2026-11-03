@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # End-to-end integration test for IcebergTable schema + partition
-# evolution. Drives the `IcebergEvolutionStack` through five real
+# evolution. Drives the `IcebergEvolutionStack` through six real
 # `cdk deploy`s and verifies the resulting Glue / Iceberg metadata
 # after each.
 #
@@ -141,6 +141,37 @@ if m['last-partition-id'] < max_field_id:
     fi
 }
 
+# Checks the current schema's identifier-field-ids and that exactly the
+# named columns carry the construct's `(PK) ` doc marker.
+assert_identifiers() {
+    local expected_ids="$1"
+    local expected_marked="$2"
+    local actual
+    META_LOC=$(aws glue get-table \
+        --database-name "$DATABASE" \
+        --name "$TABLE" \
+        --region "$AWS_REGION" \
+        --query 'Table.Parameters.metadata_location' \
+        --output text)
+    actual=$(aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null \
+        | python3 -c "
+import json, sys
+m = json.load(sys.stdin)
+current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
+ids = ','.join(str(i) for i in current_schema.get('identifier-field-ids', []))
+marked = ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) '))
+print(f'{ids} {marked}')
+")
+    if [ "$actual" = "$expected_ids $expected_marked" ]; then
+        green "  identifier-field-ids and (PK) docs ✓ ($actual)"
+    else
+        red   "  identifier-field-ids or (PK) docs ✗"
+        red   "    expected: $expected_ids $expected_marked"
+        red   "    actual:   $actual"
+        return 1
+    fi
+}
+
 deploy_step() {
     local step="$1"
     header "STEP $step — cdk deploy"
@@ -170,6 +201,7 @@ deploy_step 1
 header "VERIFY step 1"
 assert_columns "1:customer_id,2:email,3:signed_up_at"
 assert_partitions "signed_up_at_day"
+assert_identifiers "1" "customer_id"
 
 header "SPARK step 1 (INSERT seed rows)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
@@ -241,6 +273,20 @@ assert_partition_history
 
 header "SPARK step 5 (INSERT under the month spec, rows queryable)"
 spark_submit "$VERIFY_PROGRAM" --phase 5
+
+################################################
+################################################
+# Step 6: CHANGE identifierFieldNames from customer_id to contact_email
+# with no column or partition change. Glue reuses an earlier schema
+# whose fields match, so only the moved (PK) doc marker makes this a
+# new schema carrying the new identifier-field-ids.
+
+deploy_step 6
+
+header "VERIFY step 6 (CHANGE identifier fields only)"
+assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
+assert_partitions "signed_up_at_month"
+assert_identifiers "2" "contact_email"
 
 ################################################
 ################################################

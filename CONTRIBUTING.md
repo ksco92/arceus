@@ -235,7 +235,7 @@ without `DESTROY=1` it leaves the stack deployed.
 ## Demo: schema + partition evolution
 
 `scripts/integration-test-evolution.sh` drives the
-`IcebergEvolutionStack` through five `cdk deploy`s and verifies the
+`IcebergEvolutionStack` through six `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys.
 
@@ -248,6 +248,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` | `contact_email` for id 10 is `a@example.com` |
 | 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` | at least 4 rows read |
 | 5 | **CHANGE** the `signed_up_at` transform from day to month under fresh field id 1002; partition-history invariants asserted | unchanged | `month(signed_up_at)` | INSERT of id 14 under the month spec, at least 5 rows read |
+| 6 | **CHANGE** `identifierFieldNames` from `customer_id` to `contact_email`; the current schema's `identifier-field-ids` and the `(PK) ` doc markers asserted | unchanged | unchanged | none |
 
 The construct passes each new column list + partition spec to Glue
 `UpdateTable` via `OpenTableFormatInput`. Glue computes the Iceberg
