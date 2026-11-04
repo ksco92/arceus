@@ -183,12 +183,11 @@ jobs:
             const run = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             let tail = '';
             try {
-              const log = fs.readFileSync('/tmp/integ-test.log', 'utf8');
+              const log = fs.readFileSync('/tmp/integ-test.log', 'utf8').replace(/(?<!\d)\d{12}(?!\d)/g, '<account>');
               tail = log.split('\n').slice(-40).join('\n').slice(-3500);
             } catch (e) {
               // Log file may not exist if the run failed before the script started.
             }
-            tail = tail.replace(/(?<!\d)\d{12}(?!\d)/g, '<account>');
             const tailBlock = tail
               ? `\n\n<details><summary>Last lines of script output</summary>\n\n\`\`\`\n${tail}\n\`\`\`\n</details>`
               : '';
