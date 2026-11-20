@@ -5,7 +5,6 @@ from pyspark.sql import SparkSession
 
 TABLE = "glue.sample_database.evolution_test"
 NESTED = "glue.sample_database.nested_evolution_test"
-NESTED_READ = "id, element_at(tags, 1), element_at(tags, 2), attrs['k1'], attrs['k2'], addr.line1, addr.city"
 
 
 def phase_1(spark: SparkSession) -> None:
@@ -44,36 +43,40 @@ def phase_5(spark: SparkSession) -> None:
 
 
 def read_nested(spark: SparkSession, extra: str) -> list[tuple]:
-    return [tuple(row) for row in spark.sql(f"SELECT {NESTED_READ}, {extra} FROM {NESTED} ORDER BY id").collect()]
+    columns = "id, element_at(tags, 1), element_at(tags, 2), attrs['k1'], attrs['k2'], addr.line1, addr.city"
+    return [tuple(row) for row in spark.sql(f"SELECT {columns}, {extra} FROM {NESTED} ORDER BY id").collect()]
+
+
+def check_nested(spark: SparkSession, extra: str, old: list[tuple], insert: str, new: tuple) -> None:
+    rows = read_nested(spark, extra)
+    assert rows == old, f"nested rows loaded before this step: expected {old}, got {rows}"
+    spark.sql(f"INSERT INTO {NESTED} VALUES {insert}")
+    rows = read_nested(spark, extra)
+    assert rows == old + [new], f"nested rows after the insert: expected {old + [new]}, got {rows}"
 
 
 def phase_7(spark: SparkSession) -> None:
-    expected_old = (100, "t1", "t2", "v1", "v2", "L1", "C1", None)
-    rows = read_nested(spark, "note")
-    assert rows == [expected_old], f"nested row loaded before evolution: expected {expected_old}, got {rows}"
-    spark.sql(
-        f"""INSERT INTO {NESTED} VALUES
-        (101, array('u1', 'u2'), map('k1', 'w1', 'k2', 'w2'), named_struct('line1', 'M1', 'city', 'D1'), 'n101')"""
+    check_nested(
+        spark,
+        "note",
+        [(100, "t1", "t2", "v1", "v2", "L1", "C1", None)],
+        "(101, array('u1', 'u2'), map('k1', 'w1', 'k2', 'w2'), named_struct('line1', 'M1', 'city', 'D1'), 'n101')",
+        (101, "u1", "u2", "w1", "w2", "M1", "D1", "n101"),
     )
-    rows = read_nested(spark, "note")
-    expected = [expected_old, (101, "u1", "u2", "w1", "w2", "M1", "D1", "n101")]
-    assert rows == expected, f"nested rows after the post-evolution insert: expected {expected}, got {rows}"
 
 
 def phase_8(spark: SparkSession) -> None:
-    expected_old = [
-        (100, "t1", "t2", "v1", "v2", "L1", "C1", None, None),
-        (101, "u1", "u2", "w1", "w2", "M1", "D1", "n101", None),
-    ]
-    rows = read_nested(spark, "note, addr.zip")
-    assert rows == expected_old, f"nested rows written before addr.zip: expected {expected_old}, got {rows}"
-    spark.sql(
-        f"""INSERT INTO {NESTED} VALUES
-        (102, array('x1', 'x2'), map('k1', 'y1', 'k2', 'y2'), named_struct('line1', 'N1', 'zip', 'Z102', 'city', 'E1'), 'n102')"""
+    check_nested(
+        spark,
+        "note, addr.zip",
+        [
+            (100, "t1", "t2", "v1", "v2", "L1", "C1", None, None),
+            (101, "u1", "u2", "w1", "w2", "M1", "D1", "n101", None),
+        ],
+        "(102, array('x1', 'x2'), map('k1', 'y1', 'k2', 'y2'),"
+        " named_struct('line1', 'N1', 'zip', 'Z102', 'city', 'E1'), 'n102')",
+        (102, "x1", "x2", "y1", "y2", "N1", "E1", "n102", "Z102"),
     )
-    rows = read_nested(spark, "note, addr.zip")
-    expected = expected_old + [(102, "x1", "x2", "y1", "y2", "N1", "E1", "n102", "Z102")]
-    assert rows == expected, f"nested rows after the addr.zip insert: expected {expected}, got {rows}"
 
 
 PHASES = {1: phase_1, 2: phase_2, 3: phase_3, 4: phase_4, 5: phase_5, 7: phase_7, 8: phase_8}

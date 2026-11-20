@@ -47,7 +47,7 @@ header() { printf '\n=== %s ===\n' "$*"; }
 table_column_names() {
     META_LOC=$(aws glue get-table \
         --database-name "$DATABASE" \
-        --name "$TABLE" \
+        --name "${1:-$TABLE}" \
         --region "$AWS_REGION" \
         --query 'Table.Parameters.metadata_location' \
         --output text)
@@ -55,6 +55,23 @@ table_column_names() {
         | python3 -c "
 import json, sys
 m = json.load(sys.stdin)
+nested = []
+
+def walk(path, t):
+    if not isinstance(t, dict):
+        return
+    if t['type'] == 'struct':
+        for f in t['fields']:
+            nested.append('%s.%s:%d' % (path, f['name'], f['id']))
+            walk(path + '.' + f['name'], f['type'])
+    elif t['type'] == 'list':
+        nested.append('%s.element:%d' % (path, t['element-id']))
+        walk(path + '.element', t['element'])
+    elif t['type'] == 'map':
+        nested.append('%s.key:%d' % (path, t['key-id']))
+        nested.append('%s.value:%d' % (path, t['value-id']))
+        walk(path + '.value', t['value'])
+
 current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
 current_spec = next(s for s in m['partition-specs'] if s['spec-id'] == m['default-spec-id'])
 print('schema-id', m['current-schema-id'])
@@ -62,6 +79,10 @@ print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
+for f in current_schema['fields']:
+    nested.append('%s:%d' % (f['name'], f['id']))
+    walk(f['name'], f['type'])
+print('nested-ids', ','.join(nested))
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
 print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
@@ -159,46 +180,11 @@ assert_identifiers() {
     fi
 }
 
-# Every list, map and struct id in the nested table's current schema,
-# keyed by path, plus last-column-id.
 assert_nested_ids() {
     local expected="$1 $2"
-    local meta_loc listing actual
-    meta_loc=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "$NESTED_TABLE" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
-    listing=$(aws s3 cp "$meta_loc" - --region "$AWS_REGION" 2>/dev/null \
-        | python3 -c '
-import json, sys
-m = json.load(sys.stdin)
-schema = next(s for s in m["schemas"] if s["schema-id"] == m["current-schema-id"])
-out = []
-
-def walk(path, t):
-    if not isinstance(t, dict):
-        return
-    if t["type"] == "struct":
-        for f in t["fields"]:
-            out.append("%s.%s:%d" % (path, f["name"], f["id"]))
-            walk(path + "." + f["name"], f["type"])
-    elif t["type"] == "list":
-        out.append("%s.element:%d" % (path, t["element-id"]))
-        walk(path + ".element", t["element"])
-    elif t["type"] == "map":
-        out.append("%s.key:%d" % (path, t["key-id"]))
-        out.append("%s.value:%d" % (path, t["value-id"]))
-        walk(path + ".value", t["value"])
-
-for f in schema["fields"]:
-    out.append("%s:%d" % (f["name"], f["id"]))
-    walk(f["name"], f["type"])
-print("ids", ",".join(out))
-print("last-column-id", m["last-column-id"])
-')
-    actual="$(echo "$listing" | grep ^ids | cut -d' ' -f2) $(echo "$listing" | grep ^last-column-id | cut -d' ' -f2)"
+    local listing actual
+    listing=$(table_column_names "$NESTED_TABLE")
+    actual="$(echo "$listing" | grep ^nested-ids | cut -d' ' -f2) $(echo "$listing" | grep ^last-column-id | cut -d' ' -f2)"
     if [ "$actual" = "$expected" ]; then
         green "  nested ids ✓ ($actual)"
     else
