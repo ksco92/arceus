@@ -1,5 +1,6 @@
 import {
     App,
+    Lazy,
     RemovalPolicy,
     Stack,
 } from 'aws-cdk-lib';
@@ -23,8 +24,10 @@ import {
     IcebergPartitionField,
     IcebergPartitionTransform,
     IcebergSortDirection,
+    IcebergStructFieldDefinition,
     IcebergTable,
     IcebergType,
+    IcebergTypeKind,
 } from '../../lib/iceberg';
 
 function makeStack(): { stack: Stack; database: Database } {
@@ -933,7 +936,7 @@ describe('IcebergTable — pinned field ids', () => {
                 },
             ],
             location: 's3://my-bucket/dup/',
-        })).toThrow(/duplicate column id 7/);
+        })).toThrow("duplicate field id 7 on column 'b', already used by 'a'");
     });
 
     it('rejects non-positive pinned ids', () => {
@@ -973,8 +976,322 @@ describe('IcebergTable — pinned field ids', () => {
             location: 's3://my-bucket/bad/',
         })).toThrow(/invalid id 1\.5/);
     });
+});
 
-    it('keeps nested-type ids above the highest pinned top-level id', () => {
+describe('IcebergTable — nested field ids', () => {
+    interface ParsedField {
+        id: number;
+        name: string;
+        type: unknown;
+    }
+
+    function synthFields(columns: IcebergColumn[]): Array<{ Id: number; Name: string; Type: string }> {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'nested',
+            formatVersion: IcebergFormatVersion.V2,
+            columns,
+            location: 's3://my-bucket/nested/',
+        });
+        const tables = Template.fromStack(stack).findResources('AWS::Glue::Table');
+        return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
+    }
+
+    function parsedFields(columns: IcebergColumn[]): ParsedField[] {
+        return synthFields(columns).map((field) => ({
+            id: field.Id,
+            name: field.Name,
+            type: field.Type.startsWith('{') ? JSON.parse(field.Type) : field.Type,
+        }));
+    }
+
+    function addressFields(withMiddleField: boolean): IcebergStructFieldDefinition[] {
+        return [
+            {
+                id: 20,
+                name: 'line1',
+                type: IcebergType.STRING,
+            },
+            ...(withMiddleField ? [
+                {
+                    id: 40,
+                    name: 'line2',
+                    type: IcebergType.STRING,
+                },
+            ] : []),
+            {
+                id: 21,
+                name: 'city',
+                type: IcebergType.STRING,
+            },
+        ];
+    }
+
+    function evolvingColumns(evolved: boolean): IcebergColumn[] {
+        return [
+            {
+                name: 'id',
+                type: IcebergType.LONG,
+                required: true,
+                id: 1,
+            },
+            ...(evolved ? [
+                {
+                    name: 'note',
+                    type: IcebergType.STRING,
+                    id: 4,
+                },
+            ] : []),
+            {
+                name: 'tags',
+                type: IcebergType.list({
+                    element: IcebergType.STRING,
+                    elementId: 10,
+                }),
+                id: 2,
+            },
+            {
+                name: 'addr',
+                type: IcebergType.struct(addressFields(evolved)),
+                id: 3,
+            },
+            {
+                name: 'attrs',
+                type: IcebergType.map({
+                    key: IcebergType.struct([
+                        {
+                            id: 33,
+                            name: 'k',
+                            type: IcebergType.STRING,
+                        },
+                    ]),
+                    keyId: 30,
+                    value: IcebergType.list({
+                        element: IcebergType.INT,
+                        elementId: 32,
+                    }),
+                    valueId: 31,
+                }),
+                id: 5,
+            },
+        ];
+    }
+
+    const EXPECTED_FIELDS: ParsedField[] = [
+        {
+            id: 1,
+            name: 'id',
+            type: 'long',
+        },
+        {
+            id: 2,
+            name: 'tags',
+            type: {
+                type: 'list',
+                'element-id': 10,
+                'element-required': false,
+                element: 'string',
+            },
+        },
+        {
+            id: 3,
+            name: 'addr',
+            type: {
+                type: 'struct',
+                fields: [
+                    {
+                        id: 20,
+                        name: 'line1',
+                        required: false,
+                        type: 'string',
+                    },
+                    {
+                        id: 21,
+                        name: 'city',
+                        required: false,
+                        type: 'string',
+                    },
+                ],
+            },
+        },
+        {
+            id: 5,
+            name: 'attrs',
+            type: {
+                type: 'map',
+                'key-id': 30,
+                key: {
+                    type: 'struct',
+                    fields: [
+                        {
+                            id: 33,
+                            name: 'k',
+                            required: false,
+                            type: 'string',
+                        },
+                    ],
+                },
+                'value-id': 31,
+                'value-required': false,
+                value: {
+                    type: 'list',
+                    'element-id': 32,
+                    'element-required': false,
+                    element: 'int',
+                },
+            },
+        },
+    ];
+
+    it('renders the pinned ids at every depth, with element-required and value-required false when unset', () => {
+        expect(parsedFields(evolvingColumns(false))).toEqual(EXPECTED_FIELDS);
+    });
+
+    it('keeps every existing id when a top-level column and a mid-struct field are added', () => {
+        const [
+            idField,
+            tags,
+            addr,
+            attrs,
+        ] = EXPECTED_FIELDS;
+        const [
+            line1,
+            city,
+        ] = (addr.type as { fields: unknown[] }).fields;
+        expect(parsedFields(evolvingColumns(true))).toEqual([
+            idField,
+            {
+                id: 4,
+                name: 'note',
+                type: 'string',
+            },
+            tags,
+            {
+                ...addr,
+                type: {
+                    type: 'struct',
+                    fields: [
+                        line1,
+                        {
+                            id: 40,
+                            name: 'line2',
+                            required: false,
+                            type: 'string',
+                        },
+                        city,
+                    ],
+                },
+            },
+            attrs,
+        ]);
+    });
+
+    it.each([
+        [
+            'column',
+            (id: number): IcebergColumn => ({
+                name: 'c',
+                type: IcebergType.STRING,
+                id,
+            }),
+            'c',
+        ],
+        [
+            'list element',
+            (id: number): IcebergColumn => ({
+                name: 'c',
+                type: IcebergType.list({
+                    element: IcebergType.STRING,
+                    elementId: id,
+                }),
+                id: 2,
+            }),
+            'c.element',
+        ],
+    ])('accepts id 2147483447 and rejects 2147483448 as a %s id', (_label, column, path) => {
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            column(2147483447),
+        ])).not.toThrow();
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            column(2147483448),
+        ])).toThrow(`column '${path}' has invalid id 2147483448; ids must be integers from 1 to 2147483447`);
+    });
+
+    function firstReadThenOne(first: number): () => number {
+        let reads = 0;
+        return () => {
+            reads += 1;
+            return reads === 1 ? first : 1;
+        };
+    }
+
+    it.each([
+        [
+            'column',
+            (): IcebergColumn => {
+                const read = firstReadThenOne(2);
+                return {
+                    name: 'c',
+                    type: IcebergType.STRING,
+                    get id() {
+                        return read();
+                    },
+                };
+            },
+            {
+                id: 2,
+                name: 'c',
+                type: 'string',
+            },
+        ],
+        [
+            'struct field',
+            (): IcebergColumn => {
+                const read = firstReadThenOne(3);
+                return {
+                    name: 'c',
+                    type: IcebergType.struct([
+                        {
+                            name: 'f',
+                            type: IcebergType.STRING,
+                            get id() {
+                                return read();
+                            },
+                        },
+                    ]),
+                    id: 2,
+                };
+            },
+            {
+                id: 2,
+                name: 'c',
+                type: {
+                    type: 'struct',
+                    fields: [
+                        {
+                            id: 3,
+                            name: 'f',
+                            required: false,
+                            type: 'string',
+                        },
+                    ],
+                },
+            },
+        ],
+    ])('renders the checked %s id when later reads return another id', (_label, column, expected) => {
+        expect(parsedFields([
+            MINIMAL_COLUMNS[0],
+            column(),
+        ])[1]).toEqual(expected);
+    });
+
+    it('carries the first-read column id into identifier, partition, and sort source ids', () => {
+        const read = firstReadThenOne(2);
         const {
             stack, database,
         } = makeStack();
@@ -983,43 +1300,329 @@ describe('IcebergTable — pinned field ids', () => {
             tableName: 'nested',
             formatVersion: IcebergFormatVersion.V2,
             columns: [
+                MINIMAL_COLUMNS[0],
                 {
-                    name: 'a',
+                    name: 'c',
                     type: IcebergType.LONG,
-                    id: 100,
-                },
-                {
-                    name: 'list_col',
-                    type: IcebergType.list(IcebergType.STRING),
-                    id: 101,
+                    required: true,
+                    get id() {
+                        return read();
+                    },
                 },
             ],
             location: 's3://my-bucket/nested/',
-        });
-        const template = Template.fromStack(stack);
-        template.hasResourceProperties('AWS::Glue::Table', {
-            OpenTableFormatInput: {
-                IcebergInput: {
-                    IcebergTableInput: Match.objectLike({
-                        Schema: Match.objectLike({
-                            Fields: Match.arrayWith([
-                                Match.objectLike({
-                                    Id: 100,
-                                    Name: 'a',
-                                }),
-                                Match.objectLike({
-                                    Name: 'list_col',
-                                    /// Type is the serialized JSON string of the
-                                    /// list type with an element-id derived from
-                                    /// the post-pinned counter (>= 101).
-                                    Type: Match.stringLikeRegexp('"element-id":1\\d\\d'),
-                                }),
-                            ]),
-                        }),
-                    }),
+            identifierFieldNames: [
+                'c',
+            ],
+            partitionSpec: [
+                {
+                    sourceColumn: 'c',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1000,
                 },
-            },
+            ],
+            sortOrder: [
+                {
+                    sourceColumn: 'c',
+                },
+            ],
         });
+        const tables = Template.fromStack(stack).findResources('AWS::Glue::Table');
+        const input = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
+        expect([
+            input.Schema.IdentifierFieldIds,
+            input.PartitionSpec.Fields[0].SourceId,
+            input.WriteOrder.Fields[0].SourceId,
+        ]).toEqual([
+            [
+                2,
+            ],
+            2,
+            2,
+        ]);
+    });
+
+    it('rejects an unresolved token as an id', () => {
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            {
+                name: 'c',
+                type: IcebergType.STRING,
+                id: Lazy.number({
+                    produce: () => 2,
+                }),
+            },
+        ])).toThrow("column 'c' has an unresolved token as its id; ids must be concrete numbers, not tokens");
+    });
+
+    it.each([
+        [
+            '5',
+            'string',
+        ],
+        [
+            BigInt(5),
+            'bigint',
+        ],
+    ])('rejects a non-number id %s', (badId, typeName) => {
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            {
+                name: 'c',
+                type: IcebergType.STRING,
+                id: badId as unknown as number,
+            },
+        ])).toThrow(`column 'c' has invalid id 5 of type ${typeName}; ids must be numbers`);
+    });
+
+    it.each([
+        [
+            'a dot',
+            'a.b',
+            'a',
+            'b',
+            "duplicate field id 1 on column 'a.b', already used by '`a.b`'",
+        ],
+        [
+            'backquotes and a dot',
+            'a.`b',
+            '`a',
+            '`b`',
+            "duplicate field id 1 on column '```a`.```b```', already used by '`a.``b`'",
+        ],
+    ])('keeps id message paths distinct when names contain %s', (_label, columnName, structName, fieldName, message) => {
+        expect(() => synthFields([
+            {
+                name: columnName,
+                type: IcebergType.STRING,
+                id: 1,
+            },
+            {
+                name: structName,
+                type: IcebergType.struct([
+                    {
+                        id: 1,
+                        name: fieldName,
+                        type: IcebergType.STRING,
+                    },
+                ]),
+                id: 2,
+            },
+        ])).toThrow(message);
+    });
+
+    it.each([
+        [
+            'struct field',
+            IcebergType.struct([
+                {
+                    name: 'f',
+                    type: IcebergType.STRING,
+                } as unknown as IcebergStructFieldDefinition,
+            ]),
+            'c.f',
+        ],
+        [
+            'list element',
+            new IcebergType({
+                kind: IcebergTypeKind.LIST,
+                listElement: IcebergType.STRING,
+            }),
+            'c.element',
+        ],
+        [
+            'map key',
+            new IcebergType({
+                kind: IcebergTypeKind.MAP,
+                mapKey: IcebergType.STRING,
+                mapValue: IcebergType.STRING,
+                mapValueId: 4,
+            }),
+            'c.key',
+        ],
+        [
+            'map value',
+            new IcebergType({
+                kind: IcebergTypeKind.MAP,
+                mapKey: IcebergType.STRING,
+                mapKeyId: 3,
+                mapValue: IcebergType.STRING,
+                mapValueId: null as unknown as number,
+            }),
+            'c.value',
+        ],
+        [
+            'struct field under a map value',
+            IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 3,
+                value: IcebergType.struct([
+                    {
+                        name: 'f',
+                        type: IcebergType.STRING,
+                    } as unknown as IcebergStructFieldDefinition,
+                ]),
+                valueId: 4,
+            }),
+            'c.value.f',
+        ],
+    ])('rejects a missing %s id, naming its path', (_label, type, path) => {
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            {
+                name: 'c',
+                type,
+                id: 2,
+            },
+        ])).toThrow(`column '${path}' is missing a required id`);
+    });
+
+    it.each([
+        0,
+        -3,
+        2.5,
+    ])('rejects nested id %s', (badId) => {
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            {
+                name: 'c',
+                type: IcebergType.list({
+                    element: IcebergType.struct([
+                        {
+                            id: badId,
+                            name: 'f',
+                            type: IcebergType.STRING,
+                        },
+                    ]),
+                    elementId: 3,
+                }),
+                id: 2,
+            },
+        ])).toThrow(`column 'c.element.f' has invalid id ${badId}; ids must be integers from 1 to 2147483447`);
+    });
+
+    it.each([
+        [
+            'after',
+            [
+                MINIMAL_COLUMNS[0],
+                {
+                    name: 'tags',
+                    type: IcebergType.list({
+                        element: IcebergType.STRING,
+                        elementId: 1,
+                    }),
+                    id: 2,
+                },
+            ],
+            "duplicate field id 1 on column 'tags.element', already used by 'id'",
+        ],
+        [
+            'before',
+            [
+                {
+                    name: 'tags',
+                    type: IcebergType.list({
+                        element: IcebergType.STRING,
+                        elementId: 3,
+                    }),
+                    id: 2,
+                },
+                {
+                    name: 'later',
+                    type: IcebergType.STRING,
+                    id: 3,
+                },
+            ],
+            "duplicate field id 3 on column 'later', already used by 'tags.element'",
+        ],
+    ])('rejects a nested id equal to a top-level column id declared %s it', (_label, columns, error) => {
+        expect(() => synthFields(columns)).toThrow(error);
+    });
+
+    it.each([
+        [
+            'two nested fields at different depths',
+            [
+                {
+                    name: 'attrs',
+                    type: IcebergType.map({
+                        key: IcebergType.STRING,
+                        keyId: 10,
+                        value: IcebergType.STRING,
+                        valueId: 11,
+                    }),
+                    id: 2,
+                },
+                {
+                    name: 'deep',
+                    type: IcebergType.struct([
+                        {
+                            id: 20,
+                            name: 'inner',
+                            type: IcebergType.struct([
+                                {
+                                    id: 11,
+                                    name: 'leaf',
+                                    type: IcebergType.STRING,
+                                },
+                            ]),
+                        },
+                    ]),
+                    id: 3,
+                },
+            ],
+            "duplicate field id 11 on column 'deep.inner.leaf', already used by 'attrs.value'",
+        ],
+        [
+            'a struct field under a map value',
+            [
+                {
+                    name: 'c',
+                    type: IcebergType.map({
+                        key: IcebergType.STRING,
+                        keyId: 3,
+                        value: IcebergType.struct([
+                            {
+                                id: 3,
+                                name: 'f',
+                                type: IcebergType.STRING,
+                            },
+                        ]),
+                        valueId: 4,
+                    }),
+                    id: 2,
+                },
+            ],
+            "duplicate field id 3 on column 'c.value.f', already used by 'c.key'",
+        ],
+        [
+            'a struct field under a map key',
+            [
+                {
+                    name: 'c',
+                    type: IcebergType.map({
+                        key: IcebergType.struct([
+                            {
+                                id: 2,
+                                name: 'f',
+                                type: IcebergType.STRING,
+                            },
+                        ]),
+                        keyId: 3,
+                        value: IcebergType.STRING,
+                        valueId: 4,
+                    }),
+                    id: 2,
+                },
+            ],
+            "duplicate field id 2 on column 'c.key.f', already used by 'c'",
+        ],
+    ])('rejects a repeated id on %s', (_label, columns, error) => {
+        expect(() => synthFields([
+            MINIMAL_COLUMNS[0],
+            ...columns,
+        ])).toThrow(error);
     });
 });
 
@@ -1575,11 +2178,13 @@ describe('IcebergTable — identifier doc marker', () => {
                 name: 'detail',
                 type: IcebergType.struct([
                     {
+                        id: 3,
                         name: 'note',
                         type: IcebergType.STRING,
                         doc: '(PK) x',
                     },
                     {
+                        id: 4,
                         name: 'id',
                         type: IcebergType.LONG,
                         doc: 'Nested id.',
@@ -1681,26 +2286,41 @@ describe('IcebergTable — v3 types', () => {
         ],
         [
             'variant',
-            IcebergType.list(IcebergType.VARIANT),
+            IcebergType.list({
+                element: IcebergType.VARIANT,
+                elementId: 3,
+            }),
             'c.element',
         ],
         [
             'timestamp_ns',
-            IcebergType.map(IcebergType.TIMESTAMP_NS, IcebergType.STRING),
+            IcebergType.map({
+                key: IcebergType.TIMESTAMP_NS,
+                keyId: 3,
+                value: IcebergType.STRING,
+                valueId: 4,
+            }),
             'c.key',
         ],
         [
             'timestamptz_ns',
-            IcebergType.map(IcebergType.STRING, IcebergType.TIMESTAMPTZ_NS),
+            IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 3,
+                value: IcebergType.TIMESTAMPTZ_NS,
+                valueId: 4,
+            }),
             'c.value',
         ],
         [
             'geography',
             IcebergType.struct([
                 {
+                    id: 3,
                     name: 'inner',
                     type: IcebergType.struct([
                         {
+                            id: 4,
                             name: 'shape',
                             type: IcebergType.geography(),
                         },
@@ -1741,6 +2361,7 @@ describe('IcebergTable — v3 types', () => {
             {
                 type: IcebergType.struct([
                     {
+                        id: 3,
                         name: 'f',
                         type: IcebergType.UNKNOWN,
                         required: true,
@@ -1750,6 +2371,7 @@ describe('IcebergTable — v3 types', () => {
             {
                 type: IcebergType.struct([
                     {
+                        id: 3,
                         name: 'f',
                         type: IcebergType.UNKNOWN,
                     },
@@ -1760,20 +2382,38 @@ describe('IcebergTable — v3 types', () => {
         [
             'a required list element',
             {
-                type: IcebergType.list(IcebergType.UNKNOWN),
+                type: IcebergType.list({
+                    element: IcebergType.UNKNOWN,
+                    elementId: 3,
+                    elementRequired: true,
+                }),
             },
             {
-                type: IcebergType.list(IcebergType.UNKNOWN, false),
+                type: IcebergType.list({
+                    element: IcebergType.UNKNOWN,
+                    elementId: 3,
+                }),
             },
             'c.element',
         ],
         [
             'a required map value',
             {
-                type: IcebergType.map(IcebergType.STRING, IcebergType.UNKNOWN),
+                type: IcebergType.map({
+                    key: IcebergType.STRING,
+                    keyId: 3,
+                    value: IcebergType.UNKNOWN,
+                    valueId: 4,
+                    valueRequired: true,
+                }),
             },
             {
-                type: IcebergType.map(IcebergType.STRING, IcebergType.UNKNOWN, false),
+                type: IcebergType.map({
+                    key: IcebergType.STRING,
+                    keyId: 3,
+                    value: IcebergType.UNKNOWN,
+                    valueId: 4,
+                }),
             },
             'c.value',
         ],
@@ -1785,7 +2425,12 @@ describe('IcebergTable — v3 types', () => {
 
     it('rejects unknown as a map key, which is always required', () => {
         expect(() => build(IcebergFormatVersion.V3, {
-            type: IcebergType.map(IcebergType.UNKNOWN, IcebergType.STRING),
+            type: IcebergType.map({
+                key: IcebergType.UNKNOWN,
+                keyId: 3,
+                value: IcebergType.STRING,
+                valueId: 4,
+            }),
         })).toThrow("column 'c.key' has type 'unknown' as a map key; map keys are always required, so use a different key type");
     });
 

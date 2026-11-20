@@ -250,7 +250,11 @@ export class ArceusStack extends Stack {
                 },
                 {
                     name: 'tags',
-                    type: IcebergType.list(IcebergType.STRING),
+                    type: IcebergType.list({
+                        element: IcebergType.STRING,
+                        elementId: 9,
+                        elementRequired: true,
+                    }),
                     required: false,
                     doc: 'Free-form labels (loyalty-program, holiday-promo, ...).',
                     id: 6,
@@ -259,21 +263,25 @@ export class ArceusStack extends Stack {
                     name: 'shipping_address',
                     type: IcebergType.struct([
                         {
+                            id: 10,
                             name: 'line1',
                             type: IcebergType.STRING,
                             required: true,
                         },
                         {
+                            id: 11,
                             name: 'city',
                             type: IcebergType.STRING,
                             required: true,
                         },
                         {
+                            id: 12,
                             name: 'country',
                             type: IcebergType.STRING,
                             required: true,
                         },
                         {
+                            id: 13,
                             name: 'postal_code',
                             type: IcebergType.STRING,
                             required: false,
@@ -285,7 +293,12 @@ export class ArceusStack extends Stack {
                 },
                 {
                     name: 'metadata',
-                    type: IcebergType.map(IcebergType.STRING, IcebergType.STRING, false),
+                    type: IcebergType.map({
+                        key: IcebergType.STRING,
+                        keyId: 14,
+                        value: IcebergType.STRING,
+                        valueId: 15,
+                    }),
                     required: false,
                     doc: 'Free-form string key/value metadata.',
                     id: 8,
@@ -363,7 +376,12 @@ export class ArceusStack extends Stack {
                 },
                 {
                     name: 'attributes',
-                    type: IcebergType.map(IcebergType.STRING, IcebergType.STRING, false),
+                    type: IcebergType.map({
+                        key: IcebergType.STRING,
+                        keyId: 6,
+                        value: IcebergType.STRING,
+                        valueId: 7,
+                    }),
                     required: false,
                     id: 5,
                 },
