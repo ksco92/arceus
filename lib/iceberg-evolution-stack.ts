@@ -291,9 +291,7 @@ function buildIdentifierFieldNames(step: number): string[] {
 
 /// `nested_evolution_test` carries the baseline shape through step 6.
 /// Step 7 adds the top-level `note` (id 10) and step 8 adds
-/// `addr.zip` (id 11) between `line1` and `city`. Every nested id is
-/// pinned and no id is ever reused, so rows written before either step
-/// stay readable by field name.
+/// `addr.zip` (id 11) between `line1` and `city`.
 function buildNestedColumns(step: number): IcebergColumn[] {
     const columns: IcebergColumn[] = [
         {

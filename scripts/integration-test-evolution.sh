@@ -160,8 +160,7 @@ assert_identifiers() {
 }
 
 # Every list, map and struct id in the nested table's current schema,
-# keyed by path, plus last-column-id. Exact equality means no
-# pre-existing id moved and no new id reused one.
+# keyed by path, plus last-column-id.
 assert_nested_ids() {
     local expected="$1 $2"
     local meta_loc listing actual
@@ -331,8 +330,7 @@ assert_identifiers "2" "contact_email"
 
 ################################################
 ################################################
-# Step 7: ADD top-level column `note` (id 10) to the nested table. The
-# row loaded at step 1 must keep every nested value.
+# Step 7: ADD top-level column `note` (id 10) to the nested table.
 
 deploy_step 7
 
