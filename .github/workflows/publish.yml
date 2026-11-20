@@ -9,8 +9,7 @@ name: Publish to npm and PyPI
 # Neither registry binds a branch. Publishing is limited to `main` only while
 # the `release` environment's deployment branches are limited to `main` (a
 # repository setting) and both trusted publishers name environment `release`
-# (registry settings). PyPI refuses a token without that environment; npm does
-# not document what it does with one.
+# (registry settings).
 
 on:
   push:
