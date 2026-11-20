@@ -444,9 +444,7 @@ identifier column's `doc` with `(PK) `, so a `doc` you write must not
 start with `(PK) `; see [Evolving schema and
 partitions](#evolving-schema-and-partitions).
 
-The strings the construct checks or uses as identities (`tableName`, column and struct field
-names and `doc`, partition field `name` and `sourceColumn`, sort `sourceColumn`, identifier field names,
-and a geometry or geography CRS) must be literal strings, not tokens.
+Every string you pass is a literal string, not a token, and an enum-typed one must be a member of its enum; the exceptions are `location`, `comment` and table property values.
 
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:

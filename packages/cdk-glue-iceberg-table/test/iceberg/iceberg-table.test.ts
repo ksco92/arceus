@@ -23,6 +23,7 @@ import {
     IcebergNullOrder,
     IcebergPartitionField,
     IcebergPartitionTransform,
+    IcebergPartitionTransformKind,
     IcebergSortDirection,
     IcebergStructFieldDefinition,
     IcebergTable,
@@ -4162,5 +4163,115 @@ describe('IcebergTable — rendered values are the validated values', () => {
             ],
         }, key, first, rest);
         expect(pick(synthInput(overrides).input)).toEqual(expected);
+    });
+
+    it.each([
+        [
+            'write.format.default',
+            'avro',
+            IcebergFormatVersion.V2,
+        ],
+        [
+            'write.delete.mode',
+            'merge-on-read',
+            IcebergFormatVersion.V1,
+        ],
+        [
+            'comment',
+            'second',
+            IcebergFormatVersion.V2,
+        ],
+    ])('rejects a table property key that is a token resolving to %s', (resolved, value, formatVersion) => {
+        expect(() => synthInput({
+            formatVersion,
+            comment: 'first',
+            tableProperties: {
+                [Lazy.string({
+                    produce: () => resolved,
+                })]: value,
+            },
+        })).toThrow('tableProperties key must be a literal string, not a token');
+    });
+
+    const BAD_MEMBER = 'x), y(z';
+    const tokenString = (): string => Lazy.string({
+        produce: () => 'x',
+    });
+
+    const ENUM_STRINGS: Array<[string, (value: string) => unknown, RegExp, RegExp]> = [
+        [
+            'geographyAlgorithm',
+            (value) => IcebergType.geography('EPSG:4326', value as IcebergEdgeAlgorithm),
+            /geographyAlgorithm must be one of/,
+            /geographyAlgorithm must be a literal string/,
+        ],
+        [
+            'sort direction',
+            (value) => synthInput({
+                sortOrder: [
+                    {
+                        sourceColumn: 'id',
+                        direction: value as IcebergSortDirection,
+                    },
+                ],
+            }),
+            /sort direction must be one of/,
+            /sort direction must be a literal string/,
+        ],
+        [
+            'sort nullOrder',
+            (value) => synthInput({
+                sortOrder: [
+                    {
+                        sourceColumn: 'id',
+                        nullOrder: value as IcebergNullOrder,
+                    },
+                ],
+            }),
+            /sort nullOrder must be one of/,
+            /sort nullOrder must be a literal string/,
+        ],
+        [
+            'dataFormat',
+            (value) => synthInput({
+                dataFormat: value as IcebergDataFormat,
+            }),
+            /dataFormat must be one of/,
+            /dataFormat must be a literal string/,
+        ],
+        [
+            'formatVersion',
+            (value) => synthInput({
+                formatVersion: value as IcebergFormatVersion,
+            }),
+            /formatVersion must be one of/,
+            /formatVersion must be a literal string/,
+        ],
+        [
+            'type kind',
+            (value) => new IcebergType({
+                kind: value as IcebergTypeKind,
+            }),
+            /unknown IcebergTypeKind/,
+            /unknown IcebergTypeKind/,
+        ],
+        [
+            'transform kind',
+            (value) => new IcebergPartitionTransform({
+                kind: value as IcebergPartitionTransformKind,
+            }),
+            /unknown IcebergPartitionTransformKind/,
+            /unknown IcebergPartitionTransformKind/,
+        ],
+    ];
+
+    describe.each(ENUM_STRINGS)('%s', (_label, build, memberMessage, tokenMessage) => {
+        it('rejects a string that is not a member', () => {
+            expect(() => build(BAD_MEMBER)).toThrow(memberMessage);
+        });
+
+        it('rejects a token', () => {
+            expect(() => build(tokenString())).toThrow(tokenMessage);
+        });
     });
 });

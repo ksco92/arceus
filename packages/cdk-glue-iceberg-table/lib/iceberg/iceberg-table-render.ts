@@ -7,6 +7,7 @@ import {
 import {
     IcebergType,
     IcebergTypeKind,
+    oneOf,
     ownArray,
     pathSegment,
     primitive,
@@ -36,8 +37,40 @@ import {
 /** Doc prefix that marks identifier columns, so an identifier change is a field change. */
 const IDENTIFIER_DOC_PREFIX = '(PK) ';
 
+function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionField {
+    const {
+        sourceColumn,
+        transform,
+        name,
+        fieldId,
+    } = field;
+    return {
+        sourceColumn: primitive('partition sourceColumn', sourceColumn, 'string'),
+        transform: new IcebergPartitionTransform(transform),
+        name: primitive('partition field name', name, 'string', {
+            optional: true, 
+        }),
+        fieldId,
+    };
+}
+
+function snapshotSortField(field: IcebergSortField): IcebergSortField {
+    const {
+        sourceColumn,
+        transform,
+        direction,
+        nullOrder,
+    } = field;
+    return {
+        sourceColumn: primitive('sort sourceColumn', sourceColumn, 'string'),
+        transform: transform === undefined ? undefined : new IcebergPartitionTransform(transform),
+        direction: oneOf('sort direction', direction, IcebergSortDirection, true),
+        nullOrder: oneOf('sort nullOrder', nullOrder, IcebergNullOrder, true),
+    };
+}
+
 /**
- * A copy of `props` built from one read of each prop: primitives checked, arrays and
+ * A copy of `props` built from one read of each prop: strings and enums checked, arrays and
  * objects rebuilt, so the construct validates and renders values the caller cannot change.
  * `database` and `removalPolicy` are passed to CDK as given.
  *
@@ -62,39 +95,20 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         database,
         removalPolicy,
         tableName: primitive('tableName', tableName, 'string'),
-        location: primitive('location', location, 'string', 'token'),
-        dataFormat: primitive('dataFormat', dataFormat, 'string', 'optional'),
-        formatVersion: primitive('formatVersion', formatVersion, 'string'),
-        comment: primitive('comment', comment, 'string', 'optionalToken'),
+        location: primitive('location', location, 'string', {
+            tokens: true, 
+        }),
+        dataFormat: oneOf('dataFormat', dataFormat, IcebergDataFormat, true),
+        formatVersion: oneOf('formatVersion', formatVersion, IcebergFormatVersion),
+        comment: primitive('comment', comment, 'string', {
+            optional: true,
+            tokens: true, 
+        }),
         columns: ownArray('columns', columns).map(snapshotField),
-        partitionSpec: partitionSpec === undefined ? undefined : ownArray('partitionSpec', partitionSpec).map((field) => {
-            const {
-                sourceColumn,
-                transform,
-                name,
-                fieldId,
-            } = field;
-            return {
-                sourceColumn: primitive('partition sourceColumn', sourceColumn, 'string'),
-                transform: new IcebergPartitionTransform(transform),
-                name: primitive('partition field name', name, 'string', 'optional'),
-                fieldId,
-            };
-        }),
-        sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map((field) => {
-            const {
-                sourceColumn,
-                transform,
-                direction,
-                nullOrder,
-            } = field;
-            return {
-                sourceColumn: primitive('sort sourceColumn', sourceColumn, 'string'),
-                transform: transform === undefined ? undefined : new IcebergPartitionTransform(transform),
-                direction: primitive('sort direction', direction, 'string', 'optional'),
-                nullOrder: primitive('sort nullOrder', nullOrder, 'string', 'optional'),
-            };
-        }),
+        partitionSpec: partitionSpec === undefined
+            ? undefined
+            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
+        sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map(snapshotSortField),
         identifierFieldNames: identifierFieldNames === undefined
             ? undefined
             : ownArray('identifierFieldNames', identifierFieldNames).map(
@@ -106,8 +120,10 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
                 key,
                 value,
             ]) => [
-                key,
-                primitive(`tableProperties['${key}']`, value, 'string', 'token'),
+                primitive('tableProperties key', key, 'string'),
+                primitive(`tableProperties['${key}']`, value, 'string', {
+                    tokens: true, 
+                }),
             ])),
     };
 }

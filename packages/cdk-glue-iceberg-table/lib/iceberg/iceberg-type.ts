@@ -586,8 +586,8 @@ export class IcebergType {
 }
 
 /**
- * The options of one `IcebergType`, read once from `input`: primitives checked, arrays and
- * nested types rebuilt, so the constructor works on values the caller cannot change.
+ * The options of one `IcebergType`, read once from `input`: booleans, `geoCrs` and
+ * `geographyAlgorithm` checked, struct fields and nested types rebuilt, so the constructor works on values the caller cannot change.
  */
 function readOptions(input: IcebergTypeOptions): IcebergTypeOptions {
     const {
@@ -614,21 +614,27 @@ function readOptions(input: IcebergTypeOptions): IcebergTypeOptions {
         fixedLength,
         listElement: listElement === undefined ? undefined : new IcebergType(listElement),
         listElementId,
-        listElementRequired: primitive('listElementRequired', listElementRequired, 'boolean', 'optional'),
+        listElementRequired: primitive('listElementRequired', listElementRequired, 'boolean', {
+            optional: true, 
+        }),
         mapKey: mapKey === undefined ? undefined : new IcebergType(mapKey),
         mapKeyId,
         mapValue: mapValue === undefined ? undefined : new IcebergType(mapValue),
         mapValueId,
-        mapValueRequired: primitive('mapValueRequired', mapValueRequired, 'boolean', 'optional'),
+        mapValueRequired: primitive('mapValueRequired', mapValueRequired, 'boolean', {
+            optional: true, 
+        }),
         structFields: structFields === undefined ? undefined : ownArray('structFields', structFields).map(snapshotField),
-        geoCrs: primitive('geoCrs', geoCrs, 'string', 'optional'),
-        geographyAlgorithm: primitive('geographyAlgorithm', geographyAlgorithm, 'string', 'optional'),
+        geoCrs: primitive('geoCrs', geoCrs, 'string', {
+            optional: true, 
+        }),
+        geographyAlgorithm: oneOf('geographyAlgorithm', geographyAlgorithm, IcebergEdgeAlgorithm, true),
     };
 }
 
 /**
  * Returns `value` when it is a primitive of type `type`. An unresolved token is rejected
- * unless `mode` allows tokens; `undefined` passes when `mode` is optional.
+ * unless `tokens` is set; `undefined` passes when `optional` is set.
  *
  * @internal
  */
@@ -636,16 +642,33 @@ export function primitive<T>(
     what: string,
     value: T,
     type: 'string' | 'boolean',
-    mode: 'required' | 'optional' | 'token' | 'optionalToken' = 'required',
+    {
+        optional = false, tokens = false, 
+    }: { optional?: boolean; tokens?: boolean } = {},
 ): T {
-    if (value === undefined && mode.startsWith('optional')) {
+    if (value === undefined && optional) {
         return value;
     }
     if (typeof value !== type) {
         throw new Error(`${what} must be a ${type}, got ${typeof value}`);
     }
-    if (type === 'string' && !mode.toLowerCase().endsWith('token') && Token.isUnresolved(value)) {
+    if (!tokens && Token.isUnresolved(value)) {
         throw new Error(`${what} must be a literal string, not a token`);
+    }
+    return value;
+}
+
+/**
+ * Returns `value` when it is a literal string holding one of the values of `members`.
+ *
+ * @internal
+ */
+export function oneOf<T>(what: string, value: T, members: { [name: string]: string }, optional = false): T {
+    if (value === undefined && optional) {
+        return value;
+    }
+    if (!Object.values(members).includes(primitive(what, value, 'string') as string)) {
+        throw new Error(`${what} must be one of ${Object.values(members).join(', ')}, got '${value}'`);
     }
     return value;
 }
@@ -679,8 +702,12 @@ export function snapshotField(field: IcebergStructFieldDefinition): IcebergStruc
         id,
         name: primitive('field name', name, 'string'),
         type: new IcebergType(type),
-        required: primitive('field required', required, 'boolean', 'optional'),
-        doc: primitive('field doc', doc, 'string', 'optional'),
+        required: primitive('field required', required, 'boolean', {
+            optional: true, 
+        }),
+        doc: primitive('field doc', doc, 'string', {
+            optional: true, 
+        }),
     };
 }
 
