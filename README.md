@@ -239,9 +239,10 @@ id is what lets you add, rename, and drop columns across deploys
 without corrupting old data — see
 [How do I evolve an Iceberg table schema](#how-do-i-evolve-an-iceberg-table-schema-add-rename-or-drop-a-column-in-cloudformation).
 Once a column is dropped, leave its id retired; never hand it to a new
-column. Nested fields follow the same rule: every struct field takes an
-`id`, every list an `elementId`, and every map a `keyId` and a
-`valueId`. All ids in a schema, top-level and nested, must be distinct integers from 1 to 2147483447.
+column. Nested fields follow the same rule: every struct field takes
+an `id`, every list an `elementId`, and every map a `keyId` and a
+`valueId`. All ids in a schema, top-level and nested, must be distinct
+integers from 1 to 2147483447.
 
 A table that exercises most of the surface (partitions, sort order,
 nested types, identifier fields, table properties, removal policy):
@@ -586,8 +587,9 @@ data files stay readable because each column's `id` is pinned and
 never reused. Adds, renames (same `id`, new `name`), and drops all
 flow through `cdk deploy` alone — no out-of-band SQL DDL.
 
-Nested fields evolve the same way. Each struct field, list element, map
-key, and map value keeps the id you gave it (the rule is under [Using `IcebergTable`](#using-icebergtable)), so adding a column or a
+Nested fields evolve the same way. Each struct field, list element,
+map key, and map value keeps the id you gave it (the rule is under
+[Using `IcebergTable`](#using-icebergtable)), so adding a column or a
 struct field anywhere in the schema leaves every other id unchanged. A
 new nested field takes an id no field of the table has ever used:
 
@@ -605,7 +607,9 @@ has, or the first deploy renumbers it and existing data files read
 under the wrong field. Read the ids from the `element-id`, `key-id`,
 `value-id`, and struct field `id` values in the previous version's
 synthesized template (`cdk.out/<Stack>.template.json`) or in the
-table's current `metadata.json`. A nested type object shared by two columns now fails synth with a duplicate id; give each column its own nested type with its own ids. The list element and map value
+table's current `metadata.json`. A nested type object shared by two
+columns now fails synth with a duplicate id; give each column its own
+nested type with its own ids. The list element and map value
 nullability default also changed: `elementRequired` and
 `valueRequired` now default to `false`. Earlier versions made list
 elements required by default and map values required unless the third
