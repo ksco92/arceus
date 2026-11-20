@@ -241,8 +241,7 @@ without corrupting old data — see
 Once a column is dropped, leave its id retired; never hand it to a new
 column. Nested fields follow the same rule: every struct field takes an
 `id`, every list an `elementId`, and every map a `keyId` and a
-`valueId`. All ids in a schema, top-level and nested, must be distinct
-positive integers.
+`valueId`. All ids in a schema, top-level and nested, must be distinct integers from 1 to 2147483447.
 
 A table that exercises most of the surface (partitions, sort order,
 nested types, identifier fields, table properties, removal policy):
@@ -588,7 +587,7 @@ never reused. Adds, renames (same `id`, new `name`), and drops all
 flow through `cdk deploy` alone — no out-of-band SQL DDL.
 
 Nested fields evolve the same way. Each struct field, list element, map
-key, and map value keeps the id you gave it, so adding a column or a
+key, and map value keeps the id you gave it (the rule is under [Using `IcebergTable`](#using-icebergtable)), so adding a column or a
 struct field anywhere in the schema leaves every other id unchanged. A
 new nested field takes an id no field of the table has ever used:
 
@@ -606,7 +605,7 @@ has, or the first deploy renumbers it and existing data files read
 under the wrong field. Read the ids from the `element-id`, `key-id`,
 `value-id`, and struct field `id` values in the previous version's
 synthesized template (`cdk.out/<Stack>.template.json`) or in the
-table's current `metadata.json`. The list element and map value
+table's current `metadata.json`. A nested type object shared by two columns now fails synth with a duplicate id; give each column its own nested type with its own ids. The list element and map value
 nullability default also changed: `elementRequired` and
 `valueRequired` now default to `false`. Earlier versions made list
 elements required by default and map values required unless the third
@@ -725,7 +724,7 @@ the construct does **not** prevent. See the next section.)
 
 ## Known limitations
 
-- **Field-id reuse is not detected across deploys.** This applies to nested ids (struct field, list element, map key and value) as well as column ids. If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate field id N` validator), but it doesn't compare against the live table state. The safe workflow is to treat dropped ids as retired forever and give every new field, top-level or nested, an id the table has never used.
+- **Field-id reuse is not detected across deploys.** This applies to nested ids (struct field, list element, map key and value) as well as column ids. If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate field id N` validator), but it doesn't compare against the live table state. The safe workflow is to treat dropped ids as retired forever.
 - **Partition field-id reuse is not detected across deploys either.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), but it cannot tell that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. The safe workflow: treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id. A partition change needs a new source column or transform; Glue ignores a `fieldId`-only change.
 - **`last-partition-id` is written by Glue, not by the construct.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The repo's integration test asserts the counter keeps up with the highest supplied field id after a partition evolution, but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter — if you mix CDK-managed and engine-managed partition evolution, verify the counter in `metadata.json` before trusting engine-side changes.
 - **Removing the last identifier from a table created with identifiers before 0.11.0 can bring the old ids back.** That table's history holds an unmarked schema with ids, and Glue reuses it when the rendered fields match it again. Change a column `doc` in the same deploy that removes the last identifier.
