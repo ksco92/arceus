@@ -5,8 +5,10 @@ name: Publish to npm and PyPI
 # differs from the version already there.
 #
 # Trusted publishing (OIDC, no registry token secrets) is configured on
-# npmjs.com and pypi.org for repo ksco92/arceus and workflow `publish.yml`,
-# with no environment. Neither registry binds a branch.
+# npmjs.com and pypi.org for repo ksco92/arceus, workflow `publish.yml` and
+# environment `release`. Neither registry binds a branch, so the `release`
+# environment, limited to deployment branch `main`, is what limits publishing
+# to `main`.
 
 on:
   push:
@@ -92,6 +94,7 @@ jobs:
     if: needs.check.outputs.npm == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -101,7 +104,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm >= 11.5.1; the npm bundled with
       # setup-node is older.
-      - run: npm install -g npm@latest
+      - run: npm install -g npm@12.2.3 --ignore-scripts
       - uses: actions/download-artifact@v8
         with:
           name: npm-dist
@@ -113,6 +116,7 @@ jobs:
     if: needs.check.outputs.pypi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       id-token: write
     steps:
@@ -120,6 +124,6 @@ jobs:
         with:
           name: python-dist
           path: python-dist
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: python-dist/
