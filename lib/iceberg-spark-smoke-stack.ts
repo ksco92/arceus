@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
     RemovalPolicy,
     Stack,
@@ -63,6 +64,7 @@ export class IcebergSparkSmokeStack extends Stack {
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/spark_smoke/`,
             formatVersion: IcebergFormatVersion.V2,
             removalPolicy: RemovalPolicy.DESTROY,
+            schemaHistoryFile: path.join(__dirname, 'sample-database.schema-history.json'),
         });
 
         const permission = new CfnPermissions(this, 'SparkSmokeTablePermission', {
