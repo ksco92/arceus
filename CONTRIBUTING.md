@@ -242,8 +242,8 @@ checks (`scripts/spark/verify_evolution.py`) between deploys.
 The stack owns two tables. `evolution_test` changes in steps 1 to 6 and
 is unchanged afterwards. `nested_evolution_test` is created in step 1
 and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
-are `id(1)`, `tags(2)` (list, element id 3), `attrs(4)` (map, key id 5,
-value id 6) and `addr(7)` (struct: `line1(8)`, `city(9)`). The table
+are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
+value id 7) and `addr(4)` (struct: `line1(8)`, `city(9)`). The table
 below describes `evolution_test` except where a row names the nested
 table.
 
@@ -290,8 +290,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 8 | `CALL glue.system.expire_snapshots(...)` with a future `older_than` | snapshots reduced to the current one; 6 rows unchanged |
 | 9 | final `SELECT` | 6 rows with the expected balances |
 
-The smoke check and the five scripts run sequentially in the same `integ-test.yml`
-job; DML takes ~3 minutes, surface ~4, v3 evolution ~3, and v3 DML ~2.
+The smoke check and the five scripts run sequentially in the same `integ-test.yml` job.
 
 ## Demo: partition transforms, sort order, nested types, and grants
 

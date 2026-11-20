@@ -235,25 +235,25 @@ describe('IcebergEvolutionStack — nested evolution', () => {
             Name: 'tags',
             Type: {
                 type: 'list',
-                'element-id': 3,
+                'element-id': 5,
                 'element-required': false,
                 element: 'string',
             },
         },
         {
-            Id: 4,
+            Id: 3,
             Name: 'attrs',
             Type: {
                 type: 'map',
-                'key-id': 5,
+                'key-id': 6,
                 key: 'string',
-                'value-id': 6,
+                'value-id': 7,
                 'value-required': false,
                 value: 'string',
             },
         },
         {
-            Id: 7,
+            Id: 4,
             Name: 'addr',
             Type: {
                 type: 'struct',
@@ -285,30 +285,17 @@ describe('IcebergEvolutionStack — nested evolution', () => {
     } : field));
 
     it.each([
-        [
-            1,
-            baseline,
-        ],
-        [
-            2,
-            baseline,
-        ],
-        [
-            3,
-            baseline,
-        ],
-        [
-            4,
-            baseline,
-        ],
-        [
-            5,
-            baseline,
-        ],
-        [
-            6,
-            baseline,
-        ],
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+    ])('step %i renders the baseline nested table', (step) => {
+        expect(nestedFieldsAt(step)).toEqual(baseline);
+    });
+
+    it.each([
         [
             7,
             withNote,
@@ -317,7 +304,7 @@ describe('IcebergEvolutionStack — nested evolution', () => {
             8,
             withZip,
         ],
-    ])('step %i renders the nested table with its pinned ids', (step, expected) => {
+    ])('step %i renders the nested table with its added field', (step, expected) => {
         expect(nestedFieldsAt(step)).toEqual(expected);
     });
 
@@ -352,18 +339,31 @@ describe('IcebergEvolutionStack — wiring', () => {
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on both tables', () => {
         const template = synthAt(1);
         const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'));
+        const tableIds = Object.fromEntries(Object.entries(template.findResources('AWS::Glue::Table')).map(([
+            logicalId,
+            table,
+        ]) => [
+            table.Properties.Name,
+            logicalId,
+        ]));
         expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
             'evolution_test',
             'nested_evolution_test',
         ]);
         permissions.forEach((permission) => {
-            expect(permission.Properties.Permissions).toEqual(expect.arrayContaining([
-                'SELECT',
-                'INSERT',
-                'DELETE',
+            expect([
+                ...permission.Properties.Permissions,
+            ].sort()).toEqual([
                 'ALTER',
+                'DELETE',
                 'DESCRIBE',
-            ]));
+                'INSERT',
+                'SELECT',
+            ]);
+            expect(permission.Properties.PermissionsWithGrantOption).toEqual([]);
+            expect(permission.DependsOn).toEqual([
+                tableIds[permission.Properties.Resource.TableResource.Name],
+            ]);
             /// Partition is a CFN intrinsic; resolve to JSON and assert
             /// the user-name + account literals end up in the identifier.
             const identifier = JSON.stringify(permission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier);
