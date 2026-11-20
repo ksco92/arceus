@@ -302,6 +302,8 @@ function buildIdentifierFieldNames(step: number): string[] {
 /// `nested_evolution_test` carries the baseline shape through step 6.
 /// Step 7 adds the top-level `note` (id 10) and step 8 adds
 /// `addr.zip` (id 11) between `line1` and `city`.
+/// The baseline ids are the ones Glue assigns when it creates the table:
+/// each level's fields in order, then each nested type's ids.
 function buildNestedColumns(step: number): IcebergColumn[] {
     const columns: IcebergColumn[] = [
         {
