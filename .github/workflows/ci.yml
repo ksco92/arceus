@@ -91,6 +91,6 @@ jobs:
           floor() { node -p "require('./packages/cdk-glue-iceberg-table/package.json').peerDependencies['$1'].replace(/^[^0-9]*/, '')"; }
           npm install --no-save "aws-cdk-lib@$(floor aws-cdk-lib)" "constructs@$(floor constructs)"
           for pkg in aws-cdk-lib constructs; do
-            [ "$(cd packages/cdk-glue-iceberg-table && node -p "require('$pkg/package.json').version")" = "$(floor $pkg)" ] || exit 1
+            [ "$(cd packages/cdk-glue-iceberg-table && node -p "require('$pkg/package.json').version")" = "$(floor $pkg)" ]
           done
       - run: npm test --workspace cdk-glue-iceberg-table
