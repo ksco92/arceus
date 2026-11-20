@@ -25,6 +25,8 @@ import {
     IcebergType,
 } from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
+const LAST_EVOLUTION_TEST_STEP = 6;
+
 /**
  * Props for `IcebergEvolutionStack`. The stack itself is parameterized
  * on a single integer `step` so that integration tests can run
@@ -97,7 +99,7 @@ export class IcebergEvolutionStack extends Stack {
             database: importedDatabase,
             tableName: 'evolution_test',
             formatVersion: IcebergFormatVersion.V2,
-            comment: `Integration-test target — evolution step ${Math.min(step, 6)}.`,
+            comment: `Integration-test target — evolution step ${Math.min(step, LAST_EVOLUTION_TEST_STEP)}.`,
             columns,
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
@@ -312,7 +314,7 @@ function buildNestedColumns(step: number): IcebergColumn[] {
             name: 'tags',
             type: IcebergType.list({
                 element: IcebergType.STRING,
-                elementId: 3,
+                elementId: 5,
             }),
             id: 2,
         },
@@ -320,11 +322,11 @@ function buildNestedColumns(step: number): IcebergColumn[] {
             name: 'attrs',
             type: IcebergType.map({
                 key: IcebergType.STRING,
-                keyId: 5,
+                keyId: 6,
                 value: IcebergType.STRING,
-                valueId: 6,
+                valueId: 7,
             }),
-            id: 4,
+            id: 3,
         },
         {
             name: 'addr',
@@ -347,7 +349,7 @@ function buildNestedColumns(step: number): IcebergColumn[] {
                     type: IcebergType.STRING,
                 },
             ]),
-            id: 7,
+            id: 4,
         },
     ];
     if (step >= 7) {

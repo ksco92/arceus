@@ -229,7 +229,7 @@ assert_columns "1:customer_id,2:email,3:signed_up_at"
 assert_partitions "signed_up_at_day"
 assert_identifiers "1" "customer_id"
 
-BASE_IDS="id:1,tags:2,tags.element:3,attrs:4,attrs.key:5,attrs.value:6,addr:7,addr.line1:8"
+BASE_IDS="id:1,tags:2,tags.element:5,attrs:3,attrs.key:6,attrs.value:7,addr:4,addr.line1:8"
 assert_nested_ids "${BASE_IDS},addr.city:9" "9"
 
 header "SPARK step 1 (INSERT seed rows, including the nested row)"
