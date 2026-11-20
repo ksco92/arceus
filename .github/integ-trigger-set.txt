@@ -14,9 +14,8 @@ lib/
 bin/arceus.ts
 # Feature flags and the `app:` declaration.
 cdk.json
-scripts/integration-test-*
-scripts/field_ids.py
-scripts/spark/
+# Every file under scripts/ is run or sourced by the integration job.
+scripts/
 # The gate's own rules and code.
 .github/integ-trigger-set.txt
 .github/scripts/
