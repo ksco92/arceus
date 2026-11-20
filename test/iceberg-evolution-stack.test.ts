@@ -334,6 +334,19 @@ describe('IcebergEvolutionStack — property, sort order and rollback steps', ()
         expect(without(icebergInputAt(9).Properties, 'commit.retry.num-retries')).toEqual(icebergInputAt(8).Properties);
     });
 
+    it.each([
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+    ])('step %i keeps the step 1 write order', (step) => {
+        expect(icebergInputAt(step).WriteOrder).toEqual(icebergInputAt(1).WriteOrder);
+    });
+
     it('step 10 replaces the customer_id write order and changes nothing else', () => {
         expect(icebergInputAt(1).WriteOrder).toEqual({
             OrderId: 1,
