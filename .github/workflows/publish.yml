@@ -5,10 +5,12 @@ name: Publish to npm and PyPI
 # differs from the version already there.
 #
 # Trusted publishing (OIDC, no registry token secrets) is configured on
-# npmjs.com and pypi.org for repo ksco92/arceus, workflow `publish.yml` and
-# environment `release`. Neither registry binds a branch, so the `release`
-# environment, limited to deployment branch `main`, is what limits publishing
-# to `main`.
+# npmjs.com and pypi.org for repo ksco92/arceus and workflow `publish.yml`.
+# Neither registry binds a branch. Publishing is limited to `main` only while
+# the `release` environment's deployment branches are limited to `main` (a
+# repository setting) and both trusted publishers name environment `release`
+# (registry settings). PyPI refuses a token without that environment; npm does
+# not document what it does with one.
 
 on:
   push:
