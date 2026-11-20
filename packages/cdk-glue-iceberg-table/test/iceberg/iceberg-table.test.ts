@@ -1146,38 +1146,47 @@ describe('IcebergTable — nested field ids', () => {
         },
     ];
 
-    it('renders exactly the pinned ids at every depth', () => {
+    it('renders the pinned ids at every depth, with element-required and value-required false when unset', () => {
         expect(parsedFields(evolvingColumns(false))).toEqual(EXPECTED_FIELDS);
     });
 
     it('keeps every existing id when a top-level column and a mid-struct field are added', () => {
-        const after = parsedFields(evolvingColumns(true));
-        const added = after.splice(1, 1);
-        const addedInStruct = (after[2].type as { fields: unknown[] }).fields.splice(1, 1);
-        expect(added).toEqual([
+        const [
+            idField,
+            tags,
+            addr,
+            attrs,
+        ] = EXPECTED_FIELDS;
+        const [
+            line1,
+            city,
+        ] = (addr.type as { fields: unknown[] }).fields;
+        expect(parsedFields(evolvingColumns(true))).toEqual([
+            idField,
             {
                 id: 4,
                 name: 'note',
                 type: 'string',
             },
-        ]);
-        expect(addedInStruct).toEqual([
+            tags,
             {
-                id: 40,
-                name: 'line2',
-                required: false,
-                type: 'string',
+                ...addr,
+                type: {
+                    type: 'struct',
+                    fields: [
+                        line1,
+                        {
+                            id: 40,
+                            name: 'line2',
+                            required: false,
+                            type: 'string',
+                        },
+                        city,
+                    ],
+                },
             },
+            attrs,
         ]);
-        expect(after).toEqual(EXPECTED_FIELDS);
-    });
-
-    it('renders element-required and value-required false when unset', () => {
-        const fields = synthFields(evolvingColumns(false));
-        const tags = JSON.parse(fields[1].Type);
-        const attrs = JSON.parse(fields[3].Type);
-        expect(tags['element-required']).toBe(false);
-        expect(attrs['value-required']).toBe(false);
     });
 
     it.each([
@@ -1281,6 +1290,58 @@ describe('IcebergTable — nested field ids', () => {
         ])[1]).toEqual(expected);
     });
 
+    it('carries the first-read column id into identifier, partition, and sort source ids', () => {
+        const read = firstReadThenOne(2);
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', {
+            database,
+            tableName: 'nested',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                MINIMAL_COLUMNS[0],
+                {
+                    name: 'c',
+                    type: IcebergType.LONG,
+                    required: true,
+                    get id() {
+                        return read();
+                    },
+                },
+            ],
+            location: 's3://my-bucket/nested/',
+            identifierFieldNames: [
+                'c',
+            ],
+            partitionSpec: [
+                {
+                    sourceColumn: 'c',
+                    transform: IcebergPartitionTransform.IDENTITY,
+                    fieldId: 1000,
+                },
+            ],
+            sortOrder: [
+                {
+                    sourceColumn: 'c',
+                },
+            ],
+        });
+        const tables = Template.fromStack(stack).findResources('AWS::Glue::Table');
+        const input = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
+        expect([
+            input.Schema.IdentifierFieldIds,
+            input.PartitionSpec.Fields[0].SourceId,
+            input.WriteOrder.Fields[0].SourceId,
+        ]).toEqual([
+            [
+                2,
+            ],
+            2,
+            2,
+        ]);
+    });
+
     it('rejects an unresolved token as an id', () => {
         expect(() => synthFields([
             MINIMAL_COLUMNS[0],
@@ -1312,6 +1373,44 @@ describe('IcebergTable — nested field ids', () => {
                 id: badId as unknown as number,
             },
         ])).toThrow(`column 'c' has invalid id 5 of type ${typeName}; ids must be numbers`);
+    });
+
+    it('keeps id message paths distinct when names contain backquotes and dots', () => {
+        let message = '';
+        try {
+            synthFields([
+                {
+                    name: 'a.`b',
+                    type: IcebergType.STRING,
+                    id: 1,
+                },
+                {
+                    name: '`a',
+                    type: IcebergType.struct([
+                        {
+                            id: 1,
+                            name: '`b`',
+                            type: IcebergType.STRING,
+                        },
+                    ]),
+                    id: 2,
+                },
+            ]);
+        } catch (e) {
+            message = (e as Error).message;
+        }
+        const [
+            , path,
+            owner,
+        ] = /^duplicate field id 1 on column '(.*)', already used by '(.*)'$/.exec(message) ?? [];
+        expect([
+            path,
+            owner,
+        ]).toEqual([
+            '```a`.```b```',
+            '`a.``b`',
+        ]);
+        expect(path).not.toBe(owner);
     });
 
     it('backquotes a name that contains a dot in id messages', () => {

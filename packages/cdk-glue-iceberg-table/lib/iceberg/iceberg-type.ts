@@ -50,7 +50,7 @@ const DEFAULT_GEO_CRS = 'OGC:CRS84';
 
 /** Definition of a single struct field. */
 export interface IcebergStructFieldDefinition {
-    /** Iceberg field id of the field. */
+    /** Iceberg field id of the field: unique across the table schema, from 1 to 2147483447. */
     readonly id: number;
 
     /** Field name (unique within the struct). */
@@ -71,7 +71,7 @@ export interface IcebergListDefinition {
     /** Element type. */
     readonly element: IcebergType;
 
-    /** Iceberg field id of the element. */
+    /** Iceberg field id of the element: unique across the table schema, from 1 to 2147483447. */
     readonly elementId: number;
 
     /** Whether elements are non-nullable. Defaults to `false`. */
@@ -83,13 +83,13 @@ export interface IcebergMapDefinition {
     /** Key type. */
     readonly key: IcebergType;
 
-    /** Iceberg field id of the key. */
+    /** Iceberg field id of the key: unique across the table schema, from 1 to 2147483447. */
     readonly keyId: number;
 
     /** Value type. */
     readonly value: IcebergType;
 
-    /** Iceberg field id of the value. */
+    /** Iceberg field id of the value: unique across the table schema, from 1 to 2147483447. */
     readonly valueId: number;
 
     /** Whether values are non-nullable. Defaults to `false`. */
@@ -521,14 +521,13 @@ export class IcebergType {
                 });
             case IcebergTypeKind.STRUCT: {
                 const rendered = this.structFields!.map((field) => {
-                    const name = field.name;
-                    const fieldPath = `${path}.${pathSegment(name)}`;
+                    const fieldPath = `${path}.${pathSegment(field.name)}`;
                     const id = claimId(fieldPath, field.id);
                     const required = field.required ?? false;
                     const typeRepr = field.type._render(fieldPath, claimId);
                     const out: Record<string, unknown> = {
                         id,
-                        name,
+                        name: field.name,
                         required,
                         type: tryParseObject(typeRepr),
                     };
@@ -584,12 +583,12 @@ export class IcebergType {
 }
 
 /**
- * Field name as a path segment, in backquotes when it contains a dot.
+ * Field name as a path segment, backquoted with inner backquotes doubled when it contains a dot or backquote.
  *
  * @internal
  */
 export function pathSegment(name: string): string {
-    return name.includes('.') ? `\`${name}\`` : name;
+    return /[.`]/.test(name) ? `\`${name.replace(/`/g, '``')}\`` : name;
 }
 
 /**

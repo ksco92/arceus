@@ -92,15 +92,9 @@ export interface IcebergColumn {
     readonly doc?: string;
 
     /**
-     * Iceberg field id for this column. Required: every top-level
-     * column must be pinned to a stable, unique positive integer that
-     * you never reuse or reassign across deploys. That stability is the
-     * whole point — because data files reference fields by id, a fixed
-     * id lets you add, remove, and reorder columns safely without
-     * triggering Iceberg's silent-corruption-on-id-reuse trap. Pick the
-     * id once when you add the column and never change it; once a column
-     * is dropped, leave its id retired rather than giving it to a new
-     * column.
+     * Iceberg field id for this column: unique across the table schema,
+     * from 1 to 2147483447. Keep it for the life of the column and never
+     * give a dropped column's id to another field.
      */
     readonly id: number;
 }
