@@ -1,6 +1,7 @@
 *.js
 !jest.config.js
 !eslint.config.js
+!.github/scripts/*.js
 *.d.ts
 node_modules
 

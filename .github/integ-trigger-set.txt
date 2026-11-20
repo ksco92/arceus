@@ -1,0 +1,15 @@
+# Paths whose change requires a green Integration test run at the PR head.
+# One pattern per line. A trailing `/` matches everything under that
+# directory, `*` matches within one path segment, anything else is an exact
+# path. `unless-version-only` exempts a change whose only edited lines are
+# the `"version"` field.
+# Read by .github/workflows/integ-gate.yml.
+
+packages/cdk-glue-iceberg-table/lib/iceberg/
+packages/cdk-glue-iceberg-table/package.json unless-version-only
+lib/
+bin/arceus.ts
+cdk.json
+scripts/integration-test-*.sh
+scripts/field_ids.py
+scripts/spark/
