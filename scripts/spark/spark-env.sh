@@ -10,8 +10,8 @@
 #
 # spark.sql.geospatial.enabled: Spark 4.1 ships the ST_* functions switched off.
 
-SPARK_VERSION="4.1.3"
-ICEBERG_VERSION="1.12.0"
+SPARK_VERSION="4.1.1"
+ICEBERG_VERSION="1.11.0"
 SPARK_DIST="spark-${SPARK_VERSION}-bin-hadoop3"
 ICEBERG_SPARK_ARTIFACT="iceberg-spark-runtime-4.1_2.13"
 ICEBERG_RUNTIME_JAR="${ICEBERG_SPARK_ARTIFACT}-${ICEBERG_VERSION}.jar"
