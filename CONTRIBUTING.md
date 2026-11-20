@@ -92,7 +92,7 @@ arceus/
 └── .github/workflows/
     ├── ci.yml                          # Lint + test + jsii build + Python package + pack + e2e-consumer + packed-consumer + peer-floor
     ├── publish.yml                     # Trusted-publish the package to npm + PyPI on version bump
-    ├── integ-gate.yml                  # Posts the integ-gate commit status on every PR head
+    ├── integ-gate.yml                  # Posts the integ-gate commit status on each PR to main
     └── integ-test.yml                  # Real-AWS Spark smoke + evolution/DML/surface tests (gated)
 ```
 

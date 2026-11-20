@@ -240,10 +240,10 @@ jobs:
       - run: |
           if [ "$DEPLOY_RESULT" = "success" ]; then
             state=success
-            description="Integration test passed on this commit"
+            description="Integration test run passed on this commit"
           else
             state=failure
-            description="Integration test $DEPLOY_RESULT on this commit"
+            description="Integration test run $DEPLOY_RESULT on this commit"
           fi
           gh api "repos/$GH_REPO/statuses/$HEAD_SHA" \
             -f state="$state" -f context=integ-gate \

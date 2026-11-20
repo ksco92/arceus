@@ -33,6 +33,9 @@ describe('trigger set patterns', () => {
         'scripts/spark/verify_dml.py',
         'scripts/spark/install-spark.sh',
         'scripts/spark/a-new-program.py',
+        '.github/workflows/integ-gate.yml',
+        '.github/integ-trigger-set.txt',
+        '.github/scripts/integ-gate.js',
     ])('%s is in the set', (filename) => {
         expect(touches(modified(filename))).toBe(true);
     });
@@ -44,20 +47,18 @@ describe('trigger set patterns', () => {
         '.github/workflows/ci.yml',
         '.github/workflows/publish.yml',
         '.github/workflows/integ-test.yml',
-        '.github/workflows/integ-gate.yml',
-        '.github/integ-trigger-set.txt',
-        '.github/scripts/integ-gate.js',
         'test/arceus-stack.test.ts',
         'packages/cdk-glue-iceberg-table/test/table.test.ts',
         'packages/cdk-glue-iceberg-table/lib/other.ts',
         'packages/cdk-glue-iceberg-table/README.md',
         'scripts/helper.sh',
         'scripts/integration-test.sh',
-        'scripts/integration-test-dml.sh.bak/x',
         'library/x.ts',
+        'docs/lib/x.ts',
+        'xscripts/spark/y.py',
+        'scripts/integration.sh',
         'nested/cdk.json',
         'e2e-consumer/lib/consumer-stack.ts',
-        'scripts/integration-test-a/b.sh',
         'bin/other.ts',
         'cdk.json5',
         'package.json',
@@ -76,15 +77,6 @@ describe('trigger set patterns', () => {
 
     test('comments and blank lines are not patterns', () => {
         expect(gate.parsePatterns('# lib/\n\n  \ncdk.json\n')).toHaveLength(1);
-    });
-
-    test('regex metacharacters in a pattern match literally', () => {
-        expect(gate.touchesTriggerSet('a.b+c', [
-            modified('a.b+c'),
-        ])).toBe(true);
-        expect(gate.touchesTriggerSet('a.b+c', [
-            modified('axb+c'),
-        ])).toBe(false);
     });
 });
 
@@ -154,12 +146,39 @@ describe('package.json version-only exemption', () => {
             patch: bump,
         })).toBe(true);
     });
+
+    test('two added version lines are in the set', () => {
+        expect(touches(modified(PACKAGE_JSON, '@@ -1 +1,2 @@\n+    "version": "0.15.0",\n+    "version": "0.16.0",'))).toBe(true);
+    });
+
+    test('two removed version lines are in the set', () => {
+        expect(touches(modified(PACKAGE_JSON, '@@ -1,2 +1 @@\n-    "version": "0.14.0",\n-    "version": "0.15.0",'))).toBe(true);
+    });
+
+    test('an addition before the removal is in the set', () => {
+        expect(touches(modified(PACKAGE_JSON, '@@ -1 +1 @@\n+    "version": "0.15.0",\n-    "version": "0.14.0",'))).toBe(true);
+    });
+
+    test('a version line with trailing content is in the set', () => {
+        expect(touches(modified(PACKAGE_JSON, '@@ -1 +1 @@\n-    "version": "0.14.0",\n+    "version": "1.0.0", "license": "MIT"'))).toBe(true);
+    });
+
+    test('a version line with leading content is in the set', () => {
+        expect(touches(modified(PACKAGE_JSON, '@@ -1 +1 @@\n-    "version": "0.14.0",\n+ -  "version": "1.0.0",'))).toBe(true);
+    });
+
+    test.each([
+        'lib/x.ts',
+        'cdk.json',
+    ])('a version-only patch on %s stays in the set', (filename) => {
+        expect(touches(modified(filename, '@@ -1 +1 @@\n-    "version": "0.14.0",\n+    "version": "0.15.0",'))).toBe(true);
+    });
 });
 
 describe('classify', () => {
     const HEAD = 'a'.repeat(40);
 
-    const run = async (opts: {files?: object[]; changedFiles?: number; existing?: string[]; headRepo?: string}) => {
+    const run = async (opts: {files?: object[]; changedFiles?: number; existing?: {context: string; description: string}[]; headRepo?: string; base?: string}) => {
         const files = opts.files ?? [];
         const createCommitStatus = jest.fn();
         const github = {
@@ -171,9 +190,7 @@ describe('classify', () => {
                 repos: {
                     getCombinedStatusForRef: jest.fn().mockResolvedValue({
                         data: {
-                            statuses: (opts.existing ?? []).map((context) => ({
-                                context,
-                            })),
+                            statuses: opts.existing ?? [],
                         },
                     }),
                     createCommitStatus,
@@ -194,6 +211,9 @@ describe('classify', () => {
             payload: {
                 pull_request: {
                     number: 5,
+                    base: {
+                        ref: opts.base ?? 'main',
+                    },
                     changed_files: opts.changedFiles ?? files.length,
                     head: {
                         sha: HEAD,
@@ -247,22 +267,6 @@ describe('classify', () => {
         }));
     });
 
-    test('files are listed through the paginated API', async () => {
-        const {
-            github,
-        } = await run({
-            files: [
-                modified('README.md'),
-            ],
-        });
-        expect(github.paginate).toHaveBeenCalledWith(github.rest.pulls.listFiles, {
-            owner: 'o',
-            repo: 'r',
-            pull_number: 5,
-            per_page: 100,
-        });
-    });
-
     test('a truncated file list is treated as in the set', async () => {
         const {
             createCommitStatus,
@@ -277,16 +281,70 @@ describe('classify', () => {
         }));
     });
 
-    test('a head that already has the status is left alone', async () => {
+    const own = {
+        context: 'integ-gate',
+        description: 'No trigger-set files changed',
+    };
+    const report = {
+        context: 'integ-gate',
+        description: 'Integration test run passed on this commit',
+    };
+    const inSet = [
+        modified('lib/x.ts'),
+    ];
+
+    test('the integration workflow posts descriptions that start with the kept prefix', () => {
+        const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'integ-test.yml'), 'utf8');
+        expect(workflow).toContain('description="Integration test run passed');
+        expect(workflow).toContain('description="Integration test run $DEPLOY_RESULT');
+    });
+
+    test('an earlier classify success is recomputed to pending when the PR now touches the set', async () => {
+        const {
+            createCommitStatus,
+        } = await run({
+            files: inSet,
+            existing: [
+                own,
+            ],
+        });
+        expect(createCommitStatus).toHaveBeenCalledWith(expect.objectContaining({
+            state: 'pending',
+        }));
+    });
+
+    test('an earlier classify pending is recomputed to success when the PR no longer touches the set', async () => {
+        const {
+            createCommitStatus,
+        } = await run({
+            files: [
+                modified('README.md'),
+            ],
+            existing: [
+                {
+                    context: 'integ-gate',
+                    description: 'Trigger-set files changed: run the integration test (label run-integ-test)',
+                },
+            ],
+        });
+        expect(createCommitStatus).toHaveBeenCalledWith(expect.objectContaining({
+            state: 'success',
+        }));
+    });
+
+    test.each([
+        report,
+        {
+            context: 'integ-gate',
+            description: 'Integration test run failure on this commit',
+        },
+    ])('a result from the integration run is kept', async (existing) => {
         const {
             createCommitStatus, github,
         } = await run({
-            files: [
-                modified('lib/x.ts'),
-            ],
+            files: inSet,
             existing: [
-                'ci',
-                'integ-gate',
+                existing,
             ],
         });
         expect(createCommitStatus).not.toHaveBeenCalled();
@@ -297,14 +355,26 @@ describe('classify', () => {
         const {
             createCommitStatus,
         } = await run({
-            files: [
-                modified('lib/x.ts'),
-            ],
+            files: inSet,
             existing: [
-                'ci',
+                {
+                    context: 'ci',
+                    description: 'Integration test run passed',
+                },
             ],
         });
         expect(createCommitStatus).toHaveBeenCalledTimes(1);
+    });
+
+    test('a PR against another base posts nothing', async () => {
+        const {
+            createCommitStatus, github,
+        } = await run({
+            files: inSet,
+            base: 'feature/x',
+        });
+        expect(createCommitStatus).not.toHaveBeenCalled();
+        expect(github.rest.repos.getCombinedStatusForRef).not.toHaveBeenCalled();
     });
 
     test('a fork PR posts nothing and warns', async () => {

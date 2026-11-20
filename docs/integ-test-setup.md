@@ -13,17 +13,22 @@ and surface scripts. The workflow runs when:
 
 ## The `integ-gate` status
 
-`.github/workflows/integ-gate.yml` runs on every same-repo PR push and posts
-the `integ-gate` commit status: `success` when no changed file matches
-`.github/integ-trigger-set.txt`, `pending` when one does. The integration run replaces
-`pending` with `success` or `failure` on the SHA it checked out. A push gives
-the new head no status until the gate workflow posts one.
+`.github/workflows/integ-gate.yml` runs when a PR to `main` is opened,
+reopened, pushed to, or retargeted, and posts the `integ-gate` commit
+status: `success` when no changed file matches
+`.github/integ-trigger-set.txt`, `pending` when one does. Each run
+recomputes the status from the PR's current files, except that a result
+posted by the integration run for that SHA (description starting
+"Integration test run") is kept. The integration run replaces `pending`
+with `success` or `failure` on the SHA it checked out. A push gives the
+new head no status until the gate workflow posts one.
 
 To enforce it, mark `integ-gate` as a required status check under
-Settings -> Branches -> branch protection rule for `main`. Fork PRs post no
-status (their token is read-only) and a `workflow_dispatch` run sets none, so
-a required check stays missing on them; merging one needs an admin bypass or
-a same-repo copy of the branch.
+Settings -> Branches -> branch protection rule for `main`.
+
+Fork PRs post no status (the token is read-only) and a `workflow_dispatch`
+run sets none, so a required check stays missing on them. Merging one
+needs an admin bypass or a same-repo copy of the branch.
 
 ## Security note
 
@@ -251,9 +256,9 @@ The workflow reads it via `${{ vars.AWS_INTEG_ROLE_ARN }}`.
 - **Manually**: Actions tab → "Integration test" → Run workflow.
 
 A run started from a PR comments back on that PR with success / failure
-plus a link to the run logs. It also sets the `integ-gate`
-commit status on the PR head SHA the suites ran on (`success`, or `failure`
-when the run failed or was cancelled). A failed weekly run opens or comments on a
+plus a link to the run logs. It also sets the `integ-gate` commit status
+on the PR head SHA the suites ran on (`success`, or `failure` when the run
+failed or was cancelled). A failed weekly run opens or comments on a
 GitHub issue with a link to the run.
 
 Each script's teardown step (`DESTROY=1`) deletes its stack at the end so

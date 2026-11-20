@@ -1,15 +1,11 @@
 name: Integration gate
 
-# Posts the `integ-gate` commit status on each PR head: success when no
-# changed file is in the trigger set (.github/integ-trigger-set.txt), pending
-# when one is. integ-test.yml sets success or failure on the SHA its suites
-# ran on. Mark `integ-gate` as a required status check in branch protection.
-#
-# Fork PRs get a read-only token and post nothing.
+# Posts the `integ-gate` commit status for each PR to main from the trigger
+# set in .github/integ-trigger-set.txt; integ-test.yml posts the run result.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 permissions: {}
 
@@ -19,6 +15,7 @@ concurrency:
 
 jobs:
   classify:
+    if: github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
