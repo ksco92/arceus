@@ -3,7 +3,8 @@
 # End-to-end integration test for IcebergTable's Tier-2 surface:
 #   - every IcebergPartitionTransform exercised on one table.
 #   - multi-field sortOrder rendered in metadata.json.
-#   - nested types (list, struct, map) inserted and queried via Spark.
+#   - nested types (list, struct, map) inserted via Spark and read
+#     through Spark and Athena.
 #   - the field ids Glue stores at CREATE: each table declared in
 #     creation order keeps its declared ids, and a table declared out of
 #     creation order gets the creation-order ids.
@@ -24,6 +25,7 @@
 #     them under its own creds.
 #   - ArceusStack already deployed with the same `PRINCIPAL_ARN`.
 #   - The Spark toolchain installed (scripts/spark/install-spark.sh).
+#   - An Athena workgroup and query result location (scripts/athena.sh).
 #
 # Usage:
 #   scripts/integration-test-surface.sh
@@ -31,6 +33,7 @@
 # Optional env vars:
 #   AWS_REGION — default us-east-1
 #   DESTROY    — set to 1 to teardown at the end
+#   ATHENA_*   — see scripts/athena.sh
 #
 set -euo pipefail
 
@@ -45,6 +48,8 @@ header() { printf '\n=== %s ===\n' "$*"; }
 
 # shellcheck source=scripts/spark/spark-env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
+# shellcheck source=scripts/athena.sh
+source "$(dirname "${BASH_SOURCE[0]}")/athena.sh"
 
 cleanup_table_prefix() {
     local table="$1"
@@ -176,6 +181,20 @@ else
     aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/data/" --recursive --region "$AWS_REGION" | head -5
     exit 1
 fi
+
+header "TEST 4a — Athena reads the rows Spark wrote to transforms_test and nested_test"
+TS="2026-03-15 14:30:00.000000 UTC"
+athena_expect "transforms_test row" "SELECT * FROM transforms_test" \
+    "year_source|month_source|day_source|hour_source|user_id|email|value" \
+    "${TS}|${TS}|${TS}|${TS}|12345|alice@example.com|99"
+athena_expect "nested_test list, struct and map values" \
+    "SELECT id, cardinality(tags) AS tag_count, element_at(tags, 1) AS tag1,
+       profile.first_name, profile.last_name, profile.age,
+       element_at(attrs, 'country') AS country, element_at(attrs, 'tier') AS tier
+     FROM nested_test ORDER BY id" \
+    "id|tag_count|tag1|first_name|last_name|age|country|tier" \
+    "1|3|x|Ada|Lovelace|36|UK|gold" \
+    "2|1|only-one|Grace|Hopper|NULL|US|NULL"
 
 ################################################
 # Test 5 — grantRead via the native construct: assume the role,
