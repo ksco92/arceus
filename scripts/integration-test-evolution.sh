@@ -82,32 +82,25 @@ print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get
     echo "nested-ids $(echo "$meta" | python3 "$FIELD_IDS")"
 }
 
-assert_columns() {
-    local expected="$1"
-    local actual
-    actual=$(table_column_names | grep ^columns | cut -d' ' -f2)
+assert_same() {
+    local label="$1" expected="$2" actual="$3" shown=""
+    [[ "$actual" == *$'\n'* ]] || shown=" ($actual)"
     if [ "$actual" = "$expected" ]; then
-        green "  columns ✓ ($actual)"
+        green "  $label ✓$shown"
     else
-        red   "  columns ✗"
+        red   "  ${4:-$label} ✗"
         red   "    expected: $expected"
         red   "    actual:   $actual"
         return 1
     fi
 }
 
+assert_columns() {
+    assert_same columns "$1" "$(table_column_names | grep ^columns | cut -d' ' -f2)"
+}
+
 assert_partitions() {
-    local expected="$1"
-    local actual
-    actual=$(table_column_names | grep ^partition-spec-fields | cut -d' ' -f2)
-    if [ "$actual" = "$expected" ]; then
-        green "  partitions ✓ ($actual)"
-    else
-        red   "  partitions ✗"
-        red   "    expected: $expected"
-        red   "    actual:   $actual"
-        return 1
-    fi
+    assert_same partitions "$1" "$(table_column_names | grep ^partition-spec-fields | cut -d' ' -f2)"
 }
 
 # Issue #43 regression check. Walks the FULL partition-spec history in
@@ -159,20 +152,8 @@ if m['last-partition-id'] < max_field_id:
     fi
 }
 
-assert_same() {
-    local label="$1" expected="$2" actual="$3"
-    if [ "$actual" = "$expected" ]; then
-        green "  $label ✓"
-    else
-        red   "  $label ✗"
-        red   "    expected: $expected"
-        red   "    actual:   $actual"
-        return 1
-    fi
-}
-
 assert_meta() {
-    assert_same "$1 = $2" "$2" "$(table_column_names | grep "^$1 " | cut -d' ' -f2)"
+    assert_same "$1" "$2" "$(table_column_names | grep "^$1 " | cut -d' ' -f2)"
 }
 
 # The listing of `evolution_test` without the lines whose key matches $1.
@@ -181,33 +162,18 @@ listing_without() {
 }
 
 assert_identifiers() {
-    local expected="$1 $2"
-    local listing actual
+    local listing
     listing=$(table_column_names)
-    actual="$(echo "$listing" | grep ^identifier-field-ids | cut -d' ' -f2) $(echo "$listing" | grep ^pk-marked | cut -d' ' -f2)"
-    if [ "$actual" = "$expected" ]; then
-        green "  identifier-field-ids and (PK) docs ✓ ($actual)"
-    else
-        red   "  identifier-field-ids or (PK) docs ✗"
-        red   "    expected: $expected"
-        red   "    actual:   $actual"
-        return 1
-    fi
+    assert_same "identifier-field-ids and (PK) docs" "$1 $2" \
+        "$(echo "$listing" | grep ^identifier-field-ids | cut -d' ' -f2) $(echo "$listing" | grep ^pk-marked | cut -d' ' -f2)" \
+        "identifier-field-ids or (PK) docs"
 }
 
 assert_nested_ids() {
-    local expected="$1 $2"
-    local listing actual
+    local listing
     listing=$(table_column_names "$NESTED_TABLE")
-    actual="$(echo "$listing" | grep ^nested-ids | cut -d' ' -f2) $(echo "$listing" | grep ^last-column-id | cut -d' ' -f2)"
-    if [ "$actual" = "$expected" ]; then
-        green "  nested ids ✓ ($actual)"
-    else
-        red   "  nested ids ✗"
-        red   "    expected: $expected"
-        red   "    actual:   $actual"
-        return 1
-    fi
+    assert_same "nested ids" "$1 $2" \
+        "$(echo "$listing" | grep ^nested-ids | cut -d' ' -f2) $(echo "$listing" | grep ^last-column-id | cut -d' ' -f2)"
 }
 
 ROWS="SELECT * FROM ${TABLE} ORDER BY customer_id"
@@ -220,9 +186,13 @@ ROW_11="11|b@example.com|2026-01-02 09:00:00.000000 UTC"
 ROW_12="12|c@example.com|2026-01-03 09:00:00.000000 UTC"
 ROW_13="13|d@example.com|2026-02-01 09:00:00.000000 UTC"
 ROW_14="14|e@example.com|2026-03-05 09:00:00.000000 UTC"
-ROLLBACK_REASON="Cannot wait on specified Handle URL - handle must originate from within the same stack"
 ROW_100="100|t1|t2|v1|v2|L1|C1"
 ROW_101="101|u1|u2|w1|w2|M1|D1"
+
+rows_10_to_14() {
+    athena_expect "$1" "$ROWS" "customer_id|contact_email|signed_up_at" \
+        "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+}
 
 deploy_step() {
     local step="$1"
@@ -352,8 +322,7 @@ header "SPARK step 5 (INSERT under the month spec, rows queryable)"
 spark_submit "$VERIFY_PROGRAM" --phase 5
 
 header "ATHENA step 5"
-athena_expect "rows under the month spec" "$ROWS" "customer_id|contact_email|signed_up_at" \
-    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+rows_10_to_14 "rows under the month spec"
 
 ################################################
 ################################################
@@ -367,8 +336,7 @@ assert_partitions "signed_up_at_month"
 assert_identifiers "2" "contact_email"
 
 header "ATHENA step 6"
-athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" \
-    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+rows_10_to_14 "rows unchanged"
 athena_expect "(PK) comment moved to contact_email" "$COMMENTS" \
     "column_name|comment" "customer_id|Primary key." "contact_email|(PK) " "signed_up_at|NULL"
 
@@ -419,8 +387,7 @@ assert_meta commit-retries 5
 assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without commit-retries)"
 
 header "ATHENA step 9"
-athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" \
-    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+rows_10_to_14 "rows unchanged"
 
 ################################################
 ################################################
@@ -437,8 +404,7 @@ assert_meta sort-orders "1:identity(1)/asc/nulls-last;2:identity(3)/desc/nulls-f
 assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without "default-sort-order-id|sort-orders")"
 
 header "ATHENA step 10"
-athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" \
-    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+rows_10_to_14 "rows unchanged"
 
 ################################################
 ################################################
@@ -448,20 +414,16 @@ athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" 
 SCHEMAS_BEFORE=$(table_column_names | grep ^schemas-count | cut -d' ' -f2)
 BEFORE=$(listing_without "max-schema-id|last-column-id|schemas-count")
 
-header "STEP 11 — cdk deploy (fails by design)"
-if DEPLOY_OUTPUT=$(npx cdk deploy "$STACK" \
-    --require-approval=never \
-    --region "$AWS_REGION" \
-    --context "evolutionStep=11" 2>&1); then
+if deploy_step 11; then
     red "  step 11 deploy succeeded; expected a failure and a rollback"
     exit 1
 fi
-echo "$DEPLOY_OUTPUT" | tail -8
 
 header "VERIFY step 11 (rolled back)"
 assert_same "stack status" UPDATE_ROLLBACK_COMPLETE "$(aws cloudformation describe-stacks \
     --stack-name "$STACK" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text)"
-assert_same "only RollbackTrigger failed" "$(printf 'RollbackTrigger\t%s' "$ROLLBACK_REASON")" \
+assert_same "only RollbackTrigger failed" "$(printf 'RollbackTrigger\t%s' \
+    'Cannot wait on specified Handle URL - handle must originate from within the same stack')" \
     "$(aws cloudformation describe-stack-events --stack-name "$STACK" --region "$AWS_REGION" \
         --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[LogicalResourceId,ResourceStatusReason]" \
         --output text)"
@@ -472,8 +434,7 @@ assert_meta schemas-count $((SCHEMAS_BEFORE + 1))
 ROLLED_BACK_SCHEMA_ID=$(table_column_names | grep ^max-schema-id | cut -d' ' -f2)
 
 header "ATHENA step 11"
-athena_expect "rows unchanged after the rollback" "$ROWS" "customer_id|contact_email|signed_up_at" \
-    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+rows_10_to_14 "rows unchanged after the rollback"
 
 ################################################
 ################################################
