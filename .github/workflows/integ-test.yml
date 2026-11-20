@@ -11,6 +11,9 @@ name: Integration test
 #   - Manual dispatch from the Actions tab.
 #   - Weekly schedule, against `main`.
 #
+# A run started from a PR sets the `integ-gate` commit status on the PR head
+# SHA the suites ran on (see integ-gate.yml).
+#
 # Not on every push: real AWS resources, real cost, and about 20 min with
 # the Spark downloads cached and up to about 45 min without.
 #
@@ -39,10 +42,7 @@ concurrency:
   group: integ-test-stacks
   cancel-in-progress: false
 
-permissions:
-  id-token: write
-  contents: read
-  pull-requests: write
+permissions: {}
 
 jobs:
   gate:
@@ -65,9 +65,13 @@ jobs:
     #    `run-integ-test`.
     runs-on: ubuntu-latest
     timeout-minutes: 1
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
       pr_number: ${{ steps.decide.outputs.pr_number }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
     steps:
       - id: decide
         env:
@@ -79,8 +83,10 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           IS_PR: ${{ github.event.issue.pull_request != null }}
           PR_REPO_FULL: ${{ github.event.pull_request.head.repo.full_name }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REPO_FULL: ${{ github.repository }}
         run: |
+          head_sha="$EVENT_HEAD_SHA"
           trimmed_comment="$(echo "$COMMENT_BODY" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
           if [ "$EVENT" = "schedule" ]; then
             echo "::notice::weekly schedule — running."
@@ -102,9 +108,11 @@ jobs:
             && { [ "$COMMENT_ASSOC" = "OWNER" ] || [ "$COMMENT_ASSOC" = "MEMBER" ] || [ "$COMMENT_ASSOC" = "COLLABORATOR" ]; }; then
             # `github.event.pull_request` is unpopulated on issue_comment
             # events, so `PR_REPO_FULL` is empty here. Fetch the head-repo
-            # full name from the API and gate on same-repo to close the
-            # pwn-request hole the label branch already closes above.
-            pr_repo=$(gh api "repos/$REPO_FULL/pulls/$PR_NUMBER" --jq .head.repo.full_name)
+            # full name and head SHA from the API and gate on same-repo to
+            # close the pwn-request hole the label branch already closes
+            # above. The SHA is read once here; every later step uses it
+            # rather than the movable PR ref.
+            read -r pr_repo head_sha < <(gh api "repos/$REPO_FULL/pulls/$PR_NUMBER" --jq '"\(.head.repo.full_name) \(.head.sha)"')
             if [ "$pr_repo" = "$REPO_FULL" ]; then
               echo "::notice::collaborator comment trigger from same-repo PR — running."
               echo "run=true" >> "$GITHUB_OUTPUT"
@@ -119,12 +127,17 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     env:
       AWS_REGION: us-east-1
       PRINCIPAL_ARN: ${{ vars.AWS_INTEG_ROLE_ARN }}
@@ -134,8 +147,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # For PRs triggered by label/comment, GITHUB_REF points at
-          # `main`; check out the PR head explicitly.
-          ref: ${{ github.event.pull_request.head.sha || github.event.issue.pull_request.html_url && format('refs/pull/{0}/head', needs.gate.outputs.pr_number) || github.ref }}
+          # `main`; check out the head SHA the gate resolved.
+          ref: ${{ needs.gate.outputs.head_sha || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -184,11 +197,14 @@ jobs:
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
         uses: actions/github-script@v7
+        env:
+          JOB_STATUS: ${{ job.status }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
         with:
           script: |
             const fs = require('fs');
-            const status = '${{ job.status }}';
-            const pr = ${{ needs.gate.outputs.pr_number }};
+            const status = process.env.JOB_STATUS;
+            const pr = Number(process.env.PR_NUMBER);
             const run = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             let tail = '';
             try {
@@ -206,6 +222,32 @@ jobs:
               issue_number: pr,
               body: `Integration test: **${status}**. [Run log](${run}).${tailBlock}`,
             });
+
+  report:
+    needs: [gate, deploy]
+    if: always() && needs.gate.outputs.run == 'true' && needs.gate.outputs.head_sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            state=success
+            description="Integration test passed on this commit"
+          else
+            state=failure
+            description="Integration test $DEPLOY_RESULT on this commit"
+          fi
+          gh api "repos/$GH_REPO/statuses/$HEAD_SHA" \
+            -f state="$state" -f context=integ-gate \
+            -f description="$description" -f target_url="$RUN_URL"
 
   notify-failure:
     needs: deploy
