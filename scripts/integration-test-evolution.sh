@@ -3,7 +3,7 @@
 # End-to-end integration test for IcebergTable schema + partition
 # evolution. Drives the `IcebergEvolutionStack` through eight real
 # `cdk deploy`s and verifies the resulting Glue / Iceberg metadata
-# after each.
+# after each, then the rows and column shape through Spark and Athena.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -19,6 +19,7 @@
 #     the stack registers it as the LF admin / table grantee, and a
 #     mismatch makes the verify steps fail.
 #   - The Spark toolchain installed (scripts/spark/install-spark.sh).
+#   - An Athena workgroup and query result location (scripts/athena.sh).
 #
 # Usage:
 #   scripts/integration-test-evolution.sh
@@ -26,6 +27,7 @@
 # Optional env vars:
 #   AWS_REGION — default us-east-1
 #   DESTROY    — set to 1 to teardown at the end
+#   ATHENA_*   — see scripts/athena.sh
 #
 set -euo pipefail
 
@@ -37,6 +39,8 @@ STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
+# shellcheck source=scripts/athena.sh
+source "$(dirname "${BASH_SOURCE[0]}")/athena.sh"
 VERIFY_PROGRAM="$(dirname "${BASH_SOURCE[0]}")/spark/verify_evolution.py"
 FIELD_IDS="$(dirname "${BASH_SOURCE[0]}")/field_ids.py"
 
@@ -177,6 +181,19 @@ assert_nested_ids() {
     fi
 }
 
+ROWS="SELECT * FROM ${TABLE} ORDER BY customer_id"
+COMMENTS="SELECT column_name, comment FROM information_schema.columns
+  WHERE table_schema = '${DATABASE}' AND table_name = '${TABLE}' ORDER BY ordinal_position"
+NESTED_ROWS="SELECT id, element_at(tags, 1) AS tag1, element_at(tags, 2) AS tag2,
+  element_at(attrs, 'k1') AS k1, element_at(attrs, 'k2') AS k2, addr.line1 AS line1, addr.city AS city"
+ROW_10="10|a@example.com|2026-01-01 09:00:00.000000 UTC"
+ROW_11="11|b@example.com|2026-01-02 09:00:00.000000 UTC"
+ROW_12="12|c@example.com|2026-01-03 09:00:00.000000 UTC"
+ROW_13="13|d@example.com|2026-02-01 09:00:00.000000 UTC"
+ROW_14="14|e@example.com|2026-03-05 09:00:00.000000 UTC"
+ROW_100="100|t1|t2|v1|v2|L1|C1"
+ROW_101="101|u1|u2|w1|w2|M1|D1"
+
 deploy_step() {
     local step="$1"
     header "STEP $step — cdk deploy"
@@ -217,6 +234,13 @@ assert_nested_ids "${BASE_IDS},addr.city:9" "9"
 header "SPARK step 1 (INSERT seed rows, including the nested row)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
 
+header "ATHENA step 1"
+athena_expect "seed rows" "$ROWS" "customer_id|email|signed_up_at" "$ROW_10" "$ROW_11" "$ROW_12"
+athena_expect "(PK) comment on customer_id" "$COMMENTS" \
+    "column_name|comment" "customer_id|(PK) Primary key." "email|NULL" "signed_up_at|NULL"
+athena_expect "nested seed row" "${NESTED_ROWS} FROM ${NESTED_TABLE} ORDER BY id" \
+    "id|tag1|tag2|k1|k2|line1|city" "$ROW_100"
+
 ################################################
 ################################################
 # Step 2: ADD column `region` (id 4). Partition spec unchanged.
@@ -229,6 +253,10 @@ assert_partitions "signed_up_at_day"
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
+
+header "ATHENA step 2"
+athena_expect "old rows read region NULL" "$ROWS" "customer_id|email|signed_up_at|region" \
+    "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
 
 ################################################
 ################################################
@@ -243,6 +271,10 @@ assert_partitions "signed_up_at_day,customer_id_bucket"
 
 header "SPARK step 3 (rename preserved data)"
 spark_submit "$VERIFY_PROGRAM" --phase 3
+
+header "ATHENA step 3"
+athena_expect "renamed column keeps its values" "$ROWS" "customer_id|contact_email|signed_up_at|region" \
+    "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
 
 ################################################
 ################################################
@@ -268,6 +300,10 @@ fi
 header "SPARK step 4 (rows queryable after drop)"
 spark_submit "$VERIFY_PROGRAM" --phase 4
 
+header "ATHENA step 4"
+athena_expect "rows without the dropped column" "$ROWS" "customer_id|contact_email|signed_up_at" \
+    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13"
+
 ################################################
 ################################################
 # Step 5: CHANGE the partition transform on signed_up_at from day to
@@ -285,6 +321,10 @@ assert_partition_history
 header "SPARK step 5 (INSERT under the month spec, rows queryable)"
 spark_submit "$VERIFY_PROGRAM" --phase 5
 
+header "ATHENA step 5"
+athena_expect "rows under the month spec" "$ROWS" "customer_id|contact_email|signed_up_at" \
+    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+
 ################################################
 ################################################
 # Step 6: CHANGE identifierFieldNames from customer_id to contact_email only.
@@ -295,6 +335,12 @@ header "VERIFY step 6 (CHANGE identifier fields only)"
 assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
 assert_partitions "signed_up_at_month"
 assert_identifiers "2" "contact_email"
+
+header "ATHENA step 6"
+athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" \
+    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+athena_expect "(PK) comment moved to contact_email" "$COMMENTS" \
+    "column_name|comment" "customer_id|Primary key." "contact_email|(PK) " "signed_up_at|NULL"
 
 ################################################
 ################################################
@@ -308,6 +354,10 @@ assert_nested_ids "${BASE_IDS},addr.city:9,note:10" "10"
 header "SPARK step 7 (old nested row readable by name, INSERT a new row)"
 spark_submit "$VERIFY_PROGRAM" --phase 7
 
+header "ATHENA step 7"
+athena_expect "nested rows with note" "${NESTED_ROWS}, note FROM ${NESTED_TABLE} ORDER BY id" \
+    "id|tag1|tag2|k1|k2|line1|city|note" "${ROW_100}|NULL" "${ROW_101}|n101"
+
 ################################################
 ################################################
 # Step 8: ADD struct field `addr.zip` (id 11) between line1 and city.
@@ -319,6 +369,11 @@ assert_nested_ids "${BASE_IDS},addr.zip:11,addr.city:9,note:10" "11"
 
 header "SPARK step 8 (old nested rows readable by name, INSERT a row with zip)"
 spark_submit "$VERIFY_PROGRAM" --phase 8
+
+header "ATHENA step 8"
+athena_expect "nested rows with addr.zip" "${NESTED_ROWS}, note, addr.zip AS zip FROM ${NESTED_TABLE} ORDER BY id" \
+    "id|tag1|tag2|k1|k2|line1|city|note|zip" \
+    "${ROW_100}|NULL|NULL" "${ROW_101}|n101|NULL" "102|x1|x2|y1|y2|N1|E1|n102|Z102"
 
 ################################################
 ################################################

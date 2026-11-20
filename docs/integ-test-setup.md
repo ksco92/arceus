@@ -3,7 +3,8 @@
 `.github/workflows/integ-test.yml` drives the Spark smoke check and the
 evolution, DML, surface, v3-evolution, and v3 DML scripts under `scripts/` against real AWS —
 real `cdk deploy`s through the `IcebergTable` construct, then Spark
-queries. The workflow runs when:
+queries, and Athena queries against the v2 tables of the evolution, DML,
+and surface scripts. The workflow runs when:
 
 - a PR is labeled `run-integ-test` **and the PR's head branch is on the same repo** (fork PRs are refused at the workflow's gate; use `workflow_dispatch` after manual review of the diff), OR
 - a repo collaborator comments `/run-integ-test` on a PR, OR
@@ -16,7 +17,7 @@ The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scr
 
 ## Prerequisites
 
-The integ-test workflow assumes two things already exist in the target AWS account:
+The integ-test workflow assumes the following already exist in the target AWS account:
 
 1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`.
 
@@ -56,9 +57,17 @@ The integ-test workflow assumes two things already exist in the target AWS accou
      npx cdk deploy ArceusStack
    ```
 
-2. **The account is `cdk bootstrap`ped** (covered by the bootstrap command above). The inline IAM policy below references the five `cdk-hnb659fds-*` roles that bootstrap creates; without them, `iam:PassRole` has nothing to point at.
+2. **An Athena workgroup on engine version 3 and a query result location.**
+   The evolution, DML and surface scripts run their Athena queries
+   through `scripts/athena.sh`, whose header lists the env vars that
+   select the workgroup and the result location and their defaults.
+   A workgroup that enforces its own settings uses its own result
+   location. The IAM actions Athena needs are in the Athena row of the
+   permissions table below.
 
-3. **The OIDC role is a Lake Formation data lake admin.** `ArceusStack` enables Lake Formation on the data lake, and Lake Formation gates `glue:GetTable` independently of IAM. The workflow's evolution verify-step Spark calls need `Describe` on the table, which the OIDC role only gets implicitly by being a data lake admin. Without it, the very first verify step after the first `cdk deploy` fails with `AccessDeniedException ... Required Describe on evolution_test`. Add the role once after creating it:
+3. **The account is `cdk bootstrap`ped** (covered by the bootstrap command above). The inline IAM policy below references the five `cdk-hnb659fds-*` roles that bootstrap creates; without them, `iam:PassRole` has nothing to point at.
+
+4. **The OIDC role is a Lake Formation data lake admin.** `ArceusStack` enables Lake Formation on the data lake, and Lake Formation gates `glue:GetTable` independently of IAM. The workflow's evolution verify-step Spark calls need `Describe` on the table, which the OIDC role only gets implicitly by being a data lake admin. Without it, the very first verify step after the first `cdk deploy` fails with `AccessDeniedException ... Required Describe on evolution_test`. Add the role once after creating it:
 
    ```bash
    aws lakeformation get-data-lake-settings --region us-east-1 > /tmp/lf.json
@@ -133,9 +142,10 @@ The integration test does the following AWS actions:
 | --- | --- |
 | CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
-| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`). |
+| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`; Athena writes query results to the result location). |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
-| Lake Formation | Read settings + grant the test table to the developer principal. |
+| Lake Formation | Read settings + grant the test table to the developer principal. Athena reads the v2 test tables with credentials Lake Formation vends against those grants (`lakeformation:GetDataAccess`). |
+| Athena | `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, and `athena:StopQueryExecution` in the workgroup the scripts use. Athena writes query results to the result location with the role's own S3 and KMS permissions, so the role needs `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, and `s3:GetBucketLocation` on that location plus `kms:GenerateDataKey` and `kms:Decrypt` on the bucket's key. |
 | KMS | Encrypt / decrypt the bucket KMS keys, including the `S3FileIO` writes from Spark. |
 | SSM | Read `/cdk-bootstrap/hnb659fds/version` parameter. |
 | STS | `GetCallerIdentity` for the script. |
@@ -183,7 +193,7 @@ aws iam put-role-policy \
 
 If you'd rather not use `PowerUserAccess` (it's wide), the alternative
 is a hand-written policy granting `cloudformation:*`, `s3:*`,
-`glue:*`, `lakeformation:*`, `kms:*`, `ssm:GetParameter`,
+`glue:*`, `lakeformation:*`, `athena:*`, `kms:*`, `ssm:GetParameter`,
 `sts:GetCallerIdentity`, and `iam:PassRole` on the bootstrap roles.
 Same blast radius, more typing — useful only if you also want to
 scope each `Resource:` line. For a single-purpose integ-test role in
