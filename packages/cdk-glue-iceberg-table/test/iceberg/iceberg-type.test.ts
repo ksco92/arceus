@@ -476,7 +476,6 @@ describe('IcebergType — inputs are copied at construction', () => {
                 id: 2,
                 name: 'a',
                 type: IcebergType.STRING,
-                required: false,
             },
         ]);
     });

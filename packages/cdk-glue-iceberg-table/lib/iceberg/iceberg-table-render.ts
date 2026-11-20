@@ -37,8 +37,7 @@ const IDENTIFIER_DOC_PREFIX = '(PK) ';
 
 /**
  * A copy of `props` built from one read of each prop and each element of the caller's collections;
- * the construct validates and renders from the copy only. `mergeProperties` copies
- * `tableProperties` in one pass.
+ * the construct validates and renders from the copy only.
  *
  * @internal
  */

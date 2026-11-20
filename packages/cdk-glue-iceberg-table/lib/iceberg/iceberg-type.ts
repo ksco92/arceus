@@ -628,7 +628,7 @@ export function snapshotType(type: IcebergType): IcebergType {
  *
  * @internal
  */
-export function snapshotField<T extends IcebergStructFieldDefinition>(field: T): IcebergStructFieldDefinition {
+export function snapshotField(field: IcebergStructFieldDefinition): IcebergStructFieldDefinition {
     const {
         id,
         name,
@@ -643,7 +643,7 @@ export function snapshotField<T extends IcebergStructFieldDefinition>(field: T):
         id,
         name,
         type: snapshotType(type),
-        required: required ?? false,
+        required,
         doc,
     };
 }
