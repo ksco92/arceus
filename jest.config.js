@@ -28,6 +28,7 @@ module.exports = {
     collectCoverage: true,
     collectCoverageFrom: [
         'lib/**/*.ts',
+        '.github/scripts/**/*.js',
     ],
     coverageDirectory: 'build/coverage',
     coverageReporters: [

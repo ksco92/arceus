@@ -55,26 +55,12 @@ contributor is the sole credited author.
 PRs that change any file consumed by the workflow's `cdk deploy` must
 have the **Integration test** workflow
 (`.github/workflows/integ-test.yml`) run green on the PR head before
-merging. The trigger set is:
-
-- any construct source under
-  `packages/cdk-glue-iceberg-table/lib/iceberg/` (the published
-  construct the demo stacks deploy),
-- any demo stack under `lib/` (`lib/arceus-stack.ts`,
-  `lib/iceberg-evolution-stack.ts`, `lib/iceberg-dml-stack.ts`,
-  `lib/iceberg-surface-stack.ts`, `lib/iceberg-spark-smoke-stack.ts`,
-  `lib/iceberg-v3-evolution-stack.ts`, `lib/iceberg-v3-dml-stack.ts`),
-- `bin/arceus.ts` (`cdk.json`'s `app:` entry — every `cdk` invocation
-  parses it),
-- `cdk.json` (feature flags + the `app:` declaration),
-- the integration scripts under `scripts/`
-  (`integration-test-evolution.sh`, `integration-test-dml.sh`,
-  `integration-test-surface.sh`, `integration-test-spark-smoke.sh`,
-  `integration-test-v3-evolution.sh`, `integration-test-v3-dml.sh`,
-  `field_ids.py`, `athena.sh`),
-- the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
-  `spark-env.sh`, `smoke.py`, `verify_dml.py`, `verify_evolution.py`,
-  `verify_surface.py`, `verify_v3_dml.py`).
+merging. The trigger set is the path list in
+`.github/integ-trigger-set.txt`, by directory and name prefix, so a new
+file under a listed directory is covered without an edit; the gate's
+own files are in it. A change to
+`packages/cdk-glue-iceberg-table/package.json` is outside the set only when
+its sole edited line is `"version"`; any other change to it is in the set.
 
 The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
@@ -87,8 +73,9 @@ Trigger it on a same-repo PR by either:
 - commenting `/run-integ-test` on the PR (collaborator-only).
 
 It comments back on the PR with success / failure plus a link to the
-run log. Reviewers **must** refuse to merge a trigger-set PR without
-seeing that success comment, even if all unit tests are green.
+run log. Reviewers **must** refuse to merge a trigger-set PR unless the
+`integ-gate` status on its head is `success`, even if all unit tests are
+green.
 
 It also runs weekly on `main` and opens or comments on an issue titled
 `Weekly integration run failed` when that run fails.
@@ -110,12 +97,15 @@ Exemption list (no integ-test required):
 
 When in doubt, run it.
 
-This gate is **human-enforced**: GitHub does not require it as a
-status check for the protected branch, so a trigger-set PR can be
-merged with no integ-test ever fired. Reviewers must hold the line.
-Until / unless the gate is wired into `Settings → Branches →
-required status checks`, the written policy is the only thing
-stopping a slip.
+The `integ-gate` commit status reports the gate on every PR to
+`main`. The **Integration gate** workflow
+(`.github/workflows/integ-gate.yml`) matches the PR's changed files
+against the trigger set and posts `success` when none is in it and
+`pending` when one is. A green Integration test run posts `success` on
+the commit it ran on; a failed or cancelled one posts `failure`. A new
+commit has no status until the workflow posts one. The one manual step:
+the owner marks the status check `integ-gate` as required in branch
+protection for `main`.
 
 `e2e-consumer/` consumes the **published** npm package, so every
 version bump in `packages/cdk-glue-iceberg-table/package.json` should

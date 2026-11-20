@@ -1,0 +1,22 @@
+# Paths whose change requires a green Integration test run at the PR head.
+# One pattern per line. A pattern ending in `/` or `*` matches every path
+# starting with it (the `*` is dropped); any other pattern is an exact path.
+# `unless-version-only` exempts a change whose only edited lines are the
+# `"version"` field.
+# Read by .github/workflows/integ-gate.yml.
+
+# The published construct the demo stacks deploy.
+packages/cdk-glue-iceberg-table/lib/iceberg/
+packages/cdk-glue-iceberg-table/package.json unless-version-only
+# Demo stacks.
+lib/
+# The `app:` entry of cdk.json, parsed by every `cdk` invocation.
+bin/arceus.ts
+# Feature flags and the `app:` declaration.
+cdk.json
+# Every file under scripts/ is run or sourced by the integration job.
+scripts/
+# The gate's own rules and code.
+.github/integ-trigger-set.txt
+.github/scripts/
+.github/workflows/integ-gate.yml
