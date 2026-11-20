@@ -293,6 +293,7 @@ function currentRecord(tableName: string, next: IcebergTableSchema): IcebergTabl
         fields.push({
             id,
             path: fieldPath,
+            /// A primitive type renders without claiming ids.
             type: NESTED_KINDS.has(type.kind) ? type.kind : type._render(fieldPath, () => 0),
             required,
             dropped: false,
