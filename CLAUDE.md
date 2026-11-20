@@ -87,6 +87,9 @@ It comments back on the PR with success / failure plus a link to the
 run log. Reviewers **must** refuse to merge a trigger-set PR without
 seeing that success comment, even if all unit tests are green.
 
+It also runs weekly on `main` and opens or comments on an issue titled
+`Weekly integration run failed` when that run fails.
+
 Exemption list (no integ-test required):
 
 - `README.md` and any other top-level doc.
