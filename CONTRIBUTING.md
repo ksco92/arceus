@@ -251,8 +251,8 @@ inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`.
 
 The stack owns two tables. `evolution_test` changes in steps 1 to 6 and
-9 to 12, and is created with a write order on `customer_id`. `nested_evolution_test` is created in step 1
-and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
+9 to 12. `nested_evolution_test` is created in step 1 and loaded with
+one row; steps 7 and 8 evolve it. Its baseline columns
 are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
 value id 7) and `addr(4)` (struct: `line1(8)`, `city(9)`). The table
 below describes `evolution_test` except where a row names the nested
