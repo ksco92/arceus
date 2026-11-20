@@ -14,17 +14,13 @@ import {
     IConstruct,
 } from 'constructs';
 import {
-    ownArray,
-    snapshotField,
-} from './iceberg-type';
-import {
     IcebergColumn,
     IcebergPartitionField,
 } from './iceberg-table';
 import {
     renderPartitionSpec,
     renderSchema,
-    snapshotPartitionField,
+    snapshotSchema,
     validatePartitionSpec,
     walkFields,
 } from './iceberg-table-render';
@@ -137,7 +133,14 @@ export class IcebergSchemaHistory {
         previous: IcebergTableHistory,
         next: IcebergTableSchema,
     ): IcebergSchemaViolation[] {
-        return findViolations(previous, currentRecord(previous.tableName, next));
+        const [
+            record,
+        ] = ownHistory({
+            tables: [
+                previous,
+            ],
+        }).tables;
+        return findViolations(record, currentRecord(record.tableName, next));
     }
 
     /**
@@ -152,7 +155,7 @@ export class IcebergSchemaHistory {
         tableName: string,
         next: IcebergTableSchema,
     ): IcebergSchemaHistoryFile {
-        return appendRecord(history, currentRecord(tableName, next));
+        return appendRecord(ownHistory(history), currentRecord(tableName, next));
     }
 
     /**
@@ -304,13 +307,10 @@ function currentRecord(tableName: string, next: IcebergTableSchema): IcebergTabl
     const {
         columns, partitionSpec,
     } = next;
-    const ownColumns = ownArray('columns', columns).map(snapshotField);
-    const ownSpec = partitionSpec === undefined
-        ? undefined
-        : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField);
-    const rendered = renderSchema(ownColumns, undefined);
-    validatePartitionSpec(ownSpec, rendered.columnByName);
-    return recordOf(tableName, ownColumns, renderPartitionSpec(ownSpec, rendered.columnByName));
+    const own = snapshotSchema(columns, partitionSpec);
+    const rendered = renderSchema(own.columns, undefined);
+    validatePartitionSpec(own.partitionSpec, rendered.columnByName);
+    return recordOf(tableName, own.columns, renderPartitionSpec(own.partitionSpec, rendered.columnByName));
 }
 
 function recordOf(
@@ -605,6 +605,10 @@ function checkUnique(history: IcebergSchemaHistoryFile, fail: Fail): void {
         unique(table.partitionFields.map((field) => field.fieldId), `table '${table.tableName}' partition field id`);
     }
     unique(history.tables.map((table) => table.tableName), 'table name');
+}
+
+function ownHistory(history: IcebergSchemaHistoryFile): IcebergSchemaHistoryFile {
+    return parseHistory(JSON.stringify(history), 'schema history');
 }
 
 function parseHistory(json: string, source: string): IcebergSchemaHistoryFile {

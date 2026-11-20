@@ -38,8 +38,7 @@ import {
 /** Doc prefix that marks identifier columns, so an identifier change is a field change. */
 const IDENTIFIER_DOC_PREFIX = '(PK) ';
 
-/** @internal */
-export function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionField {
+function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionField {
     const {
         sourceColumn,
         transform,
@@ -53,6 +52,19 @@ export function snapshotPartitionField(field: IcebergPartitionField): IcebergPar
             optional: true,
         }),
         fieldId,
+    };
+}
+
+/** @internal */
+export function snapshotSchema(
+    columns: IcebergColumn[],
+    partitionSpec: IcebergPartitionField[] | undefined,
+): { columns: IcebergColumn[]; partitionSpec: IcebergPartitionField[] | undefined } {
+    return {
+        columns: ownArray('columns', columns).map(snapshotField),
+        partitionSpec: partitionSpec === undefined
+            ? undefined
+            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
     };
 }
 
@@ -116,10 +128,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         schemaHistoryFile: primitive('schemaHistoryFile', schemaHistoryFile, 'string', {
             optional: true,
         }),
-        columns: ownArray('columns', columns).map(snapshotField),
-        partitionSpec: partitionSpec === undefined
-            ? undefined
-            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
+        ...snapshotSchema(columns, partitionSpec),
         sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map(snapshotSortField),
         identifierFieldNames: identifierFieldNames === undefined
             ? undefined

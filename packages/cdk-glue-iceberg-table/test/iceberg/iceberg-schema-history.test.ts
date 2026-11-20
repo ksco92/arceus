@@ -8,10 +8,14 @@ import {
     Stack,
 } from 'aws-cdk-lib';
 import {
+    Template,
+} from 'aws-cdk-lib/assertions';
+import {
     Database,
 } from 'aws-cdk-lib/aws-glue';
 import {
     IcebergColumn,
+    IcebergFieldHistory,
     IcebergFormatVersion,
     IcebergPartitionField,
     IcebergPartitionTransform,
@@ -639,6 +643,88 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
         ]);
     });
 
+    it('validates the column ids it read once', () => {
+        expect(() => IcebergSchemaHistory.validateSchemaEvolution(recorded({
+            columns: [
+                column('a', 1),
+                column('b', 2),
+            ],
+        }), {
+            columns: [
+                withGetter(column('a', 1), 'id', 1, 2),
+                column('b', 2),
+            ],
+        })).not.toThrow();
+    });
+
+    it('validates the partition fieldId it read once', () => {
+        expect(() => IcebergSchemaHistory.validateSchemaEvolution(recorded(NESTED), {
+            columns: NESTED.columns,
+            partitionSpec: [
+                withGetter(partition('placed_at', IcebergPartitionTransform.DAY, 1000), 'fieldId', 1000, 5),
+            ],
+        })).not.toThrow();
+    });
+
+    it('compares against the recorded fields it read once', () => {
+        const previous = withGetter({
+            tableName: 't',
+            fields: [],
+            partitionFields: [],
+        }, 'fields', [], [
+            {
+                id: 5,
+                path: 'c',
+                type: 'string',
+                required: false,
+                dropped: false,
+            },
+        ]);
+        expect(kinds(previous, {
+            columns: [
+                column('c', 2),
+            ],
+        })).toEqual([]);
+    });
+
+    it.each([
+        [
+            'a string id',
+            {
+                id: '1',
+                path: 'a',
+                type: 'string',
+                required: false,
+                dropped: false,
+            },
+            'tables[0].fields[0].id must be an integer',
+        ],
+        [
+            'an unknown key',
+            {
+                id: 1,
+                path: 'a',
+                type: 'string',
+                required: false,
+                dropped: false,
+                extra: true,
+            },
+            "tables[0].fields[0] has unknown key 'extra'",
+        ],
+    ])('rejects a recorded field with %s', (_, field, problem) => {
+        expect(() => IcebergSchemaHistory.validateSchemaEvolution({
+            tableName: 't',
+            fields: [
+                field as unknown as IcebergFieldHistory,
+            ],
+            partitionFields: [],
+        }, {
+            columns: [
+                column('a', 1),
+            ],
+        })).toThrow(`schema history is not a schema history file: ${problem}`);
+    });
+
     it('compares the column type it read once', () => {
         expect(kinds(recorded({
             columns: [
@@ -824,6 +910,24 @@ describe('IcebergSchemaHistory.append and toJson', () => {
             'a',
             'b',
         ]);
+    });
+
+    it('records the column type it read once', () => {
+        const history = IcebergSchemaHistory.append(emptyHistory(), 'orders', {
+            columns: [
+                withGetter(column('c', 1), 'type', IcebergType.LONG, IcebergType.STRING),
+            ],
+        });
+        expect(history.tables[0].fields[0].type).toBe('long');
+    });
+
+    it('rejects a malformed history before appending', () => {
+        expect(() => IcebergSchemaHistory.append({
+            tables: [],
+            extra: 1,
+        } as unknown as IcebergSchemaHistoryFile, 'orders', DEFINITION)).toThrow(
+            "schema history is not a schema history file: the top level has unknown key 'extra'",
+        );
     });
 
     it('refuses to record an unsafe change', () => {
@@ -1073,6 +1177,35 @@ describe('IcebergTable schemaHistoryFile', () => {
             ...V1,
         };
     }
+
+    it('records the column type the template renders when the type accessor changes later', () => {
+        const file = writeHistory('h.json', emptyHistory());
+        const stack = app([
+            {
+                tableName: 'orders',
+                file,
+                schema: {
+                    columns: [
+                        withGetter(column('c', 1), 'type', IcebergType.LONG, IcebergType.STRING),
+                    ],
+                },
+            },
+        ]).node.findChild('TestStack') as Stack;
+        const metadata = stack.node.findChild('orders').node.metadata.find(
+            (entry) => entry.type === 'cdk-glue-iceberg-table:schema-history',
+        );
+        const rendered = Template.fromStack(stack).findResources('AWS::Glue::Table');
+        const [
+            resource,
+        ] = Object.values(rendered);
+        expect([
+            (metadata?.data as { table: IcebergTableHistory }).table.fields[0].type,
+            resource.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields[0].Type,
+        ]).toEqual([
+            'long',
+            'long',
+        ]);
+    });
 
     it('checks against the schemaHistoryFile it read once', () => {
         const unsafe = writeHistory('unsafe.json', IcebergSchemaHistory.append(emptyHistory(), 'orders', V2));
