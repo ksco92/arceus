@@ -17,7 +17,7 @@ The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scr
 
 ## Prerequisites
 
-The integ-test workflow assumes two things already exist in the target AWS account:
+The integ-test workflow assumes the following already exist in the target AWS account:
 
 1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`.
 
@@ -57,15 +57,13 @@ The integ-test workflow assumes two things already exist in the target AWS accou
      npx cdk deploy ArceusStack
    ```
 
-2. **Athena can run queries in the workgroup the scripts use.**
-   `scripts/athena.sh` runs every Athena query in workgroup
-   `ATHENA_WORKGROUP` (default `primary`, set in the workflow's `env:`)
-   with its result location set to `ATHENA_OUTPUT_LOCATION` (default
-   `s3://data-lake-bucket-<ACCOUNT_ID>/athena-results/`, a prefix in the
-   lake bucket `ArceusStack` owns, outside every table location). A
-   workgroup that enforces its own settings uses its own result
-   location instead. The workgroup's engine must be Athena engine
-   version 3.
+2. **An Athena workgroup on engine version 3 and a query result location.**
+   The evolution, DML and surface scripts run their Athena queries
+   through `scripts/athena.sh`, whose header lists the env vars that
+   select the workgroup and the result location and their defaults.
+   A workgroup that enforces its own settings uses its own result
+   location. The IAM actions Athena needs are in the Athena row of the
+   permissions table below.
 
 3. **The account is `cdk bootstrap`ped** (covered by the bootstrap command above). The inline IAM policy below references the five `cdk-hnb659fds-*` roles that bootstrap creates; without them, `iam:PassRole` has nothing to point at.
 
@@ -144,7 +142,7 @@ The integration test does the following AWS actions:
 | --- | --- |
 | CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
-| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`; Athena writes query results under `athena-results/`). |
+| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`; Athena writes query results to the result location). |
 | Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
 | Lake Formation | Read settings + grant the test table to the developer principal. Athena reads the v2 test tables with credentials Lake Formation vends against those grants (`lakeformation:GetDataAccess`). |
 | Athena | `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, and `athena:StopQueryExecution` in the workgroup the scripts use. Athena writes query results to the result location with the role's own S3 and KMS permissions, so the role needs `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, and `s3:GetBucketLocation` on that location plus `kms:GenerateDataKey` and `kms:Decrypt` on the bucket's key. |

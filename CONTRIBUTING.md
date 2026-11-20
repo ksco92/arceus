@@ -171,14 +171,8 @@ Before running the quickstart you need:
    if you haven't already.
 5. `cdk bootstrap aws://<account>/<region>` if the account hasn't
    been bootstrapped for CDK.
-6. For the evolution, DML and surface scripts, an Athena workgroup on
-   engine version 3 and a query result location, both read by
-   `scripts/athena.sh`: `ATHENA_WORKGROUP` (default `primary`) and
-   `ATHENA_OUTPUT_LOCATION` (default
-   `s3://data-lake-bucket-<account>/athena-results/`, in the bucket
-   `ArceusStack` creates). The principal needs `athena:*` and S3 and
-   KMS write access to the result location; a workgroup that enforces
-   its own settings uses its own result location.
+6. For the evolution, DML and surface scripts, the Athena prerequisites in
+   [docs/integ-test-setup.md](docs/integ-test-setup.md).
 
 ## Demo app: quickstart
 
@@ -249,7 +243,7 @@ without `DESTROY=1` it leaves the stack deployed.
 `IcebergEvolutionStack` through eight `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys. After each
-step's Spark phase, Athena reads the table the step changed: every row
+step (and its Spark phase, where there is one), Athena reads the table the step changed: every row
 loaded so far, under the step's column names, with the values Spark
 inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`.
@@ -309,14 +303,14 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 
 | Athena step | Statement | Verify |
 | ---: | --- | --- |
-| 1 | `SELECT` the rows Spark wrote, and `information_schema.columns` | the 6 rows with emails, balances and timestamps; `account_id` comment is `(PK) ` |
-| 2 | `INSERT` ids 11 to 15, `UPDATE` id 12, `DELETE` id 14 | the ids above 10 after each statement |
+| 1 | `SELECT` the rows Spark wrote, and `information_schema.columns` | the rows with emails, balances and timestamps; the `account_id` comment carries `(PK) ` |
+| 2 | `INSERT`, `UPDATE`, then `DELETE` on ids above 10 | the ids above 10 after each statement |
 | 3 | capture the latest snapshot id and commit time from `"dml_test$snapshots"` | — |
-| 4 | `MERGE INTO` (update id 13, insert ids 16 and 17) | the ids above 10 |
+| 4 | `MERGE INTO` updating and inserting ids above 10 | the ids above 10 |
 | 5 | `FOR VERSION AS OF` and `FOR TIMESTAMP AS OF` the pre-MERGE snapshot | the pre-MERGE rows |
 | 6 | `OPTIMIZE ... REWRITE DATA USING BIN_PACK` | latest snapshot operation is `replace`; rows unchanged |
-| 7 | `VACUUM` (the table sets `history.expire.max-snapshot-age-ms` to 1000) | one snapshot left; rows unchanged |
-| 8 | Spark reads ids above 10 | the rows Athena wrote; 12 rows in total |
+| 7 | `VACUUM` (the table sets a short `history.expire.max-snapshot-age-ms`) | older snapshots expired; rows unchanged |
+| 8 | Spark reads ids above 10 | the rows Athena wrote, and the table's row count |
 
 The smoke check and the five scripts run sequentially in the same `integ-test.yml` job.
 

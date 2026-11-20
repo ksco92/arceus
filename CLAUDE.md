@@ -79,7 +79,8 @@ merging. The trigger set is:
 The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
 The workflow is gated — it does not fire on every PR because it runs
-real `cdk deploy`s against a sandbox AWS account and takes 25 to 40 min.
+real `cdk deploy`s against a sandbox AWS account and takes about 20 min
+with the Spark downloads cached and up to about 45 min without.
 Trigger it on a same-repo PR by either:
 
 - adding the label `run-integ-test` to the PR, or

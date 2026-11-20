@@ -11,7 +11,8 @@ name: Integration test
 #   - Manual dispatch from the Actions tab.
 #   - Weekly schedule, against `main`.
 #
-# Not on every push: real AWS resources, 25 to 40 min runtime, real cost.
+# Not on every push: real AWS resources, real cost, and about 20 min with
+# the Spark downloads cached and up to about 45 min without.
 #
 # Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
 # trust-policied for this repo's GitHub Actions OIDC. See
@@ -123,7 +124,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       AWS_REGION: us-east-1
       PRINCIPAL_ARN: ${{ vars.AWS_INTEG_ROLE_ARN }}
