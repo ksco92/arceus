@@ -129,7 +129,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, and synths the `e2e-consumer` app against the pinned published npm version.
 - **`publish.yml`** runs on push to `main` — trusted-publishes the `packages/cdk-glue-iceberg-table` package to **npm** (via npm OIDC trusted publishing, `--provenance`) and to **PyPI** (via PyPI OIDC trusted publishing, the wheel built with `jsii-pacmak -t python`). Each publish is gated independently on its own version-vs-registry check, so a PR that forgets to bump becomes a no-op and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (six `cdk deploy`s exercising schema, partition and identifier evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (eight `cdk deploy`s exercising schema, partition, identifier and nested-field evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
@@ -235,27 +235,38 @@ without `DESTROY=1` it leaves the stack deployed.
 ## Demo: schema + partition evolution
 
 `scripts/integration-test-evolution.sh` drives the
-`IcebergEvolutionStack` through six `cdk deploy`s and verifies the
+`IcebergEvolutionStack` through eight `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys.
+
+The stack owns two tables. `evolution_test` changes in steps 1 to 6 and
+is unchanged afterwards. `nested_evolution_test` is created in step 1
+and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
+are `id(1)`, `tags(2)` (list, element id 3), `attrs(4)` (map, key id 5,
+value id 6) and `addr(7)` (struct: `line1(8)`, `city(9)`). The table
+below describes `evolution_test` except where a row names the nested
+table.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
 | Step | Change | Columns | Partitions | Spark phase after the deploy |
 | ---: | --- | --- | --- | --- |
-| 1 | Initial deploy | `customer_id(1)`, `email(2)`, `signed_up_at(3)` | `day(signed_up_at)` | seed INSERT of ids 10-12 |
+| 1 | Initial deploy | `customer_id(1)`, `email(2)`, `signed_up_at(3)` | `day(signed_up_at)` | seed INSERT of ids 10-12; `nested_evolution_test` created and loaded with id 100 (`tags` = `t1`, `t2`; `attrs` = `k1`→`v1`, `k2`→`v2`; `addr` = `L1`, `C1`) |
 | 2 | **ADD** column `region(4)` | + `region(4)` | unchanged | old rows read with `region` NULL, then INSERT of id 13 with `region` |
 | 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` | `contact_email` for id 10 is `a@example.com` |
 | 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` | at least 4 rows read |
 | 5 | **CHANGE** the `signed_up_at` transform from day to month under fresh field id 1002; partition-history invariants asserted | unchanged | `month(signed_up_at)` | INSERT of id 14 under the month spec, at least 5 rows read |
 | 6 | **CHANGE** `identifierFieldNames` from `customer_id` to `contact_email`; the current schema's `identifier-field-ids` and the `(PK) ` doc markers asserted | unchanged | unchanged | none |
+| 7 | `nested_evolution_test`: **ADD** top-level column `note(10)` | + `note(10)` | none | id 100 read by name (struct fields, list elements, map entries) with `note` NULL, then INSERT of id 101 with `note`, both rows read |
+| 8 | `nested_evolution_test`: **ADD** struct field `addr.zip(11)` between `line1` and `city` | `addr` = `line1(8)`, `zip(11)`, `city(9)` | none | ids 100 and 101 read by name with `addr.zip` NULL, then INSERT of id 102 with a zip, all three rows read |
 
 The construct passes each new column list + partition spec to Glue
 `UpdateTable` via `OpenTableFormatInput`. Glue computes the Iceberg
 metadata delta (new `schema-id`, new `spec-id`) and writes a new
 `metadata.json`. Old data files stay readable because the field IDs
-the construct pins (`id: N` on each `IcebergColumn`) never change
-across deploys.
+the construct pins (`id: N` on each `IcebergColumn`, and the nested
+ids on struct fields, list elements, and map keys and values) never
+change across deploys.
 
 ## Demo: DML, time travel, compaction, and snapshot expiry
 
