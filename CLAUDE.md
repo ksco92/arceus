@@ -73,7 +73,8 @@ merging. The trigger set is:
   `integration-test-v3-evolution.sh`, `integration-test-v3-dml.sh`,
   `field_ids.py`, `athena.sh`),
 - the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
-  `spark-env.sh`, `smoke.py`, `verify_v3_dml.py`).
+  `spark-env.sh`, `smoke.py`, `verify_dml.py`, `verify_evolution.py`,
+  `verify_surface.py`, `verify_v3_dml.py`).
 
 The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
