@@ -1,27 +1,20 @@
 name: Publish to npm and PyPI
 
-# Runs on every push to `main` (i.e. every PR merge) and on manual
-# dispatch. Publishes the version in package.json IF and ONLY IF it
-# is newer than what is already on the respective registry. PRs that
-# forget to bump `version` become no-ops here — per CLAUDE.md, the
-# policy is "always bump", and a missing bump should be caught at
-# review time.
+# Runs on every push to `main` (every PR merge) and on manual dispatch.
+# Publishes the version in package.json to each registry only when it
+# differs from the version already there, so a PR that forgets to bump
+# is a no-op.
 #
-# The package is a jsii multi-language construct: `npm run build`
-# invokes jsii, and `jsii-pacmak -t python` produces the Python wheel.
-# Two independent publishes run from the same build:
+# Jobs: `check` reads the versions, `build` installs, tests and packages
+# with read-only permissions, and `publish-npm` / `publish-pypi` upload
+# the built artifacts. Only the two publish jobs hold the OIDC token
+# permission, and neither installs dependencies, builds or runs a package
+# lifecycle script. The registries are independent: neither publish job
+# needs the other.
 #
-#   * npm  — trusted publishing (OIDC) exchanges the GitHub OIDC token
-#     for a short-lived npm credential. No `NPM_TOKEN` secret. Trust is
-#     configured on the package at
-#     https://www.npmjs.com/package/cdk-glue-iceberg-table/access
-#     (repo, workflow filename, and branch must match).
-#   * PyPI — trusted publishing (OIDC) via pypa/gh-action-pypi-publish.
-#     No `PYPI_TOKEN` secret. Trust is configured at pypi.org →
-#     publishing settings (repo ksco92/arceus, workflow publish.yml,
-#     branch main). Until the maintainer configures it, ONLY the PyPI
-#     step fails — npm still publishes. The two are independent on
-#     purpose: neither registry gates the other.
+# Trusted publishing (OIDC, no registry token secrets) is configured for
+# repo ksco92/arceus, workflow `publish.yml`, branch `main`, with no
+# environment, on npmjs.com and pypi.org.
 
 on:
   push:
@@ -33,94 +26,112 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      npm: ${{ steps.versions.outputs.npm }}
+      pypi: ${{ steps.versions.outputs.pypi }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare package.json version against npm and PyPI
+        id: versions
+        working-directory: packages/cdk-glue-iceberg-table
+        run: |
+          local_version=$(node -p "require('./package.json').version")
+          npm_version=$(npm view cdk-glue-iceberg-table version 2>/dev/null || echo "0.0.0")
+          pypi_version=$(curl -fsSL "https://pypi.org/pypi/cdk-glue-iceberg-table/json" 2>/dev/null \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null \
+            || echo "0.0.0")
+          for registry in npm pypi; do
+            registry_version=${npm_version}
+            [ "$registry" = pypi ] && registry_version=${pypi_version}
+            if [ "$local_version" = "$registry_version" ]; then
+              echo "$registry=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::$registry version $local_version already on registry, no publish."
+            else
+              echo "$registry=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::Local $local_version differs from $registry $registry_version, publishing."
+            fi
+          done
+
+  build:
+    needs: check
+    if: needs.check.outputs.npm == 'true' || needs.check.outputs.pypi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
-      # Required for BOTH npm trusted publishing and PyPI trusted
-      # publishing (each mints its short-lived credential from this
-      # GitHub OIDC token).
-      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
-          registry-url: https://registry.npmjs.org
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      # Trusted publishing (OIDC) requires npm >= 11.5.1 and Node
-      # >= 22.14 per https://docs.npmjs.com/trusted-publishers.
-      # The .nvmrc pin (Node 24 LTS) satisfies the Node side;
-      # setup-node@v4 still ships an older npm with it, so upgrade
-      # the CLI explicitly before any registry call.
-      - run: npm install -g npm@latest
-      # `npm ci` at the workspace root installs the package's deps too.
       - run: npm ci
       - run: npm run lint
       - run: npm test
-      # jsii build — emits dist/ JS + d.ts + the .jsii assembly.
       - run: npm run build
-
-      # ----------------------------------------------------------------
-      # npm publish — gated on the package version vs the npm registry.
-      # ----------------------------------------------------------------
-      # The version gate and the publish itself run inside the package
-      # workspace, so `require('./package.json')` and `npm publish`
-      # operate on packages/cdk-glue-iceberg-table — not the private
-      # monorepo root manifest.
-      - name: Compare package.json version against npm registry
-        id: check_npm
+      - name: Pack the npm tarball
+        if: needs.check.outputs.npm == 'true'
         working-directory: packages/cdk-glue-iceberg-table
-        run: |
-          local_version=$(node -p "require('./package.json').version")
-          registry_version=$(npm view cdk-glue-iceberg-table version 2>/dev/null || echo "0.0.0")
-          echo "local=$local_version"       >> "$GITHUB_OUTPUT"
-          echo "registry=$registry_version" >> "$GITHUB_OUTPUT"
-          if [ "$local_version" = "$registry_version" ]; then
-            echo "skip=true"  >> "$GITHUB_OUTPUT"
-            echo "::notice::npm version $local_version already on registry — no publish."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Local $local_version differs from npm $registry_version — publishing."
-          fi
-
-      - name: Publish to npm
-        if: steps.check_npm.outputs.skip == 'false'
-        working-directory: packages/cdk-glue-iceberg-table
-        run: npm publish --access public --provenance
-
-      # ----------------------------------------------------------------
-      # PyPI publish — gated on the package version vs the PyPI registry.
-      # Independent of the npm gate: a PyPI failure never blocks npm.
-      # ----------------------------------------------------------------
-      - name: Compare package.json version against PyPI registry
-        id: check_pypi
-        working-directory: packages/cdk-glue-iceberg-table
-        run: |
-          local_version=$(node -p "require('./package.json').version")
-          registry_version=$(curl -fsSL "https://pypi.org/pypi/cdk-glue-iceberg-table/json" 2>/dev/null \
-            | python -c "import sys, json; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null \
-            || echo "0.0.0")
-          echo "local=$local_version"       >> "$GITHUB_OUTPUT"
-          echo "registry=$registry_version" >> "$GITHUB_OUTPUT"
-          if [ "$local_version" = "$registry_version" ]; then
-            echo "skip=true"  >> "$GITHUB_OUTPUT"
-            echo "::notice::PyPI version $local_version already on registry — no publish."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Local $local_version differs from PyPI $registry_version — publishing."
-          fi
-
+        run: npm pack --pack-destination "$RUNNER_TEMP/npm-dist"
       - name: Build Python distribution with jsii-pacmak
-        if: steps.check_pypi.outputs.skip == 'false'
+        if: needs.check.outputs.pypi == 'true'
         run: npm run package:python --workspace cdk-glue-iceberg-table
-
-      - name: Publish to PyPI
-        if: steps.check_pypi.outputs.skip == 'false'
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Upload npm tarball
+        if: needs.check.outputs.npm == 'true'
+        uses: actions/upload-artifact@v7
         with:
-          packages-dir: packages/cdk-glue-iceberg-table/dist/jsii/python/
+          name: npm-dist
+          path: ${{ runner.temp }}/npm-dist/*.tgz
+          if-no-files-found: error
+      - name: Upload Python distribution
+        if: needs.check.outputs.pypi == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-dist
+          path: packages/cdk-glue-iceberg-table/dist/jsii/python/
+          if-no-files-found: error
+
+  publish-npm:
+    needs: [check, build]
+    if: needs.check.outputs.npm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # matches .nvmrc, which this job does not check out
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm >= 11.5.1; the npm bundled with
+      # setup-node is older. This is the only install in the job.
+      - run: npm install -g npm@latest
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-dist
+          path: npm-dist
+      - run: npm publish ./npm-dist/*.tgz --ignore-scripts --access public --provenance
+
+  publish-pypi:
+    needs: [check, build]
+    if: needs.check.outputs.pypi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-dist
+          path: python-dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python-dist/
