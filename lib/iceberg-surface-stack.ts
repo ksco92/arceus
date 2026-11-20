@@ -245,23 +245,30 @@ export class IcebergSurfaceStack extends Stack {
                 },
                 {
                     name: 'tags',
-                    type: IcebergType.list(IcebergType.STRING),
+                    type: IcebergType.list({
+                        element: IcebergType.STRING,
+                        elementId: 5,
+                        elementRequired: true,
+                    }),
                     id: 2,
                 },
                 {
                     name: 'profile',
                     type: IcebergType.struct([
                         {
+                            id: 6,
                             name: 'first_name',
                             type: IcebergType.STRING,
                             required: true,
                         },
                         {
+                            id: 7,
                             name: 'last_name',
                             type: IcebergType.STRING,
                             required: true,
                         },
                         {
+                            id: 8,
                             name: 'age',
                             type: IcebergType.INT,
                         },
@@ -270,7 +277,12 @@ export class IcebergSurfaceStack extends Stack {
                 },
                 {
                     name: 'attrs',
-                    type: IcebergType.map(IcebergType.STRING, IcebergType.STRING, false),
+                    type: IcebergType.map({
+                        key: IcebergType.STRING,
+                        keyId: 9,
+                        value: IcebergType.STRING,
+                        valueId: 10,
+                    }),
                     id: 4,
                 },
             ],
