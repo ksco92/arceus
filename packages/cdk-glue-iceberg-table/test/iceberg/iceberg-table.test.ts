@@ -2451,6 +2451,40 @@ describe('IcebergTable — v3 types', () => {
             'geography',
             IcebergType.geography(),
         ],
+        [
+            'float',
+            IcebergType.FLOAT,
+        ],
+        [
+            'double',
+            IcebergType.DOUBLE,
+        ],
+        [
+            'list',
+            IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: 3,
+            }),
+        ],
+        [
+            'map',
+            IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 3,
+                value: IcebergType.STRING,
+                valueId: 4,
+            }),
+        ],
+        [
+            'struct',
+            IcebergType.struct([
+                {
+                    id: 3,
+                    name: 'f',
+                    type: IcebergType.STRING,
+                },
+            ]),
+        ],
     ])('rejects a %s column in identifierFieldNames and accepts it outside them', (kind, type) => {
         expect(() => build(IcebergFormatVersion.V3, {
             type,
@@ -2462,6 +2496,36 @@ describe('IcebergTable — v3 types', () => {
             type,
         }, [
             'id',
+        ])).not.toThrow();
+    });
+
+    it.each([
+        [
+            'decimal',
+            IcebergType.decimal(10, 2),
+        ],
+        [
+            'long',
+            IcebergType.LONG,
+        ],
+        [
+            'string',
+            IcebergType.STRING,
+        ],
+        [
+            'uuid',
+            IcebergType.UUID,
+        ],
+        [
+            'date',
+            IcebergType.DATE,
+        ],
+    ])('accepts a %s column in identifierFieldNames', (_kind, type) => {
+        expect(() => build(IcebergFormatVersion.V2, {
+            type,
+            required: true,
+        }, [
+            'c',
         ])).not.toThrow();
     });
 

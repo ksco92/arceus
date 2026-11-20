@@ -403,9 +403,11 @@ with `ValidationException: Conflicting partition fields`.
 
 `identifierFieldNames` lists the columns that together identify a row
 and renders as the schema's `identifier-field-ids`. Each one must be a
-`required: true` column (Glue rejects an optional one). The construct
-prefixes each identifier column's `doc` with `(PK) `, so a `doc` you
-write must not start with `(PK) `; see [Evolving schema and
+`required: true` column (Glue rejects an optional one), and `cdk synth`
+rejects an identifier column of type float, double, list, map, struct,
+unknown, variant, geometry or geography. The construct prefixes each
+identifier column's `doc` with `(PK) `, so a `doc` you write must not
+start with `(PK) `; see [Evolving schema and
 partitions](#evolving-schema-and-partitions).
 
 The resulting Iceberg `metadata.json` for this table contains every

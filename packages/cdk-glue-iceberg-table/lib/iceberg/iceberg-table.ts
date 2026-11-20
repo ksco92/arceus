@@ -171,9 +171,10 @@ export interface IcebergTableProps {
 
     /**
      * Names of columns that together identify a row. Maps to
-     * `IcebergSchema.identifierFieldIds`. Per the Iceberg spec these
-     * must be primitive, non-nullable, non-floating-point fields; an
-     * optional column is rejected at synth. The construct prefixes each
+     * `IcebergSchema.identifierFieldIds`. Each must be a required
+     * column; an optional column is rejected at synth, as is one of
+     * type float, double, list, map, struct, unknown, variant,
+     * geometry or geography. The construct prefixes each
      * identifier column's `doc` with `(PK) `, so no column's own `doc`
      * may start with that prefix.
      */
