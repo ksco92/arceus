@@ -1,5 +1,6 @@
 import {
     CfnOutput,
+    CfnWaitCondition,
     RemovalPolicy,
     Stack,
     StackProps,
@@ -19,13 +20,17 @@ import {
 import {
     IcebergColumn,
     IcebergFormatVersion,
+    IcebergNullOrder,
     IcebergPartitionField,
     IcebergPartitionTransform,
+    IcebergSortDirection,
+    IcebergSortField,
     IcebergTable,
     IcebergType,
 } from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
-const LAST_EVOLUTION_TEST_STEP = 6;
+const LAST_COMMENT_CHANGE_STEP = 6;
+const LAST_STEP = 12;
 
 /**
  * Props for `IcebergEvolutionStack`. The stack itself is parameterized
@@ -57,9 +62,11 @@ export interface IcebergEvolutionStackProps extends StackProps {
 /**
  * Stack that owns two Iceberg tables whose schemas change based on a
  * `--context evolutionStep=N` value: `evolution_test` (primitive
- * columns, partitions, identifiers; steps 1 to 6) and
+ * columns, partitions, identifiers; steps 1 to 6; a table property,
+ * the sort order and a rolled-back column add; steps 9 to 12) and
  * `nested_evolution_test` (list, map and struct columns; evolved at
- * steps 7 and 8). Used as the target of
+ * steps 7 and 8). Step 11 adds a wait condition that fails to create
+ * after the table update, so its deploy rolls back. Used as the target of
  * `scripts/integration-test-evolution.sh`.
  */
 export class IcebergEvolutionStack extends Stack {
@@ -68,17 +75,8 @@ export class IcebergEvolutionStack extends Stack {
 
         const stepRaw = this.node.tryGetContext('evolutionStep') ?? '1';
         const step = Number(stepRaw);
-        if (![
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-        ].includes(step)) {
-            throw new Error(`evolutionStep must be 1, 2, 3, 4, 5, 6, 7, or 8, got '${stepRaw}'`);
+        if (!Number.isInteger(step) || step < 1 || step > LAST_STEP) {
+            throw new Error(`evolutionStep must be an integer from 1 to ${LAST_STEP}, got '${stepRaw}'`);
         }
 
         const importedBucket = Bucket.fromBucketName(
@@ -99,11 +97,15 @@ export class IcebergEvolutionStack extends Stack {
             database: importedDatabase,
             tableName: 'evolution_test',
             formatVersion: IcebergFormatVersion.V2,
-            comment: `Integration-test target — evolution step ${Math.min(step, LAST_EVOLUTION_TEST_STEP)}.`,
+            comment: `Integration-test target — evolution step ${Math.min(step, LAST_COMMENT_CHANGE_STEP)}.`,
             columns,
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
             identifierFieldNames: buildIdentifierFieldNames(step),
+            sortOrder: buildSortOrder(step),
+            tableProperties: step >= 9 ? {
+                'commit.retry.num-retries': '5',
+            } : undefined,
             removalPolicy: RemovalPolicy.DESTROY,
         });
 
@@ -153,6 +155,15 @@ export class IcebergEvolutionStack extends Stack {
             });
             permission.addResourceDependency(target.resource);
         });
+
+        if (step === 11) {
+            /// CloudFormation fails the create: the handle is not from this stack.
+            const rollbackTrigger = new CfnWaitCondition(this, 'RollbackTrigger', {
+                handle: 'https://example.com/rollback-trigger',
+                timeout: '1',
+            });
+            rollbackTrigger.addResourceDependency(table.resource);
+        }
 
         new CfnOutput(this, 'EvolutionStepOutput', {
             value: String(step),
@@ -232,9 +243,40 @@ function buildColumns(step: number): IcebergColumn[] {
     if (step === 3) {
         return renamed;
     }
-    /// Steps 4 to 6: DROP `region`. Id 4 stays retired — filter it out
+    /// Steps 4 to 10: DROP `region`. Id 4 stays retired — filter it out
     /// rather than index-slicing so the intent is explicit.
-    return renamed.filter((column) => column.name !== 'region');
+    const dropped = renamed.filter((column) => column.name !== 'region');
+    if (step < 11) {
+        return dropped;
+    }
+    /// Steps 11 and 12: ADD `country` (id 5); step 11's deploy rolls back.
+    return [
+        ...dropped,
+        {
+            name: 'country',
+            type: IcebergType.STRING,
+            required: false,
+            id: 5,
+        },
+    ];
+}
+
+/// Step 10 replaces the creation-time order on `customer_id`.
+function buildSortOrder(step: number): IcebergSortField[] {
+    if (step >= 10) {
+        return [
+            {
+                sourceColumn: 'signed_up_at',
+                direction: IcebergSortDirection.DESC,
+                nullOrder: IcebergNullOrder.NULLS_FIRST,
+            },
+        ];
+    }
+    return [
+        {
+            sourceColumn: 'customer_id',
+        },
+    ];
 }
 
 function buildPartitionSpec(step: number): IcebergPartitionField[] {
@@ -280,14 +322,14 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
             dayPartition,
         ];
     }
-    /// Steps 5 and 6: CHANGE the transform on signed_up_at (day -> month).
+    /// Steps 5 onward: CHANGE the transform on signed_up_at (day -> month).
     return [
         monthPartition,
     ];
 }
 
 /// Step 6 changes only the identifier set; columns and partitions match
-/// step 5, and steps 7 and 8 keep the step 6 shape.
+/// step 5, and later steps keep the step 6 identifiers.
 function buildIdentifierFieldNames(step: number): string[] {
     if (step >= 6) {
         return [

@@ -314,6 +314,99 @@ describe('IcebergEvolutionStack — nested evolution', () => {
     });
 });
 
+describe('IcebergEvolutionStack — property, sort order and rollback steps', () => {
+    function without(input: Record<string, unknown>, key: string): Record<string, unknown> {
+        const rest = {
+            ...input,
+        };
+        delete rest[key];
+        return rest;
+    }
+
+    function rollbackTriggersAt(step: number): Record<string, { DependsOn?: string[] }> {
+        return synthAt(step).findResources('AWS::CloudFormation::WaitCondition');
+    }
+
+    it('step 9 adds commit.retry.num-retries and changes nothing else', () => {
+        expect(icebergInputAt(8).Properties['commit.retry.num-retries']).toBeUndefined();
+        expect(icebergInputAt(9).Properties['commit.retry.num-retries']).toBe('5');
+        expect(without(icebergInputAt(9), 'Properties')).toEqual(without(icebergInputAt(8), 'Properties'));
+        expect(without(icebergInputAt(9).Properties, 'commit.retry.num-retries')).toEqual(icebergInputAt(8).Properties);
+    });
+
+    it.each([
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+    ])('step %i keeps the step 1 write order', (step) => {
+        expect(icebergInputAt(step).WriteOrder).toEqual(icebergInputAt(1).WriteOrder);
+    });
+
+    it('step 10 replaces the customer_id write order and changes nothing else', () => {
+        expect(icebergInputAt(1).WriteOrder).toEqual({
+            OrderId: 1,
+            Fields: [
+                {
+                    SourceId: 1,
+                    Transform: 'identity',
+                    Direction: 'asc',
+                    NullOrder: 'nulls-last',
+                },
+            ],
+        });
+        expect(icebergInputAt(10).WriteOrder).toEqual({
+            OrderId: 1,
+            Fields: [
+                {
+                    SourceId: 3,
+                    Transform: 'identity',
+                    Direction: 'desc',
+                    NullOrder: 'nulls-first',
+                },
+            ],
+        });
+        expect(without(icebergInputAt(10), 'WriteOrder')).toEqual(without(icebergInputAt(9), 'WriteOrder'));
+    });
+
+    it('steps 11 and 12 add country under the never-used id 5', () => {
+        const expected = [
+            ...fieldsAt(10),
+            {
+                Id: 5,
+                Name: 'country',
+            },
+        ];
+        expect(fieldsAt(11)).toEqual(expected);
+        expect(icebergInputAt(12)).toEqual(icebergInputAt(11));
+    });
+
+    it('only step 11 adds the failing wait condition, after the table', () => {
+        const template = synthAt(11);
+        const tableId = Object.entries(template.findResources('AWS::Glue::Table')).find(([
+            , table,
+        ]) => table.Properties.Name === 'evolution_test')![0];
+        expect(rollbackTriggersAt(11)).toEqual({
+            RollbackTrigger: {
+                Type: 'AWS::CloudFormation::WaitCondition',
+                Properties: {
+                    Handle: 'https://example.com/rollback-trigger',
+                    Timeout: '1',
+                },
+                DependsOn: [
+                    tableId,
+                ],
+            },
+        });
+        expect(rollbackTriggersAt(10)).toEqual({});
+        expect(rollbackTriggersAt(12)).toEqual({});
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -333,7 +426,11 @@ describe('IcebergEvolutionStack — wiring', () => {
     });
 
     it('rejects an out-of-range step', () => {
-        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, 6, 7, or 8/);
+        expect(() => synthAt(99)).toThrow(/evolutionStep must be an integer from 1 to 12, got '99'/);
+    });
+
+    it('rejects a fractional step', () => {
+        expect(() => synthAt('9.5')).toThrow(/evolutionStep must be an integer from 1 to 12/);
     });
 
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on both tables', () => {

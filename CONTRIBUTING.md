@@ -133,7 +133,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, synths the `e2e-consumer` app against the pinned published npm version, installs the PR's own `npm pack` tarball into the `packed-consumer` fixture and synthesizes it, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
 - **`publish.yml`** runs on push to `main` and on manual dispatch. A `check` job compares the package version with npm and PyPI; when either differs, a `build` job with read-only permissions lints, tests, builds the npm tarball and the Python distribution, and uploads both as artifacts. `publish-npm` (npm OIDC trusted publishing, `--provenance`) and `publish-pypi` (PyPI OIDC trusted publishing) each run only when their own registry's version differs; only these two jobs hold `id-token: write`. A PR that forgets to bump runs `check` alone and publishes nothing, and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (eight `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. The paths that require a green run before merging are listed in `.github/integ-trigger-set.txt` (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs").
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (twelve `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, a property-only update, a sort order change and a rolled-back deploy, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. The paths that require a green run before merging are listed in `.github/integ-trigger-set.txt` (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs").
 - **`integ-gate.yml`** posts the `integ-gate` commit status on each PR to `main`; see [docs/integ-test-setup.md](docs/integ-test-setup.md).
 
 ## Demo app: prerequisites
@@ -242,7 +242,7 @@ without `DESTROY=1` it leaves the stack deployed.
 ## Demo: schema + partition evolution
 
 `scripts/integration-test-evolution.sh` drives the
-`IcebergEvolutionStack` through eight `cdk deploy`s and verifies the
+`IcebergEvolutionStack` through twelve `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys. After each
 step (and its Spark phase, where there is one), Athena reads the table the step changed: every row
@@ -251,8 +251,8 @@ inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`.
 
 The stack owns two tables. `evolution_test` changes in steps 1 to 6 and
-is unchanged afterwards. `nested_evolution_test` is created in step 1
-and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
+9 to 12. `nested_evolution_test` is created in step 1 and loaded with
+one row; steps 7 and 8 evolve it. Its baseline columns
 are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
 value id 7) and `addr(4)` (struct: `line1(8)`, `city(9)`). The table
 below describes `evolution_test` except where a row names the nested
@@ -270,6 +270,10 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 6 | **CHANGE** `identifierFieldNames` from `customer_id` to `contact_email`; the current schema's `identifier-field-ids` and the `(PK) ` doc markers asserted | unchanged | unchanged | none |
 | 7 | `nested_evolution_test`: **ADD** top-level column `note(10)` | + `note(10)` | none | id 100 read by name (struct fields, list elements, map entries) with `note` NULL, then INSERT of id 101 with `note`, both rows read |
 | 8 | `nested_evolution_test`: **ADD** struct field `addr.zip(11)` between `line1` and `city` | `addr` = `line1(8)`, `zip(11)`, `city(9)` | none | ids 100 and 101 read by name with `addr.zip` NULL, then INSERT of id 102 with a zip, all three rows read |
+| 9 | **CHANGE** table property `commit.retry.num-retries` to `5`; every other field the script reads from `metadata.json` asserted unchanged | unchanged | unchanged | none |
+| 10 | **CHANGE** `sortOrder` from `customer_id` to `signed_up_at` descending, nulls first; `default-sort-order-id` 2 and order 1 still in `sort-orders` asserted | unchanged | unchanged | none |
+| 11 | **ADD** column `country(5)` plus a wait condition that fails to create after the table update; `cdk deploy` must exit non-zero with the stack in `UPDATE_ROLLBACK_COMPLETE`, then the earlier `current-schema-id`, `last-column-id` 5 and one more entry in `schemas` asserted | unchanged after the rollback | unchanged | none |
+| 12 | The step 11 change again, without the failing resource; the schema step 11 added becomes current | + `country(5)` | unchanged | none |
 
 The construct passes each new column list + partition spec to Glue
 `UpdateTable` via `OpenTableFormatInput`. Glue computes the Iceberg
