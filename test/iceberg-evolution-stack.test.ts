@@ -26,9 +26,10 @@ function synthAt(step: number | string): Template {
     return Template.fromStack(stack);
 }
 
-function icebergInputAt(step: number | string) {
-    const tables = synthAt(step).findResources('AWS::Glue::Table');
-    return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
+function icebergInputAt(step: number | string, tableName = 'evolution_test') {
+    const tables = Object.values(synthAt(step).findResources('AWS::Glue::Table'));
+    const table = tables.find((resource) => resource.Properties.Name === tableName);
+    return table!.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
 }
 
 function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
@@ -208,6 +209,121 @@ describe('IcebergEvolutionStack — identifier evolution', () => {
     });
 });
 
+type NestedField = { Id: number; Name: string; Type: string };
+
+function nestedFieldsAt(step: number): NestedField[] {
+    return icebergInputAt(step, 'nested_evolution_test').Schema.Fields;
+}
+
+function typeOf(fields: NestedField[], name: string) {
+    return JSON.parse(fields.find((field) => field.Name === name)!.Type);
+}
+
+function structFieldsOf(fields: NestedField[]): Array<{ id: number; name: string }> {
+    return typeOf(fields, 'addr').fields.map((field: { id: number; name: string }) => ({
+        id: field.id,
+        name: field.name,
+    }));
+}
+
+function nestedIdsOf(fields: NestedField[]): Record<string, number> {
+    const idOf = (name: string): number => fields.find((field) => field.Name === name)!.Id;
+    return {
+        id: idOf('id'),
+        tags: idOf('tags'),
+        tagsElement: typeOf(fields, 'tags')['element-id'],
+        attrs: idOf('attrs'),
+        attrsKey: typeOf(fields, 'attrs')['key-id'],
+        attrsValue: typeOf(fields, 'attrs')['value-id'],
+        addr: idOf('addr'),
+    };
+}
+
+describe('IcebergEvolutionStack — nested evolution', () => {
+    const baselineIds = {
+        id: 1,
+        tags: 2,
+        tagsElement: 3,
+        attrs: 4,
+        attrsKey: 5,
+        attrsValue: 6,
+        addr: 7,
+    };
+
+    it.each([
+        1,
+        6,
+    ])('step %i carries a list, a map and a struct with every id pinned', (step) => {
+        const fields = nestedFieldsAt(step);
+        expect(nestedIdsOf(fields)).toEqual(baselineIds);
+        expect(structFieldsOf(fields)).toEqual([
+            {
+                id: 8,
+                name: 'line1',
+            },
+            {
+                id: 9,
+                name: 'city',
+            },
+        ]);
+        expect(fields.map((field) => field.Name)).toEqual([
+            'id',
+            'tags',
+            'attrs',
+            'addr',
+        ]);
+    });
+
+    it('step 7 ADDs the top-level note column with the never-used id 10', () => {
+        const fields = nestedFieldsAt(7);
+        expect(nestedIdsOf(fields)).toEqual(baselineIds);
+        expect(structFieldsOf(fields).map((field) => field.id)).toEqual([
+            8,
+            9,
+        ]);
+        expect(fields[fields.length - 1]).toMatchObject({
+            Id: 10,
+            Name: 'note',
+        });
+    });
+
+    it('step 8 ADDs addr.zip with the never-used id 11 between line1 and city', () => {
+        const fields = nestedFieldsAt(8);
+        expect(nestedIdsOf(fields)).toEqual(baselineIds);
+        expect(structFieldsOf(fields)).toEqual([
+            {
+                id: 8,
+                name: 'line1',
+            },
+            {
+                id: 11,
+                name: 'zip',
+            },
+            {
+                id: 9,
+                name: 'city',
+            },
+        ]);
+        expect(fields[fields.length - 1]).toMatchObject({
+            Id: 10,
+            Name: 'note',
+        });
+    });
+
+    it('steps 7 and 8 leave the evolution_test table at its step 6 shape', () => {
+        expect(icebergInputAt(7)).toEqual(icebergInputAt(6));
+        expect(icebergInputAt(8)).toEqual(icebergInputAt(6));
+    });
+
+    it('grants the deployer principal on both tables', () => {
+        const permissions = Object.values(synthAt(1).findResources('AWS::LakeFormation::Permissions'));
+        expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
+            'evolution_test',
+            'nested_evolution_test',
+        ]);
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -227,7 +343,7 @@ describe('IcebergEvolutionStack — wiring', () => {
     });
 
     it('rejects an out-of-range step', () => {
-        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, or 6/);
+        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, 6, 7, or 8/);
     });
 
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {

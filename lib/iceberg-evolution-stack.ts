@@ -25,6 +25,9 @@ import {
     IcebergType,
 } from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
+/** Last step that changes `evolution_test`; later steps only evolve `nested_evolution_test`. */
+const LAST_PRIMITIVE_STEP = 6;
+
 /**
  * Props for `IcebergEvolutionStack`. The stack itself is parameterized
  * on a single integer `step` so that integration tests can run
@@ -53,9 +56,11 @@ export interface IcebergEvolutionStackProps extends StackProps {
 }
 
 /**
- * Stack that owns a single Iceberg table whose columns and
- * partition spec change based on a `--context evolutionStep=N`
- * value. Used as the target of `scripts/integration-test-evolution.sh`.
+ * Stack that owns two Iceberg tables whose schemas change based on a
+ * `--context evolutionStep=N` value: `evolution_test` (primitive
+ * columns, partitions, identifiers; steps 1 to 6) and
+ * `nested_evolution_test` (list, map and struct columns; evolved at steps 7 and
+ * 8). Used as the target of `scripts/integration-test-evolution.sh`.
  */
 export class IcebergEvolutionStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergEvolutionStackProps) {
@@ -70,8 +75,10 @@ export class IcebergEvolutionStack extends Stack {
             4,
             5,
             6,
+            7,
+            8,
         ].includes(step)) {
-            throw new Error(`evolutionStep must be 1, 2, 3, 4, 5, or 6, got '${stepRaw}'`);
+            throw new Error(`evolutionStep must be 1, 2, 3, 4, 5, 6, 7, or 8, got '${stepRaw}'`);
         }
 
         const importedBucket = Bucket.fromBucketName(
@@ -92,7 +99,7 @@ export class IcebergEvolutionStack extends Stack {
             database: importedDatabase,
             tableName: 'evolution_test',
             formatVersion: IcebergFormatVersion.V2,
-            comment: `Integration-test target — evolution step ${step}.`,
+            comment: `Integration-test target — evolution step ${Math.min(step, LAST_PRIMITIVE_STEP)}.`,
             columns,
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
@@ -100,27 +107,42 @@ export class IcebergEvolutionStack extends Stack {
             removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const permission = new CfnPermissions(this, 'EvolutionTablePermission', {
-            permissions: [
-                'SELECT',
-                'INSERT',
-                'DELETE',
-                'ALTER',
-                'DESCRIBE',
-            ],
-            permissionsWithGrantOption: [],
-            resource: {
-                tableResource: {
-                    catalogId: this.account,
-                    name: table.tableName,
-                    databaseName: importedDatabase.databaseName,
-                },
-            },
-            dataLakePrincipal: {
-                dataLakePrincipalIdentifier: props.principalArn,
-            },
+        const nestedTable = new IcebergTable(this, 'NestedEvolutionTable', {
+            database: importedDatabase,
+            tableName: 'nested_evolution_test',
+            formatVersion: IcebergFormatVersion.V2,
+            comment: 'Integration-test target — nested column evolution.',
+            columns: buildNestedColumns(step),
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/nested_evolution_test/`,
+            removalPolicy: RemovalPolicy.DESTROY,
         });
-        permission.addResourceDependency(table.resource);
+
+        [
+            table,
+            nestedTable,
+        ].forEach((target, index) => {
+            const permission = new CfnPermissions(this, index === 0 ? 'EvolutionTablePermission' : 'NestedEvolutionTablePermission', {
+                permissions: [
+                    'SELECT',
+                    'INSERT',
+                    'DELETE',
+                    'ALTER',
+                    'DESCRIBE',
+                ],
+                permissionsWithGrantOption: [],
+                resource: {
+                    tableResource: {
+                        catalogId: this.account,
+                        name: target.tableName,
+                        databaseName: importedDatabase.databaseName,
+                    },
+                },
+                dataLakePrincipal: {
+                    dataLakePrincipalIdentifier: props.principalArn,
+                },
+            });
+            permission.addResourceDependency(target.resource);
+        });
 
         new CfnOutput(this, 'EvolutionStepOutput', {
             value: String(step),
@@ -255,9 +277,9 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
 }
 
 /// Step 6 changes only the identifier set; columns and partitions match
-/// step 5.
+/// step 5, and steps 7 and 8 keep the step 6 shape.
 function buildIdentifierFieldNames(step: number): string[] {
-    if (step === 6) {
+    if (step >= 6) {
         return [
             'contact_email',
         ];
@@ -265,4 +287,69 @@ function buildIdentifierFieldNames(step: number): string[] {
     return [
         'customer_id',
     ];
+}
+
+/// `nested_evolution_test` carries the baseline shape through step 6.
+/// Step 7 adds the top-level `note` (id 10) and step 8 adds
+/// `addr.zip` (id 11) between `line1` and `city`. Every nested id is
+/// pinned and no id is ever reused, so rows written before either step
+/// stay readable by field name.
+function buildNestedColumns(step: number): IcebergColumn[] {
+    const columns: IcebergColumn[] = [
+        {
+            name: 'id',
+            type: IcebergType.LONG,
+            required: true,
+            id: 1,
+        },
+        {
+            name: 'tags',
+            type: IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: 3,
+            }),
+            id: 2,
+        },
+        {
+            name: 'attrs',
+            type: IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 5,
+                value: IcebergType.STRING,
+                valueId: 6,
+            }),
+            id: 4,
+        },
+        {
+            name: 'addr',
+            type: IcebergType.struct([
+                {
+                    id: 8,
+                    name: 'line1',
+                    type: IcebergType.STRING,
+                },
+                ...(step >= 8 ? [
+                    {
+                        id: 11,
+                        name: 'zip',
+                        type: IcebergType.STRING,
+                    },
+                ] : []),
+                {
+                    id: 9,
+                    name: 'city',
+                    type: IcebergType.STRING,
+                },
+            ]),
+            id: 7,
+        },
+    ];
+    if (step >= 7) {
+        columns.push({
+            name: 'note',
+            type: IcebergType.STRING,
+            id: 10,
+        });
+    }
+    return columns;
 }
