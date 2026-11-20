@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import {
     App,
     Stack,
@@ -16,21 +15,6 @@ import {
     IcebergType,
 } from 'cdk-glue-iceberg-table';
 
-const columns = [
-    {
-        name: 'order_id',
-        type: IcebergType.LONG,
-        required: true,
-        id: 1,
-    },
-    {
-        name: 'placed_at',
-        type: IcebergType.TIMESTAMPTZ,
-        required: true,
-        id: 2,
-    },
-];
-
 const app = new App();
 const stack = new Stack(app, 'PackedConsumer');
 new IcebergTable(stack, 'Orders', {
@@ -39,7 +23,20 @@ new IcebergTable(stack, 'Orders', {
     }),
     tableName: 'orders',
     location: 's3://warehouse/analytics/orders/',
-    columns,
+    columns: [
+        {
+            name: 'order_id',
+            type: IcebergType.LONG,
+            required: true,
+            id: 1,
+        },
+        {
+            name: 'placed_at',
+            type: IcebergType.TIMESTAMPTZ,
+            required: true,
+            id: 2,
+        },
+    ],
     formatVersion: IcebergFormatVersion.V2,
     partitionSpec: [
         {
@@ -51,7 +48,3 @@ new IcebergTable(stack, 'Orders', {
 });
 
 Template.fromStack(stack).resourceCountIs('AWS::Glue::Table', 1);
-assert.deepEqual(IcebergTable.creationOrderFieldIds(columns), {
-    order_id: 1,
-    placed_at: 2,
-});

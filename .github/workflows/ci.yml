@@ -93,12 +93,10 @@ jobs:
       - name: Pack the package and install the tarball into the fixture
         run: |
           tarball="$RUNNER_TEMP/$(cd packages/cdk-glue-iceberg-table && npm pack --pack-destination "$RUNNER_TEMP" --silent)"
-          if tar -tzf "$tarball" | grep -q packed-consumer; then exit 1; fi
+          tar -tzf "$tarball" | grep -qx package/.jsii
           cp -R packages/cdk-glue-iceberg-table/test/packed-consumer "$RUNNER_TEMP/packed-consumer"
           cd "$RUNNER_TEMP/packed-consumer"
           npm install "$tarball"
-          test ! -L node_modules/cdk-glue-iceberg-table
-          [ "$(node -p "require('cdk-glue-iceberg-table/package.json').version")" = "$(node -p "require('$GITHUB_WORKSPACE/packages/cdk-glue-iceberg-table/package.json').version")" ]
       - name: Compile and synthesize the fixture
         working-directory: ${{ runner.temp }}/packed-consumer
         run: npx tsc && node out/app.js

@@ -22,8 +22,8 @@ apply through `cdk deploy`.
 
 Status (October 2026): published on npm (TypeScript/JavaScript) and
 PyPI (Python), pre-1.0, with a public surface guarded on every PR by two
-consumer jobs (`e2e-consumer` compiles and synthesizes an app against the
-last published version, `packed-consumer` does the same against the PR's
+consumer jobs (`e2e-consumer` compiles and synthesizes an app against a
+pinned published version, `packed-consumer` does the same against the PR's
 own `npm pack` tarball) plus real-AWS integration suites, including ones
 for format version 3. The multi-language packages are generated
 from one TypeScript source with [jsii](https://aws.github.io/jsii/)

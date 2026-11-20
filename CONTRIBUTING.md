@@ -349,11 +349,8 @@ be bumped after each release.
 ## The packed-consumer fixture
 
 `packages/cdk-glue-iceberg-table/test/packed-consumer/` is a small CDK
-app that imports the package through its public entry point. The
-`packed-consumer` job in `.github/workflows/ci.yml` builds the package,
-runs `npm pack`, copies the fixture outside the workspace, installs the
-tarball there, checks that the installed copy is not a symlink and
-carries the package's version, then compiles the fixture with `tsc` and
-synthesizes it. The fixture changes with the API in the same PR, so it
-always compiles against the PR; `e2e-consumer/` stays the check against
-the published version.
+app that imports the package through its public entry point; the
+`packed-consumer` job in `.github/workflows/ci.yml` installs the PR's
+`npm pack` tarball into a copy of it. The fixture changes with the API
+in the same PR, so it always compiles against the PR; `e2e-consumer/`
+stays the check against the published version.
