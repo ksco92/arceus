@@ -456,7 +456,7 @@ if DEPLOY_OUTPUT=$(npx cdk deploy "$STACK" \
     red "  step 11 deploy succeeded; expected a failure and a rollback"
     exit 1
 fi
-echo "$DEPLOY_OUTPUT" | tail -3
+echo "$DEPLOY_OUTPUT" | tail -8
 
 header "VERIFY step 11 (rolled back)"
 assert_same "stack status" UPDATE_ROLLBACK_COMPLETE "$(aws cloudformation describe-stacks \
