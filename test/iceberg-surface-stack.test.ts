@@ -41,8 +41,21 @@ describe('IcebergSurfaceStack', () => {
         template = synth();
     });
 
-    it('creates exactly three Glue tables', () => {
-        template.resourceCountIs('AWS::Glue::Table', 3);
+    it('creates exactly four Glue tables', () => {
+        template.resourceCountIs('AWS::Glue::Table', 4);
+    });
+
+    it('creation_order_test has no partition spec, sort order or identifier fields', () => {
+        const input = tableNamed(template, 'creation_order_test');
+        expect([
+            input.PartitionSpec,
+            input.WriteOrder,
+            (input.Schema as Record<string, unknown>).IdentifierFieldIds,
+        ]).toEqual([
+            undefined,
+            undefined,
+            undefined,
+        ]);
     });
 
     it('transforms_test partitions by year, month, day, hour, bucket[8], truncate[4], identity', () => {
@@ -102,7 +115,7 @@ describe('IcebergSurfaceStack', () => {
     });
 
     it('emits Lake-Formation table grants for the principal on every table', () => {
-        template.resourceCountIs('AWS::LakeFormation::Permissions', 3);
+        template.resourceCountIs('AWS::LakeFormation::Permissions', 4);
         template.allResourcesProperties('AWS::LakeFormation::Permissions', {
             DataLakePrincipal: {
                 DataLakePrincipalIdentifier: 'arn:aws:iam::123456789012:user/me',

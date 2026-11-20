@@ -36,6 +36,7 @@ import {
     grantSplit,
 } from './iceberg-table-grants';
 import {
+    creationOrderFieldIds,
     mergeProperties,
     normalizeLocation,
     parseS3Uri,
@@ -343,6 +344,16 @@ export class IcebergTable extends Resource implements IIcebergTable {
         });
 
         this.node.defaultChild = this.resource;
+    }
+
+    /**
+     * Field ids Glue assigns when it creates a table with these columns, keyed by
+     * field path (`addr.city`, `tags.element`, `attrs.key`, `attrs.value`). Declare
+     * a new table with these ids; the ids in `columns` are ignored.
+     * @param columns Columns of the table, in declaration order.
+     */
+    public static creationOrderFieldIds(columns: IcebergColumn[]): { [path: string]: number } {
+        return creationOrderFieldIds(columns);
     }
 
     /**

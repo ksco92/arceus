@@ -198,6 +198,35 @@ export function renderSchema(
     };
 }
 
+/** @internal */
+export function creationOrderFieldIds(columns: IcebergColumn[]): { [path: string]: number } {
+    const ids: { [path: string]: number } = {};
+    let lastId = 0;
+    const assignStruct = (prefix: string, fields: Array<{ name: string; type: IcebergType }>): void => {
+        const paths = fields.map((field) => {
+            const path = `${prefix}${pathSegment(field.name)}`;
+            ids[path] = ++lastId;
+            return path;
+        });
+        fields.forEach((field, index) => assignNested(paths[index], field.type));
+    };
+    const assignNested = (path: string, type: IcebergType): void => {
+        if (type.listElement !== undefined) {
+            ids[`${path}.element`] = ++lastId;
+            assignNested(`${path}.element`, type.listElement);
+        } else if (type.mapKey !== undefined) {
+            ids[`${path}.key`] = ++lastId;
+            ids[`${path}.value`] = ++lastId;
+            assignNested(`${path}.key`, type.mapKey);
+            assignNested(`${path}.value`, type.mapValue!);
+        } else if (type.structFields !== undefined) {
+            assignStruct(`${path}.`, type.structFields);
+        }
+    };
+    assignStruct('', columns);
+    return ids;
+}
+
 /** Largest field id the Iceberg spec allows (`Integer.MAX_VALUE - 200`). */
 const MAX_FIELD_ID = 2147483447;
 

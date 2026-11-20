@@ -60,6 +60,8 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *     and null orderings.
  *   - `nested_test` — list, struct, and map columns inserted and
  *     queried via Spark SQL.
+ *   - `creation_order_test` — nested columns declared with ids out of
+ *     creation order, to read back the ids Glue assigns at CREATE.
  *   - `transforms_test.grantRead(granteeRole)` — the four-statement
  *     IAM split exercised at runtime by assuming the role from the
  *     integ script and calling Glue / S3 directly.
@@ -291,12 +293,114 @@ export class IcebergSurfaceStack extends Stack {
         });
 
         /// ////////////////////////////////////////////////////////
+        // Table 4 — ids declared out of creation order. No partition,
+        // sort order or identifier: once Glue has renumbered the
+        // columns, an update of a table with an identity partition is
+        // rejected and its rollback fails too.
+
+        const creationOrderTable = new IcebergTable(this, 'CreationOrderTable', {
+            database: importedDatabase,
+            tableName: 'creation_order_test',
+            formatVersion: IcebergFormatVersion.V2,
+            comment: 'Declared out of creation order; Glue stores the creation-order ids.',
+            columns: [
+                {
+                    name: 'c',
+                    type: IcebergType.LONG,
+                    required: true,
+                    id: 10,
+                },
+                {
+                    name: 'a',
+                    type: IcebergType.STRING,
+                    required: true,
+                    id: 3,
+                },
+                {
+                    name: 's',
+                    type: IcebergType.struct([
+                        {
+                            id: 21,
+                            name: 'x',
+                            type: IcebergType.INT,
+                        },
+                        {
+                            id: 22,
+                            name: 'lst',
+                            type: IcebergType.list({
+                                elementId: 23,
+                                element: IcebergType.struct([
+                                    {
+                                        id: 24,
+                                        name: 'p',
+                                        type: IcebergType.INT,
+                                    },
+                                    {
+                                        id: 25,
+                                        name: 'q',
+                                        type: IcebergType.STRING,
+                                    },
+                                ]),
+                            }),
+                        },
+                        {
+                            id: 26,
+                            name: 'y',
+                            type: IcebergType.STRING,
+                        },
+                    ]),
+                    id: 20,
+                },
+                {
+                    name: 'm',
+                    type: IcebergType.map({
+                        keyId: 31,
+                        key: IcebergType.STRING,
+                        valueId: 32,
+                        value: IcebergType.struct([
+                            {
+                                id: 33,
+                                name: 'v1',
+                                type: IcebergType.INT,
+                            },
+                            {
+                                id: 34,
+                                name: 'v2',
+                                type: IcebergType.list({
+                                    elementId: 35,
+                                    element: IcebergType.LONG,
+                                }),
+                            },
+                        ]),
+                    }),
+                    id: 30,
+                },
+                {
+                    name: 't',
+                    type: IcebergType.list({
+                        elementId: 8,
+                        element: IcebergType.map({
+                            keyId: 9,
+                            key: IcebergType.STRING,
+                            valueId: 11,
+                            value: IcebergType.INT,
+                        }),
+                    }),
+                    id: 7,
+                },
+            ],
+            location: `s3://${bucketName}/${dbName}/creation_order_test/`,
+            removalPolicy: RemovalPolicy.DESTROY,
+        });
+
+        /// ////////////////////////////////////////////////////////
         // LF table grants for the deployer principal.
 
         const tablesForLfGrant = [
             transformsTable,
             sortedTable,
             nestedTable,
+            creationOrderTable,
         ];
         tablesForLfGrant.forEach((table, index) => {
             const permission = new CfnPermissions(this, `LfPermission${index}`, {

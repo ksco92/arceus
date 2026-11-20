@@ -2830,3 +2830,215 @@ describe('IcebergTable.fromIcebergTableAttributes', () => {
         }).toThrow("location must start with 's3://', got 'gs://other-bucket/pre/'");
     });
 });
+
+describe('IcebergTable.creationOrderFieldIds', () => {
+    it('numbers flat columns in declaration order', () => {
+        expect(IcebergTable.creationOrderFieldIds([
+            {
+                name: 'customer_id',
+                type: IcebergType.LONG,
+                required: true,
+                id: 1, 
+            },
+            {
+                name: 'email',
+                type: IcebergType.STRING,
+                required: true,
+                id: 2, 
+            },
+            {
+                name: 'signed_up_at',
+                type: IcebergType.TIMESTAMPTZ,
+                required: true,
+                id: 3, 
+            },
+        ])).toEqual({
+            customer_id: 1,
+            email: 2,
+            signed_up_at: 3,
+        });
+    });
+
+    it('numbers each top-level column before any list element, map key and value, or struct field', () => {
+        expect(IcebergTable.creationOrderFieldIds([
+            {
+                name: 'id',
+                type: IcebergType.LONG,
+                required: true,
+                id: 1, 
+            },
+            {
+                name: 'tags',
+                type: IcebergType.list({
+                    element: IcebergType.STRING,
+                    elementId: 3, 
+                }),
+                id: 2, 
+            },
+            {
+                name: 'attrs',
+                type: IcebergType.map({
+                    key: IcebergType.STRING,
+                    keyId: 5,
+                    value: IcebergType.STRING,
+                    valueId: 6, 
+                }),
+                id: 4,
+            },
+            {
+                name: 'addr',
+                type: IcebergType.struct([
+                    {
+                        id: 8,
+                        name: 'line1',
+                        type: IcebergType.STRING, 
+                    },
+                    {
+                        id: 9,
+                        name: 'city',
+                        type: IcebergType.STRING, 
+                    },
+                ]),
+                id: 7,
+            },
+        ])).toEqual({
+            'id': 1,
+            'tags': 2,
+            'attrs': 3,
+            'addr': 4,
+            'tags.element': 5,
+            'attrs.key': 6,
+            'attrs.value': 7,
+            'addr.line1': 8,
+            'addr.city': 9,
+        });
+    });
+
+    it('ignores gapped, out-of-order declared ids and numbers two nesting levels one level at a time', () => {
+        expect(IcebergTable.creationOrderFieldIds([
+            {
+                name: 'c',
+                type: IcebergType.LONG,
+                required: true,
+                id: 10, 
+            },
+            {
+                name: 'a',
+                type: IcebergType.STRING,
+                required: true,
+                id: 3, 
+            },
+            {
+                name: 's',
+                type: IcebergType.struct([
+                    {
+                        id: 21,
+                        name: 'x',
+                        type: IcebergType.INT, 
+                    },
+                    {
+                        id: 22,
+                        name: 'lst',
+                        type: IcebergType.list({
+                            elementId: 23,
+                            element: IcebergType.struct([
+                                {
+                                    id: 24,
+                                    name: 'p',
+                                    type: IcebergType.INT, 
+                                },
+                                {
+                                    id: 25,
+                                    name: 'q',
+                                    type: IcebergType.STRING, 
+                                },
+                            ]),
+                        }),
+                    },
+                    {
+                        id: 26,
+                        name: 'y',
+                        type: IcebergType.STRING, 
+                    },
+                ]),
+                id: 20,
+            },
+            {
+                name: 'm',
+                type: IcebergType.map({
+                    keyId: 31,
+                    key: IcebergType.STRING,
+                    valueId: 32,
+                    value: IcebergType.struct([
+                        {
+                            id: 33,
+                            name: 'v1',
+                            type: IcebergType.INT, 
+                        },
+                        {
+                            id: 34,
+                            name: 'v2',
+                            type: IcebergType.list({
+                                elementId: 35,
+                                element: IcebergType.LONG, 
+                            }), 
+                        },
+                    ]),
+                }),
+                id: 30,
+            },
+            {
+                name: 't',
+                type: IcebergType.list({
+                    elementId: 8,
+                    element: IcebergType.map({
+                        keyId: 9,
+                        key: IcebergType.STRING,
+                        valueId: 11,
+                        value: IcebergType.INT, 
+                    }),
+                }),
+                id: 7,
+            },
+        ])).toEqual({
+            'c': 1,
+            'a': 2,
+            's': 3,
+            'm': 4,
+            't': 5,
+            's.x': 6,
+            's.lst': 7,
+            's.y': 8,
+            's.lst.element': 9,
+            's.lst.element.p': 10,
+            's.lst.element.q': 11,
+            'm.key': 12,
+            'm.value': 13,
+            'm.value.v1': 14,
+            'm.value.v2': 15,
+            'm.value.v2.element': 16,
+            't.element': 17,
+            't.element.key': 18,
+            't.element.value': 19,
+        });
+    });
+
+    it('keys a field whose name contains a dot by its backquoted path', () => {
+        expect(IcebergTable.creationOrderFieldIds([
+            {
+                name: 'a.b',
+                type: IcebergType.struct([
+                    {
+                        id: 2,
+                        name: 'c',
+                        type: IcebergType.STRING, 
+                    },
+                ]),
+                id: 1,
+            },
+        ])).toEqual({
+            '`a.b`': 1,
+            '`a.b`.c': 2,
+        });
+    });
+});

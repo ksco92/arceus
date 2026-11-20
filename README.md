@@ -176,7 +176,7 @@ surface lives under `dist/lib/iceberg/` after `npm install`; in Python
 the same surface is imported from the `cdk_glue_iceberg_table` module
 after `pip install`:
 
-- **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite` and the `fromIcebergTableAttributes(...)` import factory.
+- **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite`, the `fromIcebergTableAttributes(...)` import factory, and `creationOrderFieldIds(columns)`, which returns the field ids Glue gives a new table.
 - **`IcebergType`** — primitive types, the v3 constants `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, and `VARIANT`, and the `list` / `map` / `struct` / `decimal` / `fixed` / `geometry(crs?)` / `geography(crs?, algorithm?)` factories. `list` takes an `IcebergListDefinition`, `map` an `IcebergMapDefinition`, and `struct` a list of `IcebergStructFieldDefinition`, each carrying the nested field ids. Renders to the string Glue's `IcebergStructField.type` expects.
 - **`IcebergPartitionTransform`** — identity / `bucket(N)` / `truncate(W)` / year / month / day / hour / void. Each transform validates against the source column type at synth time.
 - **`IcebergDataFormat`** (parquet/orc/avro, default parquet), **`IcebergFormatVersion`** (v1/v2/v3, required — set explicitly per table; Athena cannot query v3 tables), **`IcebergSortDirection`**, **`IcebergNullOrder`**, **`IcebergEdgeAlgorithm`** (`SPHERICAL`, `VINCENTY`, `THOMAS`, `ANDOYER`, `KARNEY`; the second argument of `IcebergType.geography`), plus a `tableProperties` validator that catches misconfigured properties before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
@@ -243,6 +243,38 @@ column. Nested fields follow the same rule: every struct field takes
 an `id`, every list an `elementId`, and every map a `keyId` and a
 `valueId`. All ids in a schema, top-level and nested, must be distinct
 integers from 1 to 2147483447.
+
+A new table must declare its ids in creation order. When Glue creates
+a table it does not keep the declared ids: it numbers the fields from
+1, every field of a struct level in declaration order and then the
+nested fields of each in turn (a list's element; a map's key and
+value; a struct's fields), and points the partition spec, sort order
+and identifier fields at the new ids. Every later deploy, even one
+that only changes a table property, stores the declared ids as they
+are. A table created with other ids therefore runs on the
+creation-order ids until its first update, which then renumbers fields
+that may already hold data. `IcebergTable.creationOrderFieldIds`
+returns the creation-order ids by field path (the ids in its input are
+ignored), so you can set them before the first deploy:
+
+```typescript
+IcebergTable.creationOrderFieldIds([
+    { name: 'id', type: IcebergType.LONG, id: 0 },
+    { name: 'tags', type: IcebergType.list({ element: IcebergType.STRING, elementId: 0 }), id: 0 },
+    {
+        name: 'addr',
+        type: IcebergType.struct([
+            { id: 0, name: 'line1', type: IcebergType.STRING },
+            { id: 0, name: 'city', type: IcebergType.STRING },
+        ]),
+        id: 0,
+    },
+]);
+// { id: 1, tags: 2, addr: 3, 'tags.element': 4, 'addr.line1': 5, 'addr.city': 6 }
+```
+
+Ids out of creation order are for fields a later deploy adds; see
+[Evolving schema and partitions](#evolving-schema-and-partitions).
 
 A table that exercises most of the surface (partitions, sort order,
 nested types, identifier fields, table properties, removal policy):
@@ -603,13 +635,18 @@ type: IcebergType.struct([
 ]),
 ```
 
+Such an id is out of creation order, which is expected once a table
+has evolved: creation order applies only to the ids a table is created
+with (see [Using `IcebergTable`](#using-icebergtable)).
+
 Upgrading from a version before 0.12.0, which numbered nested fields
 itself: pin each nested field to the id the deployed table already
 has, or the first deploy renumbers it and existing data files read
 under the wrong field. Read the ids from the `element-id`, `key-id`,
-`value-id`, and struct field `id` values in the previous version's
-synthesized template (`cdk.out/<Stack>.template.json`) or in the
-table's current `metadata.json`. A nested type object shared by two
+`value-id`, and struct field `id` values in the table's current
+`metadata.json`; the previous version's synthesized template
+(`cdk.out/<Stack>.template.json`) holds the same ids once the table
+has been updated after its creation. A nested type object shared by two
 columns now fails synth with a duplicate id; give each column its own
 nested type with its own ids. The list element and map value
 nullability default also changed: `elementRequired` and
@@ -730,6 +767,7 @@ the construct does **not** prevent. See the next section.)
 
 ## Known limitations
 
+- **Creation order is not checked.** The construct cannot tell at synth whether a table is new or already deployed, so it accepts a new table whose ids are not in creation order (the rule is under [Using `IcebergTable`](#using-icebergtable)). Glue creates that table with the creation-order ids, and the first deploy that updates it stores the declared ids instead. When that changes the id of a column an identity partition is sourced from, Glue rejects the update with `Cannot create identity partition sourced from different field in schema` and the CloudFormation rollback fails the same way, leaving the stack in `UPDATE_ROLLBACK_FAILED`. Compare a new table's ids with `IcebergTable.creationOrderFieldIds` before its first deploy.
 - **Field-id reuse is not detected across deploys.** This applies to nested ids (struct field, list element, map key and value) as well as column ids. If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate field id N` validator), but it doesn't compare against the live table state. The safe workflow is to treat dropped ids as retired forever.
 - **Partition field-id reuse is not detected across deploys either.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), but it cannot tell that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. The safe workflow: treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id. A partition change needs a new source column or transform; Glue ignores a `fieldId`-only change.
 - **`last-partition-id` is written by Glue, not by the construct.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The repo's integration test asserts the counter keeps up with the highest supplied field id after a partition evolution, but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter — if you mix CDK-managed and engine-managed partition evolution, verify the counter in `metadata.json` before trusting engine-side changes.

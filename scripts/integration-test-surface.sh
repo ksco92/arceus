@@ -4,6 +4,9 @@
 #   - every IcebergPartitionTransform exercised on one table.
 #   - multi-field sortOrder rendered in metadata.json.
 #   - nested types (list, struct, map) inserted and queried via Spark.
+#   - the field ids Glue stores at CREATE: each table declared in
+#     creation order keeps its declared ids, and a table declared out of
+#     creation order gets the creation-order ids.
 #   - grantRead's four-statement IAM split exercised at runtime by
 #     assuming the grantee role and calling Glue / S3 directly (this
 #     bypasses Lake Formation, which is exactly what isolates the
@@ -62,6 +65,45 @@ read_metadata_json() {
     aws s3 cp "$meta_loc" - --region "$AWS_REGION" 2>/dev/null
 }
 
+# Prints a schema's field ids as path:id: the current schema of the
+# metadata.json on stdin, or with a table name, the ids that table
+# declares in the synthesized template.
+field_ids() {
+    python3 -c "
+import json, sys
+def walk(path, t, out):
+    if isinstance(t, str) and t.startswith('{'):
+        t = json.loads(t)
+    if not isinstance(t, dict):
+        return
+    if t['type'] == 'struct':
+        for f in t['fields']:
+            out.append('%s.%s:%d' % (path, f['name'], f['id']))
+            walk(path + '.' + f['name'], f['type'], out)
+    elif t['type'] == 'list':
+        out.append('%s.element:%d' % (path, t['element-id']))
+        walk(path + '.element', t['element'], out)
+    elif t['type'] == 'map':
+        out.append('%s.key:%d' % (path, t['key-id']))
+        out.append('%s.value:%d' % (path, t['value-id']))
+        walk(path + '.key', t['key'], out)
+        walk(path + '.value', t['value'], out)
+if len(sys.argv) > 2:
+    resources = json.load(open(sys.argv[1]))['Resources'].values()
+    table = next(r['Properties'] for r in resources if r['Type'] == 'AWS::Glue::Table' and r['Properties']['Name'] == sys.argv[2])
+    schema = table['OpenTableFormatInput']['IcebergInput']['IcebergTableInput']['Schema']
+    fields = [{'name': f['Name'], 'id': f['Id'], 'type': f['Type']} for f in schema['Fields']]
+else:
+    m = json.load(sys.stdin)
+    fields = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])['fields']
+out = []
+for f in fields:
+    out.append('%s:%d' % (f['name'], f['id']))
+    walk(f['name'], f['type'], out)
+print(','.join(out))
+" "$@"
+}
+
 ################################################
 # Teardown leftover stack from a prior run.
 
@@ -70,6 +112,7 @@ npx cdk destroy "$STACK" --force 2>&1 | tail -5 || true
 cleanup_table_prefix "transforms_test"
 cleanup_table_prefix "sorted_test"
 cleanup_table_prefix "nested_test"
+cleanup_table_prefix "creation_order_test"
 
 ################################################
 # Deploy.
@@ -131,6 +174,37 @@ assert fields[2]['direction'] == 'desc' and fields[2]['null-order'] == 'nulls-la
 print('sort fields:', [f\"{f['direction']}/{f['null-order']}\" for f in fields])
 "
 green "  sort fields match (asc/nulls-first, desc/nulls-last, desc/nulls-last) ✓"
+
+################################################
+header "VERIFY 2a — tables declared in creation order store their declared field ids"
+TEMPLATE="$(dirname "${BASH_SOURCE[0]}")/../cdk.out/${STACK}.template.json"
+for table in transforms_test sorted_test nested_test; do
+    DECLARED=$(field_ids "$TEMPLATE" "$table")
+    STORED=$(read_metadata_json "$table" | field_ids)
+    if [ "$STORED" = "$DECLARED" ]; then
+        green "  ${table} ids ✓ ($STORED)"
+    else
+        red   "  ${table} ids ✗"
+        red   "    declared: $DECLARED"
+        red   "    stored:   $STORED"
+        exit 1
+    fi
+done
+
+################################################
+header "VERIFY 2b — creation_order_test, declared out of creation order, stores the creation-order ids"
+EXPECTED="c:1,a:2,s:3,s.x:6,s.lst:7,s.lst.element:9,s.lst.element.p:10,s.lst.element.q:11,s.y:8"
+EXPECTED+=",m:4,m.key:12,m.value:13,m.value.v1:14,m.value.v2:15,m.value.v2.element:16"
+EXPECTED+=",t:5,t.element:17,t.element.key:18,t.element.value:19"
+STORED=$(read_metadata_json "creation_order_test" | field_ids)
+if [ "$STORED" = "$EXPECTED" ]; then
+    green "  creation-order ids ✓ ($STORED)"
+else
+    red   "  creation_order_test ids ✗"
+    red   "    expected: $EXPECTED"
+    red   "    stored:   $STORED"
+    exit 1
+fi
 
 ################################################
 header "TEST 3 — Spark: transforms_test INSERT + count, nested_test INSERT + SELECTs"
@@ -254,6 +328,7 @@ if [ "${DESTROY:-0}" = "1" ]; then
     cleanup_table_prefix "transforms_test"
     cleanup_table_prefix "sorted_test"
     cleanup_table_prefix "nested_test"
+    cleanup_table_prefix "creation_order_test"
 fi
 
 green ""
