@@ -483,29 +483,6 @@ export class IcebergType {
      */
     public _render(path: string, claimId: (path: string, id: unknown) => number): string {
         switch (this.kind) {
-            case IcebergTypeKind.DECIMAL:
-                /// The space after the comma is load-bearing: Iceberg's
-                /// canonical decimal form is `decimal(P, S)`, and that is
-                /// exactly what Glue writes into the stored table metadata.
-                /// Emitting `decimal(P,S)` (no space) makes every later
-                /// schema-identical UpdateTable submit a type string that
-                /// differs textually from the stored one; Glue reads that as
-                /// a phantom column change that adds no schema, then its
-                /// set-current-schema step dereferences a "last added schema"
-                /// that never got added and fails the deploy with
-                /// `Cannot set last added schema: no schema has been added`.
-                /// Matching the canonical spacing keeps the submitted schema
-                /// byte-identical to the live one. See issue #40.
-                return `decimal(${this.decimalPrecision}, ${this.decimalScale})`;
-            case IcebergTypeKind.FIXED:
-                return `fixed[${this.fixedLength}]`;
-            case IcebergTypeKind.GEOMETRY:
-                return this.geoCrs === undefined ? 'geometry' : `geometry(${this.geoCrs})`;
-            case IcebergTypeKind.GEOGRAPHY:
-                if (this.geographyAlgorithm !== undefined) {
-                    return `geography(${this.geoCrs ?? DEFAULT_GEO_CRS}, ${this.geographyAlgorithm})`;
-                }
-                return this.geoCrs === undefined ? 'geography' : `geography(${this.geoCrs})`;
             case IcebergTypeKind.LIST:
                 return JSON.stringify({
                     type: 'list',
@@ -544,6 +521,41 @@ export class IcebergType {
                     fields: rendered,
                 });
             }
+            default:
+                return this._typeString();
+        }
+    }
+
+    /**
+     * The type string of a primitive type, or the kind of a list, map or struct.
+     *
+     * @internal
+     */
+    public _typeString(): string {
+        switch (this.kind) {
+            case IcebergTypeKind.DECIMAL:
+                /// The space after the comma is load-bearing: Iceberg's
+                /// canonical decimal form is `decimal(P, S)`, and that is
+                /// exactly what Glue writes into the stored table metadata.
+                /// Emitting `decimal(P,S)` (no space) makes every later
+                /// schema-identical UpdateTable submit a type string that
+                /// differs textually from the stored one; Glue reads that as
+                /// a phantom column change that adds no schema, then its
+                /// set-current-schema step dereferences a "last added schema"
+                /// that never got added and fails the deploy with
+                /// `Cannot set last added schema: no schema has been added`.
+                /// Matching the canonical spacing keeps the submitted schema
+                /// byte-identical to the live one. See issue #40.
+                return `decimal(${this.decimalPrecision}, ${this.decimalScale})`;
+            case IcebergTypeKind.FIXED:
+                return `fixed[${this.fixedLength}]`;
+            case IcebergTypeKind.GEOMETRY:
+                return this.geoCrs === undefined ? 'geometry' : `geometry(${this.geoCrs})`;
+            case IcebergTypeKind.GEOGRAPHY:
+                if (this.geographyAlgorithm !== undefined) {
+                    return `geography(${this.geoCrs ?? DEFAULT_GEO_CRS}, ${this.geographyAlgorithm})`;
+                }
+                return this.geoCrs === undefined ? 'geography' : `geography(${this.geoCrs})`;
             case IcebergTypeKind.BOOLEAN:
             case IcebergTypeKind.INT:
             case IcebergTypeKind.LONG:
@@ -560,11 +572,14 @@ export class IcebergType {
             case IcebergTypeKind.TIMESTAMP_NS:
             case IcebergTypeKind.TIMESTAMPTZ_NS:
             case IcebergTypeKind.VARIANT:
+            case IcebergTypeKind.LIST:
+            case IcebergTypeKind.MAP:
+            case IcebergTypeKind.STRUCT:
                 return this.kind;
             /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
             default: {
                 const exhaustive: never = this.kind;
-                throw new Error(`unknown IcebergTypeKind in _render: ${exhaustive}`);
+                throw new Error(`unknown IcebergTypeKind in _typeString: ${exhaustive}`);
             }
         }
     }

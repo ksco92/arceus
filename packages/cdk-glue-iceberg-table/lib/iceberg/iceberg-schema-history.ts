@@ -14,7 +14,8 @@ import {
     IConstruct,
 } from 'constructs';
 import {
-    pathSegment,
+    ownArray,
+    snapshotField,
 } from './iceberg-type';
 import {
     IcebergColumn,
@@ -23,7 +24,9 @@ import {
 import {
     renderPartitionSpec,
     renderSchema,
+    snapshotPartitionField,
     validatePartitionSpec,
+    walkFields,
 } from './iceberg-table-render';
 
 /** One field id a table has used: a top-level column or a nested field. */
@@ -215,23 +218,15 @@ export class IcebergSchemaHistory {
                         + 'give tables in different databases different history files',
                     );
                 }
-                groups.set(identity, {
-                    file: group.file,
-                    records: [
-                        ...group.records,
-                        data.table,
-                    ],
-                });
+                group.records.push(data.table);
+                groups.set(identity, group);
             }
         }
         const updates = [
             ...groups.values(),
         ].map((group) => ({
             file: group.file,
-            json: IcebergSchemaHistory.toJson(group.records.reduce(
-                (history, record) => appendRecord(history, record, group.file),
-                readHistoryFile(group.file),
-            )),
+            json: IcebergSchemaHistory.toJson(appendRecords(group.file, group.records)),
         }));
         for (const update of updates) {
             fs.writeFileSync(update.file, update.json);
@@ -241,7 +236,7 @@ export class IcebergSchemaHistory {
 }
 
 /**
- * Throw if the rendered definition is unsafe against the record of `tableName` in the
+ * Throw if the validated definition is unsafe against the record of `tableName` in the
  * history file at `file`, resolved against the working directory, and attach it to
  * `scope` for `updateFromCloudAssembly`.
  *
@@ -251,12 +246,12 @@ export function checkSchemaHistory(
     scope: IConstruct,
     file: string,
     tableName: string,
-    columns: CfnTable.IcebergStructFieldProperty[],
+    columns: IcebergColumn[],
     partitionSpec: CfnTable.IcebergPartitionSpecProperty | undefined,
 ): void {
     const resolved = path.resolve(file);
     const record = readHistoryFile(resolved).tables.find((table) => table.tableName === tableName);
-    const current = recordFromRendered(tableName, columns, partitionSpec);
+    const current = recordOf(tableName, columns, partitionSpec);
     if (record !== undefined) {
         const violations = findViolations(record, current);
         if (violations.length > 0) {
@@ -286,7 +281,9 @@ function cannotRead(file: string, error: unknown): Error {
 /** Device and inode of `file`, which every path spelling of one file shares. */
 function fileIdentity(file: string): string {
     try {
-        const stats = fs.statSync(file);
+        const stats = fs.statSync(file, {
+            bigint: true,
+        });
         return `${stats.dev}:${stats.ino}`;
     } catch (error) {
         throw cannotRead(file, error);
@@ -304,61 +301,33 @@ function readHistoryFile(file: string): IcebergSchemaHistoryFile {
 }
 
 function currentRecord(tableName: string, next: IcebergTableSchema): IcebergTableHistory {
-    const rendered = renderSchema(next.columns, undefined);
-    validatePartitionSpec(next.partitionSpec, rendered.columnByName);
-    return recordFromRendered(
-        tableName,
-        rendered.fields,
-        renderPartitionSpec(next.partitionSpec, rendered.columnByName),
-    );
+    const {
+        columns, partitionSpec,
+    } = next;
+    const ownColumns = ownArray('columns', columns).map(snapshotField);
+    const ownSpec = partitionSpec === undefined
+        ? undefined
+        : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField);
+    const rendered = renderSchema(ownColumns, undefined);
+    validatePartitionSpec(ownSpec, rendered.columnByName);
+    return recordOf(tableName, ownColumns, renderPartitionSpec(ownSpec, rendered.columnByName));
 }
 
-type RenderedType = string | {
-    readonly type: 'list' | 'map' | 'struct';
-    readonly 'element-id': number;
-    readonly 'element-required': boolean;
-    readonly element: RenderedType;
-    readonly 'key-id': number;
-    readonly key: RenderedType;
-    readonly 'value-id': number;
-    readonly 'value-required': boolean;
-    readonly value: RenderedType;
-    readonly fields: Array<{ id: number; name: string; required: boolean; type: RenderedType }>;
-};
-
-/** Record of the rendered fields and partition spec, none dropped. */
-function recordFromRendered(
+function recordOf(
     tableName: string,
-    columns: CfnTable.IcebergStructFieldProperty[],
+    columns: IcebergColumn[],
     partitionSpec: CfnTable.IcebergPartitionSpecProperty | undefined,
 ): IcebergTableHistory {
     const fields: IcebergFieldHistory[] = [];
-    const visit = (fieldPath: string, id: number, type: RenderedType, required: boolean): void => {
+    walkFields(columns, (fieldPath, id, type, required) => {
         fields.push({
             id,
             path: fieldPath,
-            type: typeof type === 'string' ? type : type.type,
+            type: type._typeString(),
             required,
             dropped: false,
         });
-        if (typeof type === 'string') {
-            return;
-        }
-        if (type.type === 'list') {
-            visit(`${fieldPath}.element`, type['element-id'], type.element, type['element-required']);
-        } else if (type.type === 'map') {
-            visit(`${fieldPath}.key`, type['key-id'], type.key, true);
-            visit(`${fieldPath}.value`, type['value-id'], type.value, type['value-required']);
-        } else {
-            for (const field of type.fields) {
-                visit(`${fieldPath}.${pathSegment(field.name)}`, field.id, field.type, field.required);
-            }
-        }
-    };
-    for (const column of columns) {
-        const type = column.type.startsWith('{') ? JSON.parse(column.type) as RenderedType : column.type;
-        visit(pathSegment(column.name), column.id, type, column.required as boolean);
-    }
+    });
     const partitionFields = (partitionSpec?.fields ?? []) as CfnTable.IcebergPartitionFieldProperty[];
     return {
         tableName,
@@ -511,11 +480,7 @@ function isAllowedPromotion(from: string, to: string): boolean {
 }
 
 /** `history` with `current` merged into its table's record; throws if the change is unsafe. */
-function appendRecord(
-    history: IcebergSchemaHistoryFile,
-    current: IcebergTableHistory,
-    file?: string,
-): IcebergSchemaHistoryFile {
+function appendRecord(history: IcebergSchemaHistoryFile, current: IcebergTableHistory): IcebergSchemaHistoryFile {
     const previous = history.tables.find((table) => table.tableName === current.tableName);
     if (previous === undefined) {
         return {
@@ -527,8 +492,7 @@ function appendRecord(
     }
     const violations = findViolations(previous, current);
     if (violations.length > 0) {
-        const where = file === undefined ? '' : ` in ${file}`;
-        throw new Error(`cannot record table '${current.tableName}'${where}:\n${formatViolations(violations)}`);
+        throw new Error(`cannot record table '${current.tableName}':\n${formatViolations(violations)}`);
     }
     const currentIds = new Set(current.fields.map((field) => field.id));
     const currentFieldIds = new Set(current.partitionFields.map((field) => field.fieldId));
@@ -548,6 +512,17 @@ function appendRecord(
             ].sort((a, b) => a.fieldId - b.fieldId),
         })),
     };
+}
+
+function appendRecords(file: string, records: IcebergTableHistory[]): IcebergSchemaHistoryFile {
+    return records.reduce((history, record) => {
+        try {
+            return appendRecord(history, record);
+        } catch (error) {
+            const prefix = `cannot record table '${record.tableName}'`;
+            throw new Error(`${prefix} in ${file}${(error as Error).message.slice(prefix.length)}`);
+        }
+    }, readHistoryFile(file));
 }
 
 function compareStrings(a: string, b: string): number {

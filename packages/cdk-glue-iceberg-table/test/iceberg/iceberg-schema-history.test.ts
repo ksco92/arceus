@@ -1,8 +1,10 @@
 import * as fs from 'fs';
+import nodeFs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
     App,
+    Lazy,
     Stack,
 } from 'aws-cdk-lib';
 import {
@@ -18,9 +20,19 @@ import {
     IcebergSchemaViolationKind,
     IcebergTable,
     IcebergTableHistory,
+    IcebergTableProps,
     IcebergTableSchema,
     IcebergType,
 } from '../../lib/iceberg';
+import {
+    withGetter,
+} from './read-once';
+
+function emptyHistory(): IcebergSchemaHistoryFile {
+    return {
+        tables: [],
+    };
+}
 
 function column(name: string, id: number, type: IcebergType = IcebergType.STRING, required = false): IcebergColumn {
     return {
@@ -43,9 +55,7 @@ function partition(sourceColumn: string, transform: IcebergPartitionTransform, f
 function recorded(...definitions: IcebergTableSchema[]): IcebergTableHistory {
     const history = definitions.reduce(
         (acc: IcebergSchemaHistoryFile, definition) => IcebergSchemaHistory.append(acc, 't', definition),
-        {
-            tables: [],
-        },
+        emptyHistory(),
     );
     return history.tables[0];
 }
@@ -629,6 +639,36 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
         ]);
     });
 
+    it('compares the column type it read once', () => {
+        expect(kinds(recorded({
+            columns: [
+                column('c', 1),
+            ],
+        }), {
+            columns: [
+                withGetter(column('c', 1), 'type', IcebergType.LONG, IcebergType.STRING),
+            ],
+        })).toEqual([
+            IcebergSchemaViolationKind.TYPE_CHANGED,
+        ]);
+    });
+
+    it('compares the partition transform it read once', () => {
+        expect(kinds(recorded(NESTED), {
+            columns: NESTED.columns,
+            partitionSpec: [
+                withGetter(
+                    partition('placed_at', IcebergPartitionTransform.DAY, 1000),
+                    'transform',
+                    IcebergPartitionTransform.MONTH,
+                    IcebergPartitionTransform.DAY,
+                ),
+            ],
+        })).toEqual([
+            IcebergSchemaViolationKind.PARTITION_FIELD_CHANGED,
+        ]);
+    });
+
     it('records a map key as required', () => {
         expect(recorded(NESTED).fields.find((field) => field.path === 'attrs.key')?.required).toBe(true);
     });
@@ -649,9 +689,7 @@ describe('IcebergSchemaHistory.append and toJson', () => {
     };
 
     it('serializes with fixed key order, two-space indent and a trailing newline', () => {
-        expect(IcebergSchemaHistory.toJson(IcebergSchemaHistory.append({
-            tables: [],
-        }, 'orders', DEFINITION))).toBe(`{
+        expect(IcebergSchemaHistory.toJson(IcebergSchemaHistory.append(emptyHistory(), 'orders', DEFINITION))).toBe(`{
   "tables": [
     {
       "tableName": "orders",
@@ -693,9 +731,7 @@ describe('IcebergSchemaHistory.append and toJson', () => {
     });
 
     it('sorts fields and partition fields given in reverse order', () => {
-        const sorted = IcebergSchemaHistory.append({
-            tables: [],
-        }, 'orders', DEFINITION);
+        const sorted = IcebergSchemaHistory.append(emptyHistory(), 'orders', DEFINITION);
         const table = sorted.tables[0];
         const reversed: IcebergSchemaHistoryFile = {
             tables: [
@@ -730,9 +766,7 @@ describe('IcebergSchemaHistory.append and toJson', () => {
     });
 
     it('produces byte-identical JSON when the same definition is appended twice', () => {
-        const once = IcebergSchemaHistory.append({
-            tables: [],
-        }, 'orders', DEFINITION);
+        const once = IcebergSchemaHistory.append(emptyHistory(), 'orders', DEFINITION);
         const twice = IcebergSchemaHistory.append(once, 'orders', DEFINITION);
         expect(IcebergSchemaHistory.toJson(twice)).toBe(IcebergSchemaHistory.toJson(once));
     });
@@ -783,9 +817,7 @@ describe('IcebergSchemaHistory.append and toJson', () => {
             'b',
         ].reduce(
             (acc: IcebergSchemaHistoryFile, name) => IcebergSchemaHistory.append(acc, name, DEFINITION),
-            {
-                tables: [],
-            },
+            emptyHistory(),
         );
         const parsed = IcebergSchemaHistory.fromJson(IcebergSchemaHistory.toJson(history));
         expect(parsed.tables.map((table) => table.tableName)).toEqual([
@@ -795,9 +827,7 @@ describe('IcebergSchemaHistory.append and toJson', () => {
     });
 
     it('refuses to record an unsafe change', () => {
-        const history = IcebergSchemaHistory.append({
-            tables: [],
-        }, 'orders', DEFINITION);
+        const history = IcebergSchemaHistory.append(emptyHistory(), 'orders', DEFINITION);
         expect(() => IcebergSchemaHistory.append(history, 'orders', {
             columns: [
                 column('id', 1, IcebergType.INT, true),
@@ -1006,9 +1036,7 @@ describe('IcebergTable schemaHistoryFile', () => {
     };
 
     it('passes a table with no record in the file', () => {
-        const file = writeHistory('h.json', {
-            tables: [],
-        });
+        const file = writeHistory('h.json', emptyHistory());
         expect(() => app([
             {
                 tableName: 'orders',
@@ -1019,9 +1047,7 @@ describe('IcebergTable schemaHistoryFile', () => {
     });
 
     it('fails synth on an unsafe change from the record, naming the resolved file', () => {
-        const file = writeHistory('h.json', IcebergSchemaHistory.append({
-            tables: [],
-        }, 'orders', V2));
+        const file = writeHistory('h.json', IcebergSchemaHistory.append(emptyHistory(), 'orders', V2));
         expect(() => app([
             {
                 tableName: 'orders',
@@ -1032,6 +1058,91 @@ describe('IcebergTable schemaHistoryFile', () => {
             `table 'orders' is not a safe change from its record in ${file}:\n`
             + "  - field 'id' (id 1) changed type from long to int",
         );
+    });
+
+    function tableProps(file: unknown): Record<string, unknown> {
+        const stack = new Stack(new App(), 'PropsStack');
+        return {
+            database: new Database(stack, 'Db', {
+                databaseName: 'test_db',
+            }),
+            tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
+            location: 's3://bucket/orders/',
+            schemaHistoryFile: file,
+            ...V1,
+        };
+    }
+
+    it('checks against the schemaHistoryFile it read once', () => {
+        const unsafe = writeHistory('unsafe.json', IcebergSchemaHistory.append(emptyHistory(), 'orders', V2));
+        const empty = writeHistory('empty.json', emptyHistory());
+        const props = withGetter(tableProps(unsafe), 'schemaHistoryFile', unsafe, empty);
+        expect(() => new IcebergTable(
+            new Stack(new App(), 'S'),
+            'T',
+            props as unknown as IcebergTableProps,
+        )).toThrow(`table 'orders' is not a safe change from its record in ${unsafe}`);
+    });
+
+    it.each([
+        [
+            'a token',
+            Lazy.string({
+                produce: () => 'h.json',
+            }),
+            'schemaHistoryFile must be a literal string, not a token',
+        ],
+        [
+            'a number',
+            7,
+            'schemaHistoryFile must be a string, got number',
+        ],
+    ])('rejects %s as schemaHistoryFile', (_, file, message) => {
+        expect(() => new IcebergTable(
+            new Stack(new App(), 'S'),
+            'T',
+            tableProps(file) as unknown as IcebergTableProps,
+        )).toThrow(message);
+    });
+
+    it('keeps two files apart whose inodes differ only beyond 2^53', () => {
+        const first = writeHistory('first.json', emptyHistory());
+        const second = writeHistory('second.json', emptyHistory());
+        const assembly = app([
+            {
+                tableName: 'orders',
+                file: first,
+                schema: V1,
+            },
+            {
+                tableName: 'events',
+                file: second,
+                schema: V1,
+            },
+        ]).synth();
+        const realStat = nodeFs.statSync;
+        const inode = (file: unknown): bigint => 2n ** 60n + (file === first ? 1n : 2n);
+        const spy = jest.spyOn(nodeFs, 'statSync').mockImplementation(((file: string, options?: { bigint?: boolean }) => {
+            if (file !== first && file !== second) {
+                return realStat(file, options);
+            }
+            return options?.bigint ? {
+                dev: 1n,
+                ino: inode(file),
+            } : {
+                dev: 1,
+                ino: Number(inode(file)),
+            };
+        }) as unknown as typeof nodeFs.statSync);
+        try {
+            expect(IcebergSchemaHistory.updateFromCloudAssembly(assembly.directory)).toEqual([
+                first,
+                second,
+            ].sort());
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     it('fails synth on a missing file with the path and the remedy', () => {
@@ -1058,9 +1169,7 @@ describe('IcebergTable schemaHistoryFile', () => {
     });
 
     it('does not write the file at synth', () => {
-        const file = writeHistory('h.json', {
-            tables: [],
-        });
+        const file = writeHistory('h.json', emptyHistory());
         app([
             {
                 tableName: 'orders',
@@ -1072,12 +1181,8 @@ describe('IcebergTable schemaHistoryFile', () => {
     });
 
     it('records every table of a synthesized assembly in its own file', () => {
-        const first = writeHistory('first.json', IcebergSchemaHistory.append({
-            tables: [],
-        }, 'orders', V1));
-        const second = writeHistory('second.json', {
-            tables: [],
-        });
+        const first = writeHistory('first.json', IcebergSchemaHistory.append(emptyHistory(), 'orders', V1));
+        const second = writeHistory('second.json', emptyHistory());
         const assembly = app([
             {
                 tableName: 'orders',
@@ -1118,9 +1223,7 @@ describe('IcebergTable schemaHistoryFile', () => {
                 name,
                 schema,
             ]) => IcebergSchemaHistory.append(acc, name as string, schema as IcebergTableSchema),
-            {
-                tables: [],
-            },
+            emptyHistory(),
         )));
         expect(IcebergSchemaHistory.fromJson(fs.readFileSync(second, 'utf-8')).tables.map((t) => t.tableName)).toEqual([
             'events',
@@ -1128,12 +1231,8 @@ describe('IcebergTable schemaHistoryFile', () => {
     });
 
     it('writes no file when one table cannot be recorded', () => {
-        const first = writeHistory('first.json', {
-            tables: [],
-        });
-        const second = writeHistory('second.json', {
-            tables: [],
-        });
+        const first = writeHistory('first.json', emptyHistory());
+        const second = writeHistory('second.json', emptyHistory());
         const assembly = app([
             {
                 tableName: 'orders',
@@ -1146,9 +1245,7 @@ describe('IcebergTable schemaHistoryFile', () => {
                 schema: V2,
             },
         ]).synth();
-        fs.writeFileSync(second, IcebergSchemaHistory.toJson(IcebergSchemaHistory.append({
-            tables: [],
-        }, 'events', {
+        fs.writeFileSync(second, IcebergSchemaHistory.toJson(IcebergSchemaHistory.append(emptyHistory(), 'events', {
             columns: [
                 column('id', 1, IcebergType.STRING, true),
             ],
@@ -1163,9 +1260,7 @@ describe('IcebergTable schemaHistoryFile', () => {
     });
 
     it('keeps the updates of tables that name one file through a symlink', () => {
-        const file = writeHistory('h.json', {
-            tables: [],
-        });
+        const file = writeHistory('h.json', emptyHistory());
         const alias = path.join(directory, 'alias.json');
         fs.symlinkSync(file, alias);
         expect(updateThroughTwoPaths(file, alias)).toEqual(RECORDED_THROUGH_TWO_PATHS);
@@ -1183,9 +1278,7 @@ describe('IcebergTable schemaHistoryFile', () => {
 
     (caseInsensitive ? describe : describe.skip)('on a case-insensitive disk', () => {
         it('keeps the updates of tables that name one file in two letter cases', () => {
-            const file = writeHistory('db.json', {
-                tables: [],
-            });
+            const file = writeHistory('db.json', emptyHistory());
             expect(updateThroughTwoPaths(file, path.join(directory, 'DB.json'))).toEqual(RECORDED_THROUGH_TWO_PATHS);
         });
     });
@@ -1219,9 +1312,7 @@ describe('IcebergTable schemaHistoryFile', () => {
     }
 
     it('fails the update when a history file is gone after synth', () => {
-        const file = writeHistory('h.json', {
-            tables: [],
-        });
+        const file = writeHistory('h.json', emptyHistory());
         const assembly = app([
             {
                 tableName: 'orders',
@@ -1237,9 +1328,7 @@ describe('IcebergTable schemaHistoryFile', () => {
     });
 
     it('refuses two tables of the same name in one file, whatever path names it', () => {
-        const file = writeHistory('h.json', {
-            tables: [],
-        });
+        const file = writeHistory('h.json', emptyHistory());
         const alias = path.join(directory, 'alias.json');
         fs.symlinkSync(file, alias);
         const result = app([]);

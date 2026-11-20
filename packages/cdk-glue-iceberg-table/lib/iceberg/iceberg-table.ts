@@ -329,7 +329,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
         const partitionSpec = renderPartitionSpec(props.partitionSpec, rendered.columnByName);
         if (props.schemaHistoryFile !== undefined) {
-            checkSchemaHistory(this, props.schemaHistoryFile, props.tableName, rendered.fields, partitionSpec);
+            checkSchemaHistory(this, props.schemaHistoryFile, this.tableName, props.columns, partitionSpec);
         }
 
         this.resource = new CfnTable(this, 'Resource', {
