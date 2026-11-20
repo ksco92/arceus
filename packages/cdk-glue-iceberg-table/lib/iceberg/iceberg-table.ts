@@ -53,6 +53,9 @@ import {
     validateSortOrder,
     validateTableName,
 } from './iceberg-table-render';
+import {
+    checkSchemaHistory,
+} from './iceberg-schema-history';
 
 /// /////////////////////////////////////////////////
 /// /////////////////////////////////////////////////
@@ -135,7 +138,7 @@ export interface IcebergPartitionField {
      * field that needs a fresh, never-before-used id. Only an
      * untouched field keeps its id across deploys. Once a field is
      * changed or dropped, its id is retired for good; the construct
-     * cannot see prior deploys, so honoring retirement is on you.
+     * checks retirement only against a `schemaHistoryFile`.
      */
     readonly fieldId: number;
 }
@@ -218,6 +221,17 @@ export interface IcebergTableProps {
      * avoid accidentally dropping production metadata.
      */
     readonly removalPolicy?: RemovalPolicy;
+
+    /**
+     * Path of the committed schema history file of the table's database. A relative
+     * path resolves against the working directory, which is the `cdk.json` directory
+     * under the `cdk` CLI. When set, synth fails if the file is missing or malformed,
+     * or if the definition is an unsafe change from the table's record in it; a table
+     * with no record passes. `IcebergSchemaHistory.updateFromCloudAssembly` records the
+     * definition. The file is never written at synth.
+     * @default - no history check
+     */
+    readonly schemaHistoryFile?: string;
 }
 
 /** Public interface implemented by `IcebergTable` and by import shims. */
@@ -315,6 +329,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
         validatePartitionSpec(props.partitionSpec, rendered.columnByName);
         validateSortOrder(props.sortOrder, rendered.columnByName);
         const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
+        if (props.schemaHistoryFile !== undefined) {
+            checkSchemaHistory(this, props.schemaHistoryFile, props.tableName, props);
+        }
 
         this.resource = new CfnTable(this, 'Resource', {
             catalogId: Stack.of(this).account,
