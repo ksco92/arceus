@@ -209,118 +209,121 @@ describe('IcebergEvolutionStack — identifier evolution', () => {
     });
 });
 
-type NestedField = { Id: number; Name: string; Type: string };
-
-function nestedFieldsAt(step: number): NestedField[] {
-    return icebergInputAt(step, 'nested_evolution_test').Schema.Fields;
-}
-
-function typeOf(fields: NestedField[], name: string) {
-    return JSON.parse(fields.find((field) => field.Name === name)!.Type);
-}
-
-function structFieldsOf(fields: NestedField[]): Array<{ id: number; name: string }> {
-    return typeOf(fields, 'addr').fields.map((field: { id: number; name: string }) => ({
-        id: field.id,
-        name: field.name,
+function nestedFieldsAt(step: number): Array<{ Id: number; Name: string; Type: unknown }> {
+    return icebergInputAt(step, 'nested_evolution_test').Schema.Fields.map((field: { Id: number; Name: string; Type: string }) => ({
+        Id: field.Id,
+        Name: field.Name,
+        Type: field.Type.startsWith('{') ? JSON.parse(field.Type) : field.Type,
     }));
 }
 
-function nestedIdsOf(fields: NestedField[]): Record<string, number> {
-    const idOf = (name: string): number => fields.find((field) => field.Name === name)!.Id;
-    return {
-        id: idOf('id'),
-        tags: idOf('tags'),
-        tagsElement: typeOf(fields, 'tags')['element-id'],
-        attrs: idOf('attrs'),
-        attrsKey: typeOf(fields, 'attrs')['key-id'],
-        attrsValue: typeOf(fields, 'attrs')['value-id'],
-        addr: idOf('addr'),
-    };
-}
-
 describe('IcebergEvolutionStack — nested evolution', () => {
-    const baselineIds = {
-        id: 1,
-        tags: 2,
-        tagsElement: 3,
-        attrs: 4,
-        attrsKey: 5,
-        attrsValue: 6,
-        addr: 7,
-    };
+    const structField = (id: number, name: string) => ({
+        id,
+        name,
+        required: false,
+        type: 'string',
+    });
+    const baseline = [
+        {
+            Id: 1,
+            Name: 'id',
+            Type: 'long',
+        },
+        {
+            Id: 2,
+            Name: 'tags',
+            Type: {
+                type: 'list',
+                'element-id': 3,
+                'element-required': false,
+                element: 'string',
+            },
+        },
+        {
+            Id: 4,
+            Name: 'attrs',
+            Type: {
+                type: 'map',
+                'key-id': 5,
+                key: 'string',
+                'value-id': 6,
+                'value-required': false,
+                value: 'string',
+            },
+        },
+        {
+            Id: 7,
+            Name: 'addr',
+            Type: {
+                type: 'struct',
+                fields: [
+                    structField(8, 'line1'),
+                    structField(9, 'city'),
+                ],
+            },
+        },
+    ];
+    const withNote = [
+        ...baseline,
+        {
+            Id: 10,
+            Name: 'note',
+            Type: 'string',
+        },
+    ];
+    const withZip = withNote.map((field) => (field.Name === 'addr' ? {
+        ...field,
+        Type: {
+            type: 'struct',
+            fields: [
+                structField(8, 'line1'),
+                structField(11, 'zip'),
+                structField(9, 'city'),
+            ],
+        },
+    } : field));
 
     it.each([
-        1,
-        6,
-    ])('step %i carries a list, a map and a struct with every id pinned', (step) => {
-        const fields = nestedFieldsAt(step);
-        expect(nestedIdsOf(fields)).toEqual(baselineIds);
-        expect(structFieldsOf(fields)).toEqual([
-            {
-                id: 8,
-                name: 'line1',
-            },
-            {
-                id: 9,
-                name: 'city',
-            },
-        ]);
-        expect(fields.map((field) => field.Name)).toEqual([
-            'id',
-            'tags',
-            'attrs',
-            'addr',
-        ]);
-    });
-
-    it('step 7 ADDs the top-level note column with the never-used id 10', () => {
-        const fields = nestedFieldsAt(7);
-        expect(nestedIdsOf(fields)).toEqual(baselineIds);
-        expect(structFieldsOf(fields).map((field) => field.id)).toEqual([
+        [
+            1,
+            baseline,
+        ],
+        [
+            2,
+            baseline,
+        ],
+        [
+            3,
+            baseline,
+        ],
+        [
+            4,
+            baseline,
+        ],
+        [
+            5,
+            baseline,
+        ],
+        [
+            6,
+            baseline,
+        ],
+        [
+            7,
+            withNote,
+        ],
+        [
             8,
-            9,
-        ]);
-        expect(fields[fields.length - 1]).toMatchObject({
-            Id: 10,
-            Name: 'note',
-        });
-    });
-
-    it('step 8 ADDs addr.zip with the never-used id 11 between line1 and city', () => {
-        const fields = nestedFieldsAt(8);
-        expect(nestedIdsOf(fields)).toEqual(baselineIds);
-        expect(structFieldsOf(fields)).toEqual([
-            {
-                id: 8,
-                name: 'line1',
-            },
-            {
-                id: 11,
-                name: 'zip',
-            },
-            {
-                id: 9,
-                name: 'city',
-            },
-        ]);
-        expect(fields[fields.length - 1]).toMatchObject({
-            Id: 10,
-            Name: 'note',
-        });
+            withZip,
+        ],
+    ])('step %i renders the nested table with its pinned ids', (step, expected) => {
+        expect(nestedFieldsAt(step)).toEqual(expected);
     });
 
     it('steps 7 and 8 leave the evolution_test table at its step 6 shape', () => {
         expect(icebergInputAt(7)).toEqual(icebergInputAt(6));
         expect(icebergInputAt(8)).toEqual(icebergInputAt(6));
-    });
-
-    it('grants the deployer principal on both tables', () => {
-        const permissions = Object.values(synthAt(1).findResources('AWS::LakeFormation::Permissions'));
-        expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
-            'evolution_test',
-            'nested_evolution_test',
-        ]);
     });
 });
 
@@ -346,20 +349,25 @@ describe('IcebergEvolutionStack — wiring', () => {
         expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, 6, 7, or 8/);
     });
 
-    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {
+    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on both tables', () => {
         const template = synthAt(1);
-        const permissions = template.findResources('AWS::LakeFormation::Permissions');
-        const permission = Object.values(permissions)[0];
-        expect(permission.Properties.Permissions).toEqual(expect.arrayContaining([
-            'SELECT',
-            'INSERT',
-            'DELETE',
-            'ALTER',
-            'DESCRIBE',
-        ]));
-        /// Partition is a CFN intrinsic; resolve to JSON and assert
-        /// the user-name + account literals end up in the identifier.
-        const identifier = JSON.stringify(permission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier);
-        expect(identifier).toContain('iam::123456789012:user/me');
+        const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'));
+        expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
+            'evolution_test',
+            'nested_evolution_test',
+        ]);
+        permissions.forEach((permission) => {
+            expect(permission.Properties.Permissions).toEqual(expect.arrayContaining([
+                'SELECT',
+                'INSERT',
+                'DELETE',
+                'ALTER',
+                'DESCRIBE',
+            ]));
+            /// Partition is a CFN intrinsic; resolve to JSON and assert
+            /// the user-name + account literals end up in the identifier.
+            const identifier = JSON.stringify(permission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier);
+            expect(identifier).toContain('iam::123456789012:user/me');
+        });
     });
 });

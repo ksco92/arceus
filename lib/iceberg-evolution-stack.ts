@@ -25,14 +25,11 @@ import {
     IcebergType,
 } from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
-/** Last step that changes `evolution_test`; later steps only evolve `nested_evolution_test`. */
-const LAST_PRIMITIVE_STEP = 6;
-
 /**
  * Props for `IcebergEvolutionStack`. The stack itself is parameterized
  * on a single integer `step` so that integration tests can run
  * sequential `cdk deploy --context evolutionStep=N` invocations and
- * observe how the underlying Iceberg table evolves.
+ * observe how the underlying Iceberg tables evolve.
  *
  * The bucket and database are imported by name rather than passed as
  * cross-stack references so that the test stack can be deployed and
@@ -48,7 +45,7 @@ export interface IcebergEvolutionStackProps extends StackProps {
     /**
      * ARN of the IAM principal (user, role, or federated identity)
      * that should be granted SELECT/INSERT/DELETE/ALTER/DESCRIBE on
-     * the test table — typically the principal running `cdk deploy`.
+     * both test tables — typically the principal running `cdk deploy`.
      * For CI this is the OIDC role's ARN; for local dev pass your
      * IAM user or assumed-role ARN.
      */
@@ -59,8 +56,9 @@ export interface IcebergEvolutionStackProps extends StackProps {
  * Stack that owns two Iceberg tables whose schemas change based on a
  * `--context evolutionStep=N` value: `evolution_test` (primitive
  * columns, partitions, identifiers; steps 1 to 6) and
- * `nested_evolution_test` (list, map and struct columns; evolved at steps 7 and
- * 8). Used as the target of `scripts/integration-test-evolution.sh`.
+ * `nested_evolution_test` (list, map and struct columns; evolved at
+ * steps 7 and 8). Used as the target of
+ * `scripts/integration-test-evolution.sh`.
  */
 export class IcebergEvolutionStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergEvolutionStackProps) {
@@ -99,7 +97,7 @@ export class IcebergEvolutionStack extends Stack {
             database: importedDatabase,
             tableName: 'evolution_test',
             formatVersion: IcebergFormatVersion.V2,
-            comment: `Integration-test target — evolution step ${Math.min(step, LAST_PRIMITIVE_STEP)}.`,
+            comment: `Integration-test target — evolution step ${Math.min(step, 6)}.`,
             columns,
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
@@ -117,11 +115,21 @@ export class IcebergEvolutionStack extends Stack {
             removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        [
-            table,
-            nestedTable,
-        ].forEach((target, index) => {
-            const permission = new CfnPermissions(this, index === 0 ? 'EvolutionTablePermission' : 'NestedEvolutionTablePermission', {
+        const grants: Array<[string, IcebergTable]> = [
+            [
+                'EvolutionTablePermission',
+                table,
+            ],
+            [
+                'NestedEvolutionTablePermission',
+                nestedTable,
+            ],
+        ];
+        grants.forEach(([
+            permissionId,
+            target,
+        ]) => {
+            const permission = new CfnPermissions(this, permissionId, {
                 permissions: [
                     'SELECT',
                     'INSERT',
