@@ -44,6 +44,7 @@ import {
     renderSchema,
     renderSortOrder,
     resolveIdentifierFieldIds,
+    snapshotProps,
     validatePartitionSpec,
     validateProps,
     validateSortOrder,
@@ -280,6 +281,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
     private readonly s3PrefixGlob: string;
 
     constructor(scope: Construct, id: string, props: IcebergTableProps) {
+        props = snapshotProps(props);
         super(scope, id, {
             physicalName: props.tableName,
         });

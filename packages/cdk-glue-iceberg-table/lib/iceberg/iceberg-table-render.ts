@@ -8,9 +8,11 @@ import {
     IcebergType,
     IcebergTypeKind,
     pathSegment,
+    snapshotField,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
+    snapshotTransform,
 } from './iceberg-partition-transform';
 import {
     IcebergPropertyKeys,
@@ -32,6 +34,66 @@ import {
 
 /** Doc prefix that marks identifier columns, so an identifier change is a field change. */
 const IDENTIFIER_DOC_PREFIX = '(PK) ';
+
+/**
+ * A copy of `props` built from one read of each prop and each element of the caller's collections;
+ * the construct validates and renders from the copy only. `mergeProperties` copies
+ * `tableProperties` in one pass.
+ *
+ * @internal
+ */
+export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
+    const {
+        database,
+        tableName,
+        columns,
+        location,
+        partitionSpec,
+        sortOrder,
+        identifierFieldNames,
+        dataFormat,
+        formatVersion,
+        tableProperties,
+        comment,
+        removalPolicy,
+    } = props;
+    return {
+        database,
+        tableName,
+        location,
+        dataFormat,
+        formatVersion,
+        comment,
+        removalPolicy,
+        columns: columns.map(snapshotField),
+        partitionSpec: partitionSpec?.map(({
+            sourceColumn,
+            transform,
+            name,
+            fieldId,
+        }) => ({
+            sourceColumn,
+            transform: snapshotTransform(transform),
+            name,
+            fieldId,
+        })),
+        sortOrder: sortOrder?.map(({
+            sourceColumn,
+            transform,
+            direction,
+            nullOrder,
+        }) => ({
+            sourceColumn,
+            transform: transform && snapshotTransform(transform),
+            direction,
+            nullOrder,
+        })),
+        identifierFieldNames: identifierFieldNames && [
+            ...identifierFieldNames,
+        ],
+        tableProperties,
+    };
+}
 
 /** @internal */
 export function validateProps(props: IcebergTableProps): void {
