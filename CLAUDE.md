@@ -78,10 +78,6 @@ The workflow caches only the sha512-verified downloads under `.spark/downloads`;
 
 The workflow is gated — it does not fire on every PR because it runs
 real `cdk deploy`s against a sandbox AWS account and takes about 15 min.
-
-It also runs weekly on `main` and opens or comments on an issue titled
-`Weekly integration run failed` when that run fails.
-
 Trigger it on a same-repo PR by either:
 
 - adding the label `run-integ-test` to the PR, or
@@ -90,6 +86,9 @@ Trigger it on a same-repo PR by either:
 It comments back on the PR with success / failure plus a link to the
 run log. Reviewers **must** refuse to merge a trigger-set PR without
 seeing that success comment, even if all unit tests are green.
+
+It also runs weekly on `main` and opens or comments on an issue titled
+`Weekly integration run failed` when that run fails.
 
 Exemption list (no integ-test required):
 

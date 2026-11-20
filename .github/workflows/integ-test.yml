@@ -8,8 +8,7 @@ name: Integration test
 #   - Label `run-integ-test` applied to an open PR.
 #   - Comment `/run-integ-test` on a PR (by repo collaborators).
 #   - Manual dispatch from the Actions tab.
-#   - Weekly schedule, against `main`; a failed run opens or updates an
-#     issue titled `Weekly integration run failed`.
+#   - Weekly schedule, against `main`.
 #
 # Not on every push: real AWS resources, ~15 min runtime, real cost.
 #

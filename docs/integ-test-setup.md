@@ -7,7 +7,8 @@ queries. The workflow runs when:
 
 - a PR is labeled `run-integ-test` **and the PR's head branch is on the same repo** (fork PRs are refused at the workflow's gate; use `workflow_dispatch` after manual review of the diff), OR
 - a repo collaborator comments `/run-integ-test` on a PR, OR
-- the workflow is manually dispatched from the Actions tab.
+- the workflow is manually dispatched from the Actions tab, OR
+- the weekly schedule fires, against `main`.
 
 ## Security note
 
@@ -215,8 +216,10 @@ The workflow reads it via `${{ vars.AWS_INTEG_ROLE_ARN }}`.
   `/run-integ-test`.
 - **Manually**: Actions tab → "Integration test" → Run workflow.
 
-The workflow comments back on the PR with success / failure plus a
-link to the run logs. Each script's teardown step (`DESTROY=1`) deletes
+A run started from a PR comments back on that PR with success / failure
+plus a link to the run logs. A failed weekly run opens or comments on a
+GitHub issue with a link to the run. A weekly run that is cancelled while
+it waits for a running one opens no issue. Each script's teardown step (`DESTROY=1`) deletes
 its stack at the end so the account is left clean.
 
 Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.
