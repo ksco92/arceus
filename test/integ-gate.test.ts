@@ -147,6 +147,10 @@ describe('package.json version-only exemption', () => {
         })).toBe(true);
     });
 
+    test('a removed non-version line with an added version line is in the set', () => {
+        expect(touches(modified(PACKAGE_JSON, '@@ -1 +1 @@\n-  "license": "MIT",\n+    "version": "0.15.0",'))).toBe(true);
+    });
+
     test('two added version lines are in the set', () => {
         expect(touches(modified(PACKAGE_JSON, '@@ -1 +1,2 @@\n+    "version": "0.15.0",\n+    "version": "0.16.0",'))).toBe(true);
     });
@@ -349,6 +353,26 @@ describe('classify', () => {
         });
         expect(createCommitStatus).not.toHaveBeenCalled();
         expect(github.paginate).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        'x Integration test run passed',
+        'Integration test queued',
+    ])('an earlier status described "%s" is recomputed', async (description) => {
+        const {
+            createCommitStatus,
+        } = await run({
+            files: inSet,
+            existing: [
+                {
+                    context: 'integ-gate',
+                    description,
+                },
+            ],
+        });
+        expect(createCommitStatus).toHaveBeenCalledWith(expect.objectContaining({
+            state: 'pending',
+        }));
     });
 
     test('other contexts on the head do not suppress the status', async () => {

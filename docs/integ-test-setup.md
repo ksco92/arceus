@@ -256,9 +256,7 @@ The workflow reads it via `${{ vars.AWS_INTEG_ROLE_ARN }}`.
 - **Manually**: Actions tab → "Integration test" → Run workflow.
 
 A run started from a PR comments back on that PR with success / failure
-plus a link to the run logs. It also sets the `integ-gate` commit status
-on the PR head SHA the suites ran on (`success`, or `failure` when the run
-failed or was cancelled). A failed weekly run opens or comments on a
+plus a link to the run logs. A failed weekly run opens or comments on a
 GitHub issue with a link to the run.
 
 Each script's teardown step (`DESTROY=1`) deletes its stack at the end so
