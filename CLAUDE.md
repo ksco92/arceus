@@ -22,8 +22,8 @@ semver:
   breaking changes; reserve the `0.x` → `1.0.0` jump for the
   "graduate to stable" milestone.
 
-`.github/workflows/publish.yml` only publishes when the version on
-`main` is newer than the version on the npm registry. A PR that
+`.github/workflows/publish.yml` publishes to each of npm and PyPI when
+the version on `main` differs from that registry's version. A PR that
 forgets to bump won't error — it just becomes a no-op on merge — but
 the policy is "always bump".
 
