@@ -43,9 +43,9 @@ motivating CDK issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issue
 documents the only working shape and the silent-corruption traps you
 hit by getting it slightly wrong. This construct implements that
 shape, refuses to emit the unsafe alternatives, and pins Iceberg field
-IDs (a new table's [in creation order](#using-icebergtable)) so schema
-evolution never orphans existing data. It was the basis
-of an upstream proposal to land an `IcebergTable` in
+IDs (declared [in creation order](#using-icebergtable) for a new
+table) so schema evolution never orphans existing data. It was the
+basis of an upstream proposal to land an `IcebergTable` in
 `@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988)),
 closed unmerged in September 2026.
 
@@ -618,8 +618,9 @@ Change the `columns` array (or `partitionSpec`) and run `cdk deploy`
 again. The construct passes the new schema to Glue's `UpdateTable`,
 which writes a new `metadata.json` with a new `schema-id`; existing
 data files stay readable because each column's `id` is pinned to the
-id the table holds and never reused. Adds, renames (same `id`, new `name`), and drops all
-flow through `cdk deploy` alone — no out-of-band SQL DDL.
+id the table holds and never reused. Adds, renames (same `id`, new
+`name`), and drops all flow through `cdk deploy` alone — no
+out-of-band SQL DDL.
 
 Nested fields evolve the same way. Each struct field, list element,
 map key, and map value keeps the id you gave it (the rule is under
@@ -643,10 +644,10 @@ Upgrading from a version before 0.12.0, which numbered nested fields
 itself: declare the ids the table's current `metadata.json` holds,
 top-level and nested (each field `id`, `element-id`, `key-id` and
 `value-id`), or the next deploy renumbers the fields that differ and
-existing data files read under the wrong field. A nested type object shared by two
-columns now fails synth with a duplicate id; give each column its own
-nested type with its own ids. The list element and map value
-nullability default also changed: `elementRequired` and
+existing data files read under the wrong field. A nested type object
+shared by two columns now fails synth with a duplicate id; give each
+column its own nested type with its own ids. The list element and map
+value nullability default also changed: `elementRequired` and
 `valueRequired` now default to `false`. Earlier versions made list
 elements required by default and map values required unless the third
 argument of `map` was `false`; set `elementRequired: true` or

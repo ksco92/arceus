@@ -350,7 +350,8 @@ export class IcebergTable extends Resource implements IIcebergTable {
      * Field ids Glue assigns when it creates a table with these columns, keyed by
      * field path (`addr.city`, `tags.element`, `attrs.key`, `attrs.value`). Declare
      * a new table with these ids; the ids in `columns` are ignored. A name containing `.`
-     * or a backquote appears in backquotes, inner backquotes doubled.
+     * or a backquote appears in backquotes, inner backquotes doubled. From Python, a
+     * top-level column named `__proto__` makes the call raise a jsii serialization error.
      * @param columns Columns of the table, in declaration order.
      */
     public static creationOrderFieldIds(columns: IcebergColumn[]): { [path: string]: number } {
