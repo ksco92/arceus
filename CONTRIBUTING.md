@@ -326,7 +326,7 @@ The smoke check and the five scripts run sequentially in the same `integ-test.ym
 
 `scripts/integration-test-surface.sh` covers the slice of the
 construct surface the evolution and DML stacks don't reach.
-`IcebergSurfaceStack` defines four small tables that each isolate
+`IcebergSurfaceStack` defines five small tables that each isolate
 one concern:
 
 The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above), and reads `transforms_test` and `nested_test` back through Athena (see the Athena prerequisites above).
@@ -337,8 +337,7 @@ The script runs its engine steps through the Spark toolchain, so install it firs
 | **Sort order** | `sorted_test` (`tenant`, `created_at`, `amount`) | `metadata.json`'s `sort-orders` block has three fields with the expected direction + null-order pairs: `asc/nulls-first`, `desc/nulls-last`, `desc/nulls-last` |
 | **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | Spark INSERTs two rows using `array(...)`, `named_struct(...)`, and `map(...)`. SELECT verifies `tags[0]`, `profile.first_name`, and `attrs['tier']` all roundtrip correctly; Athena reads both rows' list lengths and first elements, struct fields, and map values |
 | **Field ids at creation** | `transforms_test`, `sorted_test`, `nested_test`, and `creation_order_test` (nested columns declared with ids out of creation order) | The first three store the ids their template declares; `creation_order_test` stores the creation-order ids instead |
-| **`grantRead` S3 statements at runtime** | `transforms_test` + a `GranteeRole` trusted by the deployer | Assume the role and call S3 directly (Lake Formation doesn't gate S3 calls when the bucket is registered with `hybridAccessEnabled: true`, so the IAM grants the construct produces are what's being tested). `s3:ListBucket` on the table's own prefix succeeds. `s3:ListBucket` on a foreign table's prefix is denied — the `s3:prefix` condition kicks in. The Glue action grants are validated by the unit tests, not at runtime, because LF gates `glue:*` against tables in LF-registered locations regardless of the principal's IAM policy |
-| **`fromIcebergTableAttributes(...)` + `grantRead`** | imported handle on `transforms_test` + a second `ImportedGranteeRole` | Same S3 checks under the import-factory grantee. Verifies the import path produces a symmetric IAM split |
+| **Grants at runtime** | `grants_test`, with `encryptionKey` set to the data-lake bucket's key; `ReaderRole` holds `grantRead` on it and `ReadWriterRole` holds `grantReadWrite` on an imported handle of it, both with the catalog key and Lake Formation data access | The script reads the two key ARNs from the account and passes them as the `DataLakeKeyArn` and `CatalogKeyArn` stack parameters. Besides its grant, each role holds Lake Formation permissions on the table and an Athena query policy. As `ReadWriterRole`: INSERT one row through Spark and one through Athena. As `ReaderRole`: read both rows through Spark and Athena, and be denied `glue:UpdateTable` and an S3 write under the table's prefix. Under each role, `s3:ListBucket` on the table's prefix succeeds and on a foreign prefix is denied |
 
 ## Demo: v3 evolution
 

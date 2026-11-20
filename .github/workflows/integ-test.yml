@@ -182,7 +182,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-dml.sh 2>&1 | tee -a /tmp/integ-test.log
-      - name: Run integration test — surface (transforms / sort / nested types via Spark and Athena / grantRead via native + imported)
+      - name: Run integration test — surface (transforms / sort / nested types via Spark and Athena / grantRead and grantReadWrite under assumed roles)
         run: |
           set -o pipefail
           bash scripts/integration-test-surface.sh 2>&1 | tee -a /tmp/integ-test.log
