@@ -21,9 +21,11 @@ new partition fields) land as a reviewed diff in a pull request and
 apply through `cdk deploy`.
 
 Status (October 2026): published on npm (TypeScript/JavaScript) and
-PyPI (Python), pre-1.0, with a public surface guarded by an end-to-end
-consumer test on every PR plus real-AWS integration suites, including
-ones for format version 3. The multi-language packages are generated
+PyPI (Python), pre-1.0, with a public surface guarded on every PR by two
+consumer jobs (`e2e-consumer` compiles and synthesizes an app against a
+pinned published version, `packed-consumer` does the same against the PR's
+own `npm pack` tarball) plus real-AWS integration suites, including ones
+for format version 3. The multi-language packages are generated
 from one TypeScript source with [jsii](https://aws.github.io/jsii/)
 and indexed on [Construct
 Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).

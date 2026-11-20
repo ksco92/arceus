@@ -1,0 +1,13 @@
+{
+    "name": "packed-consumer",
+    "version": "0.0.0",
+    "private": true,
+    "dependencies": {
+        "aws-cdk-lib": "^2.273.0",
+        "constructs": "^10.8.1"
+    },
+    "devDependencies": {
+        "@types/node": "^24.19.2",
+        "typescript": "~6.0.3"
+    }
+}
