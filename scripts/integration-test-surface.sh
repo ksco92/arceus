@@ -306,7 +306,7 @@ assert_prefix_listing ReaderRole
 # A stale version id leaves the table unchanged even if the update were allowed.
 expect_denied "ReaderRole glue:UpdateTable" 'AccessDeniedException.*glue:UpdateTable' \
     aws glue update-table --region "$AWS_REGION" --database-name "$DATABASE" \
-        --table-input '{"Name":"grants_test"}' --version-id 0
+        --table-input '{"Name":"grants_test"}' --version-id 999999
 expect_denied "ReaderRole S3 write under grants_test" 'AccessDenied' \
     aws s3 cp - "s3://${BUCKET}/${DATABASE}/grants_test/data/denied.txt" --region "$AWS_REGION" <<< "denied"
 unset_assumed_role
