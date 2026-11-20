@@ -202,21 +202,30 @@ export function renderSchema(
 export function creationOrderFieldIds(columns: IcebergColumn[]): { [path: string]: number } {
     const ids: { [path: string]: number } = {};
     let lastId = 0;
-    const assignStruct = (prefix: string, fields: Array<{ name: string; type: IcebergType }>): void => {
-        const paths = fields.map((field) => {
-            const path = `${prefix}${pathSegment(field.name)}`;
-            ids[path] = ++lastId;
-            return path;
+    /// `defineProperty` keeps a field named `__proto__` as an own key.
+    const assign = (path: string): void => {
+        Object.defineProperty(ids, path, {
+            value: ++lastId,
+            enumerable: true,
+            writable: true,
+            configurable: true,
         });
-        fields.forEach((field, index) => assignNested(paths[index], field.type));
+    };
+    const assignStruct = (prefix: string, fields: Array<{ name: string; type: IcebergType }>): void => {
+        for (const field of fields) {
+            assign(`${prefix}${pathSegment(field.name)}`);
+        }
+        for (const field of fields) {
+            assignNested(`${prefix}${pathSegment(field.name)}`, field.type);
+        }
     };
     const assignNested = (path: string, type: IcebergType): void => {
         if (type.listElement !== undefined) {
-            ids[`${path}.element`] = ++lastId;
+            assign(`${path}.element`);
             assignNested(`${path}.element`, type.listElement);
         } else if (type.mapKey !== undefined) {
-            ids[`${path}.key`] = ++lastId;
-            ids[`${path}.value`] = ++lastId;
+            assign(`${path}.key`);
+            assign(`${path}.value`);
             assignNested(`${path}.key`, type.mapKey);
             assignNested(`${path}.value`, type.mapValue!);
         } else if (type.structFields !== undefined) {

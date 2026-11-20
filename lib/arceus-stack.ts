@@ -406,6 +406,7 @@ export class ArceusStack extends Stack {
             tableName: 'customers',
             formatVersion: IcebergFormatVersion.V2,
             comment: 'Demo Iceberg customers table — schema evolution playground.',
+            /// Glue creates a new customers table with ids 1 to 4: where it does not exist yet, declare those first.
             columns: [
                 {
                     name: 'customer_id',

@@ -38,6 +38,7 @@ STACK="IcebergEvolutionStack"
 # shellcheck source=scripts/spark/spark-env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
 VERIFY_PROGRAM="$(dirname "${BASH_SOURCE[0]}")/spark/verify_evolution.py"
+FIELD_IDS="$(dirname "${BASH_SOURCE[0]}")/field_ids.py"
 
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -51,27 +52,11 @@ table_column_names() {
         --region "$AWS_REGION" \
         --query 'Table.Parameters.metadata_location' \
         --output text)
-    aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null \
-        | python3 -c "
+    local meta
+    meta=$(aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null)
+    echo "$meta" | python3 -c "
 import json, sys
 m = json.load(sys.stdin)
-nested = []
-
-def walk(path, t):
-    if not isinstance(t, dict):
-        return
-    if t['type'] == 'struct':
-        for f in t['fields']:
-            nested.append('%s.%s:%d' % (path, f['name'], f['id']))
-            walk(path + '.' + f['name'], f['type'])
-    elif t['type'] == 'list':
-        nested.append('%s.element:%d' % (path, t['element-id']))
-        walk(path + '.element', t['element'])
-    elif t['type'] == 'map':
-        nested.append('%s.key:%d' % (path, t['key-id']))
-        nested.append('%s.value:%d' % (path, t['value-id']))
-        walk(path + '.value', t['value'])
-
 current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
 current_spec = next(s for s in m['partition-specs'] if s['spec-id'] == m['default-spec-id'])
 print('schema-id', m['current-schema-id'])
@@ -79,13 +64,10 @@ print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
-for f in current_schema['fields']:
-    nested.append('%s:%d' % (f['name'], f['id']))
-    walk(f['name'], f['type'])
-print('nested-ids', ','.join(nested))
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
 print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
+    echo "nested-ids $(echo "$meta" | python3 "$FIELD_IDS")"
 }
 
 assert_columns() {

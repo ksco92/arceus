@@ -293,10 +293,7 @@ export class IcebergSurfaceStack extends Stack {
         });
 
         /// ////////////////////////////////////////////////////////
-        // Table 4 — ids declared out of creation order. No partition,
-        // sort order or identifier: once Glue has renumbered the
-        // columns, an update of a table with an identity partition is
-        // rejected and its rollback fails too.
+        // Table 4 — no partition, sort order or identifier, so the table stays updatable.
 
         const creationOrderTable = new IcebergTable(this, 'CreationOrderTable', {
             database: importedDatabase,
@@ -305,48 +302,32 @@ export class IcebergSurfaceStack extends Stack {
             comment: 'Declared out of creation order; Glue stores the creation-order ids.',
             columns: [
                 {
-                    name: 'c',
+                    name: 'b',
                     type: IcebergType.LONG,
                     required: true,
-                    id: 10,
+                    id: 12,
                 },
                 {
                     name: 'a',
                     type: IcebergType.STRING,
-                    required: true,
-                    id: 3,
+                    id: 5,
                 },
                 {
                     name: 's',
                     type: IcebergType.struct([
                         {
                             id: 21,
-                            name: 'x',
-                            type: IcebergType.INT,
-                        },
-                        {
-                            id: 22,
                             name: 'lst',
                             type: IcebergType.list({
-                                elementId: 23,
+                                elementId: 22,
                                 element: IcebergType.struct([
                                     {
-                                        id: 24,
+                                        id: 23,
                                         name: 'p',
                                         type: IcebergType.INT,
                                     },
-                                    {
-                                        id: 25,
-                                        name: 'q',
-                                        type: IcebergType.STRING,
-                                    },
                                 ]),
                             }),
-                        },
-                        {
-                            id: 26,
-                            name: 'y',
-                            type: IcebergType.STRING,
                         },
                     ]),
                     id: 20,
@@ -355,38 +336,23 @@ export class IcebergSurfaceStack extends Stack {
                     name: 'm',
                     type: IcebergType.map({
                         keyId: 31,
-                        key: IcebergType.STRING,
-                        valueId: 32,
+                        key: IcebergType.struct([
+                            {
+                                id: 32,
+                                name: 'k',
+                                type: IcebergType.STRING,
+                            },
+                        ]),
+                        valueId: 33,
                         value: IcebergType.struct([
                             {
-                                id: 33,
-                                name: 'v1',
-                                type: IcebergType.INT,
-                            },
-                            {
                                 id: 34,
-                                name: 'v2',
-                                type: IcebergType.list({
-                                    elementId: 35,
-                                    element: IcebergType.LONG,
-                                }),
+                                name: 'v',
+                                type: IcebergType.INT,
                             },
                         ]),
                     }),
                     id: 30,
-                },
-                {
-                    name: 't',
-                    type: IcebergType.list({
-                        elementId: 8,
-                        element: IcebergType.map({
-                            keyId: 9,
-                            key: IcebergType.STRING,
-                            valueId: 11,
-                            value: IcebergType.INT,
-                        }),
-                    }),
-                    id: 7,
                 },
             ],
             location: `s3://${bucketName}/${dbName}/creation_order_test/`,

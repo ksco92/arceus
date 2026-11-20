@@ -28,6 +28,13 @@ The integ-test workflow assumes two things already exist in the target AWS accou
    npx cdk deploy ArceusStack
    ```
 
+   In an account where the `customers` table does not exist yet,
+   declare its four columns in `lib/arceus-stack.ts` with ids 1 to 4
+   before this first deploy. The stack declares 1, 2, 4, 5, the ids of
+   an evolved table, but Glue creates a new table with ids in creation
+   order (1 to 4), and the table's next update would then renumber
+   `signed_up_at` and `loyalty_tier`.
+
    For the integ-test workflow specifically, deploy `ArceusStack`
    one more time with `PRINCIPAL_ARN` set to the OIDC role ARN — the
    workflow itself doesn't deploy `ArceusStack`, only the test

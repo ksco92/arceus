@@ -68,6 +68,7 @@ arceus/
 │   ├── integration-test-spark-smoke.sh # Spark toolchain smoke check (1 deploy + INSERT/SELECT)
 │   ├── integration-test-v3-evolution.sh # v3 catalog-level evolution harness
 │   ├── integration-test-v3-dml.sh      # End-to-end v3 DML harness
+│   ├── field_ids.py                    # Prints a metadata.json schema's field ids as path:id
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper

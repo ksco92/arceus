@@ -2838,19 +2838,19 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                 name: 'customer_id',
                 type: IcebergType.LONG,
                 required: true,
-                id: 1, 
+                id: 1,
             },
             {
                 name: 'email',
                 type: IcebergType.STRING,
                 required: true,
-                id: 2, 
+                id: 2,
             },
             {
                 name: 'signed_up_at',
                 type: IcebergType.TIMESTAMPTZ,
                 required: true,
-                id: 3, 
+                id: 3,
             },
         ])).toEqual({
             customer_id: 1,
@@ -2865,15 +2865,15 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                 name: 'id',
                 type: IcebergType.LONG,
                 required: true,
-                id: 1, 
+                id: 1,
             },
             {
                 name: 'tags',
                 type: IcebergType.list({
                     element: IcebergType.STRING,
-                    elementId: 3, 
+                    elementId: 3,
                 }),
-                id: 2, 
+                id: 2,
             },
             {
                 name: 'attrs',
@@ -2881,7 +2881,7 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                     key: IcebergType.STRING,
                     keyId: 5,
                     value: IcebergType.STRING,
-                    valueId: 6, 
+                    valueId: 6,
                 }),
                 id: 4,
             },
@@ -2891,12 +2891,12 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                     {
                         id: 8,
                         name: 'line1',
-                        type: IcebergType.STRING, 
+                        type: IcebergType.STRING,
                     },
                     {
                         id: 9,
                         name: 'city',
-                        type: IcebergType.STRING, 
+                        type: IcebergType.STRING,
                     },
                 ]),
                 id: 7,
@@ -2914,19 +2914,19 @@ describe('IcebergTable.creationOrderFieldIds', () => {
         });
     });
 
-    it('ignores gapped, out-of-order declared ids and numbers two nesting levels one level at a time', () => {
+    it('ignores gapped, out-of-order declared ids and numbers each struct level before each field subtree in turn', () => {
         expect(IcebergTable.creationOrderFieldIds([
             {
                 name: 'c',
                 type: IcebergType.LONG,
                 required: true,
-                id: 10, 
+                id: 10,
             },
             {
                 name: 'a',
                 type: IcebergType.STRING,
                 required: true,
-                id: 3, 
+                id: 3,
             },
             {
                 name: 's',
@@ -2934,7 +2934,7 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                     {
                         id: 21,
                         name: 'x',
-                        type: IcebergType.INT, 
+                        type: IcebergType.INT,
                     },
                     {
                         id: 22,
@@ -2945,12 +2945,12 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                                 {
                                     id: 24,
                                     name: 'p',
-                                    type: IcebergType.INT, 
+                                    type: IcebergType.INT,
                                 },
                                 {
                                     id: 25,
                                     name: 'q',
-                                    type: IcebergType.STRING, 
+                                    type: IcebergType.STRING,
                                 },
                             ]),
                         }),
@@ -2958,7 +2958,7 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                     {
                         id: 26,
                         name: 'y',
-                        type: IcebergType.STRING, 
+                        type: IcebergType.STRING,
                     },
                 ]),
                 id: 20,
@@ -2973,15 +2973,15 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                         {
                             id: 33,
                             name: 'v1',
-                            type: IcebergType.INT, 
+                            type: IcebergType.INT,
                         },
                         {
                             id: 34,
                             name: 'v2',
                             type: IcebergType.list({
                                 elementId: 35,
-                                element: IcebergType.LONG, 
-                            }), 
+                                element: IcebergType.LONG,
+                            }),
                         },
                     ]),
                 }),
@@ -2995,7 +2995,7 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                         keyId: 9,
                         key: IcebergType.STRING,
                         valueId: 11,
-                        value: IcebergType.INT, 
+                        value: IcebergType.INT,
                     }),
                 }),
                 id: 7,
@@ -3023,6 +3023,70 @@ describe('IcebergTable.creationOrderFieldIds', () => {
         });
     });
 
+    it('numbers a map key and value, then the key subtree, then the value subtree', () => {
+        expect(IcebergTable.creationOrderFieldIds([
+            {
+                name: 'm',
+                type: IcebergType.map({
+                    keyId: 9,
+                    key: IcebergType.struct([
+                        {
+                            id: 7,
+                            name: 'k1',
+                            type: IcebergType.STRING,
+                        },
+                        {
+                            id: 8,
+                            name: 'k2',
+                            type: IcebergType.INT,
+                        },
+                    ]),
+                    valueId: 5,
+                    value: IcebergType.struct([
+                        {
+                            id: 4,
+                            name: 'v1',
+                            type: IcebergType.STRING,
+                        },
+                    ]),
+                }),
+                id: 6,
+            },
+        ])).toEqual({
+            'm': 1,
+            'm.key': 2,
+            'm.value': 3,
+            'm.key.k1': 4,
+            'm.key.k2': 5,
+            'm.value.v1': 6,
+        });
+    });
+
+    it('keeps every field as an own key, including __proto__ and constructor', () => {
+        const ids = IcebergTable.creationOrderFieldIds([
+            {
+                name: '__proto__',
+                type: IcebergType.LONG,
+                id: 1,
+            },
+            {
+                name: 'constructor',
+                type: IcebergType.LONG,
+                id: 2,
+            },
+        ]);
+        expect(Object.entries(ids)).toEqual([
+            [
+                '__proto__',
+                1,
+            ],
+            [
+                'constructor',
+                2,
+            ],
+        ]);
+    });
+
     it('keys a field whose name contains a dot by its backquoted path', () => {
         expect(IcebergTable.creationOrderFieldIds([
             {
@@ -3031,7 +3095,7 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                     {
                         id: 2,
                         name: 'c',
-                        type: IcebergType.STRING, 
+                        type: IcebergType.STRING,
                     },
                 ]),
                 id: 1,
