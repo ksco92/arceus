@@ -54,6 +54,16 @@ function kinds(previous: IcebergTableHistory, next: IcebergTableSchema): Iceberg
     return IcebergSchemaHistory.validateSchemaEvolution(previous, next).map((violation) => violation.kind);
 }
 
+function reused(id: number, oldPath: string, detail: string, newPath: string): string {
+    return `field id ${id} belonged to '${oldPath}', ${detail}, and is reused by '${newPath}'; `
+        + `give '${newPath}' an id the table has never used`;
+}
+
+function changed(fieldPath: string, from: number, to: number): string {
+    return `field '${fieldPath}' changed id from ${from} to ${to}; keep id ${from}, `
+        + 'or record the field as dropped before adding it under a new id';
+}
+
 function messages(previous: IcebergTableHistory, next: IcebergTableSchema): string[] {
     return IcebergSchemaHistory.validateSchemaEvolution(previous, next).map((violation) => violation.message);
 }
@@ -182,7 +192,7 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
             partitionSpec: NESTED.partitionSpec,
         })).toEqual([
             "field 'tags.element' (id 5) changed type from string to long; "
-            + 'Iceberg allows only int to long, float to double, and a wider decimal precision at the same scale',
+            + 'this check allows only int to long, float to double, and a wider decimal precision at the same scale',
         ]);
     });
 
@@ -196,7 +206,7 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
                 column('c', 1, IcebergType.STRING, true),
             ],
         })).toEqual([
-            "field 'c' (id 1) changed from optional to required",
+            "field 'c' (id 1) changed from optional to required; keep it optional",
         ]);
     });
 
@@ -239,7 +249,28 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
                 column('c', 2),
             ],
         })).toEqual([
-            "field id 2 belonged to 'b', which was dropped, and is reused by 'c'",
+            "field id 2 belonged to 'b', which was dropped, and is reused by 'c'; give 'c' an id the table has never used",
+        ]);
+    });
+
+    it('reports only the reuse when the reusing field has another type and is required', () => {
+        const history = recorded({
+            columns: [
+                column('a', 1),
+                column('b', 2),
+            ],
+        }, {
+            columns: [
+                column('a', 1),
+            ],
+        });
+        expect(kinds(history, {
+            columns: [
+                column('a', 1),
+                column('c', 2, IcebergType.LONG, true),
+            ],
+        })).toEqual([
+            IcebergSchemaViolationKind.FIELD_ID_REUSED,
         ]);
     });
 
@@ -277,8 +308,8 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
                 column('c', 1),
             ],
         })).toEqual([
-            "field id 1 belonged to 'a', which now has id 3, and is reused by 'c'",
-            "field 'a' changed id from 1 to 3",
+            reused(1, 'a', 'which now has id 3', 'c'),
+            changed('a', 1, 3),
         ]);
     });
 
@@ -298,7 +329,7 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
             ])))),
             partitionSpec: NESTED.partitionSpec,
         })).toEqual([
-            "field 'addr.city' changed id from 9 to 11",
+            changed('addr.city', 9, 11),
         ]);
     });
 
@@ -355,12 +386,12 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
             ],
         });
         expect(found.map((violation) => violation.message)).toEqual([
-            "field id 4 belonged to 'addr.line1', which now has id 5, and is reused by 'note'",
-            "field id 5 belonged to 'addr.city', which now has id 6, and is reused by 'addr.line1'",
-            "field 'addr.line1' changed id from 4 to 5",
-            "field id 6 belonged to 'addr.zip', which now has id 7, and is reused by 'addr.city'",
-            "field 'addr.city' changed id from 5 to 6",
-            "field 'addr.zip' changed id from 6 to 7",
+            reused(4, 'addr.line1', 'which now has id 5', 'note'),
+            reused(5, 'addr.city', 'which now has id 6', 'addr.line1'),
+            reused(6, 'addr.zip', 'which now has id 7', 'addr.city'),
+            changed('addr.line1', 4, 5),
+            changed('addr.city', 5, 6),
+            changed('addr.zip', 6, 7),
         ]);
     });
 
@@ -384,7 +415,7 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
                 column('a', 1),
             ],
         })).toEqual([
-            "column 'region' (id 2) is dropped, but a recorded partition spec is sourced from it",
+            "column 'region' (id 2) is dropped, but a recorded partition spec is sourced from it; keep the column in the schema",
         ]);
     });
 
@@ -517,7 +548,7 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
                 column('__proto__', 2),
             ],
         })).toEqual([
-            "field '__proto__' changed id from 1 to 2",
+            changed('__proto__', 1, 2),
         ]);
     });
 
@@ -528,6 +559,78 @@ describe('IcebergSchemaHistory.validateSchemaEvolution', () => {
                 column('b', 1),
             ],
         })).toThrow(/duplicate field id 1/);
+    });
+
+    it.each([
+        [
+            'a partition source column missing from the columns',
+            partition('missing', IcebergPartitionTransform.IDENTITY, 1000),
+            "partitionSpec references unknown column 'missing'",
+        ],
+        [
+            'a duplicate partition fieldId',
+            partition('id', IcebergPartitionTransform.bucket(8), 1000),
+            "duplicate partition fieldId 1000 on partition field 'id_bucket'",
+        ],
+    ])('rejects %s with the partition validator message', (_, invalid, message) => {
+        expect(() => IcebergSchemaHistory.validateSchemaEvolution(recorded(NESTED), {
+            columns: NESTED.columns,
+            partitionSpec: [
+                ...NESTED.partitionSpec!,
+                invalid,
+            ],
+        })).toThrow(message);
+    });
+
+    it.each([
+        [
+            'tags.element',
+            5,
+            (required: boolean) => column('tags', 2, IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: 5,
+                elementRequired: required,
+            })),
+        ],
+        [
+            'attrs.value',
+            7,
+            (required: boolean) => column('attrs', 3, IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 6,
+                value: IcebergType.STRING,
+                valueId: 7,
+                valueRequired: required,
+            })),
+        ],
+        [
+            'addr.city',
+            9,
+            (required: boolean) => column('addr', 4, IcebergType.struct([
+                {
+                    id: 9,
+                    name: 'city',
+                    type: IcebergType.STRING,
+                    required,
+                },
+            ])),
+        ],
+    ])('reports the nested field %s becoming required', (fieldPath, id, build) => {
+        expect(messages(recorded({
+            columns: [
+                build(false),
+            ],
+        }), {
+            columns: [
+                build(true),
+            ],
+        })).toEqual([
+            `field '${fieldPath}' (id ${id}) changed from optional to required; keep it optional`,
+        ]);
+    });
+
+    it('records a map key as required', () => {
+        expect(recorded(NESTED).fields.find((field) => field.path === 'attrs.key')?.required).toBe(true);
     });
 });
 
@@ -587,6 +690,43 @@ describe('IcebergSchemaHistory.append and toJson', () => {
   ]
 }
 `);
+    });
+
+    it('sorts fields and partition fields given in reverse order', () => {
+        const sorted = IcebergSchemaHistory.append({
+            tables: [],
+        }, 'orders', DEFINITION);
+        const table = sorted.tables[0];
+        const reversed: IcebergSchemaHistoryFile = {
+            tables: [
+                {
+                    tableName: table.tableName,
+                    fields: [
+                        ...table.fields,
+                    ].reverse(),
+                    partitionFields: [
+                        ...table.partitionFields,
+                        {
+                            fieldId: 1001,
+                            name: 'id',
+                            sourceId: 1,
+                            transform: 'identity',
+                        },
+                    ].reverse(),
+                },
+            ],
+        };
+        expect(IcebergSchemaHistory.toJson(reversed)).toBe(IcebergSchemaHistory.toJson({
+            tables: [
+                {
+                    ...table,
+                    partitionFields: [
+                        ...table.partitionFields,
+                        reversed.tables[0].partitionFields[0],
+                    ],
+                },
+            ],
+        }));
     });
 
     it('produces byte-identical JSON when the same definition is appended twice', () => {
@@ -680,6 +820,9 @@ describe('IcebergSchemaHistory.fromJson', () => {
         sourceId: 1,
         transform: 'identity',
     };
+    const historyJson = (...tables: unknown[]): string => JSON.stringify({
+        tables,
+    });
     const table = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
         tableName: 't',
         fields: [
@@ -692,11 +835,7 @@ describe('IcebergSchemaHistory.fromJson', () => {
     });
 
     it('reads what toJson writes', () => {
-        const json = JSON.stringify({
-            tables: [
-                table(),
-            ],
-        });
+        const json = historyJson(table());
         expect(IcebergSchemaHistory.fromJson(json)).toEqual({
             tables: [
                 table(),
@@ -726,93 +865,79 @@ describe('IcebergSchemaHistory.fromJson', () => {
             'tables must be an array',
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table({
-                        tableName: 1,
-                    }),
-                ],
-            }),
+            historyJson(
+                table({
+                    tableName: 1,
+                }),
+            ),
             'tables[0].tableName must be a string',
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table({
-                        fields: [
-                            {
-                                ...FIELD,
-                                id: 1.5,
-                            },
-                        ],
-                    }),
-                ],
-            }),
+            historyJson(
+                table({
+                    fields: [
+                        {
+                            ...FIELD,
+                            id: 1.5,
+                        },
+                    ],
+                }),
+            ),
             'tables[0].fields[0].id must be an integer',
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table({
-                        fields: [
-                            {
-                                ...FIELD,
-                                dropped: 'no',
-                            },
-                        ],
-                    }),
-                ],
-            }),
+            historyJson(
+                table({
+                    fields: [
+                        {
+                            ...FIELD,
+                            dropped: 'no',
+                        },
+                    ],
+                }),
+            ),
             'tables[0].fields[0].dropped must be a boolean',
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table({
-                        partitionFields: [
-                            {
-                                ...PARTITION_FIELD,
-                                transform: null,
-                            },
-                        ],
-                    }),
-                ],
-            }),
+            historyJson(
+                table({
+                    partitionFields: [
+                        {
+                            ...PARTITION_FIELD,
+                            transform: null,
+                        },
+                    ],
+                }),
+            ),
             'tables[0].partitionFields[0].transform must be a string',
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table(),
-                    table(),
-                ],
-            }),
+            historyJson(
+                table(),
+                table(),
+            ),
             'table name t appears twice',
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table({
-                        fields: [
-                            FIELD,
-                            FIELD,
-                        ],
-                    }),
-                ],
-            }),
+            historyJson(
+                table({
+                    fields: [
+                        FIELD,
+                        FIELD,
+                    ],
+                }),
+            ),
             "table 't' field id 1 appears twice",
         ],
         [
-            JSON.stringify({
-                tables: [
-                    table({
-                        partitionFields: [
-                            PARTITION_FIELD,
-                            PARTITION_FIELD,
-                        ],
-                    }),
-                ],
-            }),
+            historyJson(
+                table({
+                    partitionFields: [
+                        PARTITION_FIELD,
+                        PARTITION_FIELD,
+                    ],
+                }),
+            ),
             "table 't' partition field id 1000 appears twice",
         ],
     ])('rejects %s', (json, problem) => {
@@ -1031,21 +1156,106 @@ describe('IcebergTable schemaHistoryFile', () => {
         const before = fs.readFileSync(second, 'utf-8');
 
         expect(() => IcebergSchemaHistory.updateFromCloudAssembly(assembly.directory)).toThrow(
-            /cannot record table 'events'/,
+            `cannot record table 'events' in ${second}:`,
         );
         expect(fs.readFileSync(first, 'utf-8')).toBe('{\n  "tables": []\n}\n');
         expect(fs.readFileSync(second, 'utf-8')).toBe(before);
     });
 
-    it('refuses two tables of the same name in one file', () => {
+    it('keeps the updates of tables that name one file through a symlink', () => {
         const file = writeHistory('h.json', {
             tables: [],
         });
+        const alias = path.join(directory, 'alias.json');
+        fs.symlinkSync(file, alias);
+        expect(updateThroughTwoPaths(file, alias)).toEqual(RECORDED_THROUGH_TWO_PATHS);
+    });
+
+    const caseInsensitive = ((): boolean => {
+        const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'case-'));
+        fs.writeFileSync(path.join(probe, 'a'), '');
+        const result = fs.existsSync(path.join(probe, 'A'));
+        fs.rmSync(probe, {
+            recursive: true,
+        });
+        return result;
+    })();
+
+    (caseInsensitive ? describe : describe.skip)('on a case-insensitive disk', () => {
+        it('keeps the updates of tables that name one file in two letter cases', () => {
+            const file = writeHistory('db.json', {
+                tables: [],
+            });
+            expect(updateThroughTwoPaths(file, path.join(directory, 'DB.json'))).toEqual(RECORDED_THROUGH_TWO_PATHS);
+        });
+    });
+
+    const RECORDED_THROUGH_TWO_PATHS = {
+        written: 1,
+        tables: [
+            'customers',
+            'orders',
+        ],
+    };
+
+    /** Files written and tables recorded when `orders` names the history by `file` and `customers` by `alias`. */
+    function updateThroughTwoPaths(file: string, alias: string): { written: number; tables: string[] } {
+        const assembly = app([
+            {
+                tableName: 'orders',
+                file,
+                schema: V1,
+            },
+            {
+                tableName: 'customers',
+                file: alias,
+                schema: V2,
+            },
+        ]).synth();
+        return {
+            written: IcebergSchemaHistory.updateFromCloudAssembly(assembly.directory).length,
+            tables: IcebergSchemaHistory.fromJson(fs.readFileSync(file, 'utf-8')).tables.map((t) => t.tableName),
+        };
+    }
+
+    it('fails the update when a history file is gone after synth', () => {
+        const file = writeHistory('h.json', {
+            tables: [],
+        });
+        const assembly = app([
+            {
+                tableName: 'orders',
+                file,
+                schema: V1,
+            },
+        ]).synth();
+        fs.rmSync(file);
+
+        expect(() => IcebergSchemaHistory.updateFromCloudAssembly(assembly.directory)).toThrow(
+            `cannot read schema history file ${file}:`,
+        );
+    });
+
+    it('refuses two tables of the same name in one file, whatever path names it', () => {
+        const file = writeHistory('h.json', {
+            tables: [],
+        });
+        const alias = path.join(directory, 'alias.json');
+        fs.symlinkSync(file, alias);
         const result = app([]);
-        for (const id of [
-            'One',
-            'Two',
-        ]) {
+        for (const [
+            id,
+            historyFile,
+        ] of [
+                [
+                    'One',
+                    file,
+                ],
+                [
+                    'Two',
+                    alias,
+                ],
+            ]) {
             const stack = new Stack(result, id);
             new IcebergTable(stack, 'Table', {
                 database: new Database(stack, 'Db', {
@@ -1054,7 +1264,7 @@ describe('IcebergTable schemaHistoryFile', () => {
                 tableName: 'orders',
                 formatVersion: IcebergFormatVersion.V2,
                 location: 's3://bucket/orders/',
-                schemaHistoryFile: file,
+                schemaHistoryFile: historyFile,
                 ...V1,
             });
         }

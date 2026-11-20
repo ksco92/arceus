@@ -223,12 +223,10 @@ export interface IcebergTableProps {
     readonly removalPolicy?: RemovalPolicy;
 
     /**
-     * Path of the committed schema history file of the table's database. A relative
-     * path resolves against the working directory, which is the `cdk.json` directory
-     * under the `cdk` CLI. When set, synth fails if the file is missing or malformed,
-     * or if the definition is an unsafe change from the table's record in it; a table
-     * with no record passes. `IcebergSchemaHistory.updateFromCloudAssembly` records the
-     * definition. The file is never written at synth.
+     * Path of the committed schema history file of the table's database, relative to
+     * the working directory. Synth fails if the file is missing or malformed, or if the
+     * definition is an unsafe change from the table's record in it. See the README
+     * section "Checking changes against a schema history".
      * @default - no history check
      */
     readonly schemaHistoryFile?: string;
@@ -329,8 +327,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
         validatePartitionSpec(props.partitionSpec, rendered.columnByName);
         validateSortOrder(props.sortOrder, rendered.columnByName);
         const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
+        const partitionSpec = renderPartitionSpec(props.partitionSpec, rendered.columnByName);
         if (props.schemaHistoryFile !== undefined) {
-            checkSchemaHistory(this, props.schemaHistoryFile, props.tableName, props);
+            checkSchemaHistory(this, props.schemaHistoryFile, props.tableName, rendered.fields, partitionSpec);
         }
 
         this.resource = new CfnTable(this, 'Resource', {
@@ -349,7 +348,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                             fields: rendered.fields,
                             identifierFieldIds: identifierFieldIds,
                         },
-                        partitionSpec: renderPartitionSpec(props.partitionSpec, rendered.columnByName),
+                        partitionSpec,
                         writeOrder: renderSortOrder(props.sortOrder, rendered.columnByName),
                         properties: mergedProperties,
                     },
