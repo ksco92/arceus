@@ -2,7 +2,6 @@ import {
     CfnTable,
 } from 'aws-cdk-lib/aws-glue';
 import {
-    IcebergRenderContext,
     IcebergType,
     IcebergTypeKind,
 } from './iceberg-type';
@@ -163,34 +162,23 @@ export function renderSchema(
     columns: IcebergColumn[],
     identifierFieldNames: string[] | undefined,
 ): RenderedSchema {
-    /// First pass: collect and validate the caller-provided top-level
-    /// ids (every column pins its own; the construct never fills them).
-    /// Nested-type ids continue above the highest top-level id so they
-    /// never collide with column ids.
-    const topLevelIds = collectTopLevelIds(columns);
-    let nextId = Math.max(...topLevelIds, columns.length) + 1;
-    const ctx: IcebergRenderContext = {
-        nextId: () => {
-            const id = nextId;
-            nextId += 1;
-            return id;
-        },
-    };
+    const pathById = new Map<number, string>();
+    for (const column of columns) {
+        claimFieldIds(column.name, column.id, column.type, pathById);
+    }
     const identifierNames = new Set(identifierFieldNames);
     const columnByName = new Map<string, RenderedColumn>();
-    const fields: CfnTable.IcebergStructFieldProperty[] = columns.map((column, index) => {
-        const id = topLevelIds[index];
-        const typeString = column.type._render(ctx);
+    const fields: CfnTable.IcebergStructFieldProperty[] = columns.map((column) => {
         const required = column.required ?? false;
         columnByName.set(column.name, {
-            id,
+            id: column.id,
             type: column.type,
             required,
         });
         return {
-            id,
+            id: column.id,
             name: column.name,
-            type: typeString,
+            type: column.type._render(),
             required,
             doc: identifierNames.has(column.name) ? `${IDENTIFIER_DOC_PREFIX}${column.doc ?? ''}` : column.doc,
         };
@@ -202,30 +190,37 @@ export function renderSchema(
 }
 
 /**
- * Validate the caller-provided top-level field ids and return them in
- * column order. Every column must pin an id (the construct no longer
- * auto-assigns); each id must be a positive integer and unique across
- * the column set. Throws on a missing, non-positive, or duplicate id.
+ * Record the id of the field at `path` and of every field nested in it
+ * in `pathById`. Throws on a missing, non-positive-integer, or repeated id.
  */
-function collectTopLevelIds(columns: IcebergColumn[]): number[] {
-    const taken = new Set<number>();
-    return columns.map((column) => {
-        /// Defensive: a jsii Python/JS caller can still pass nothing
-        /// despite the required TypeScript type, so guard at runtime.
-        if (column.id === undefined || column.id === null) {
-            throw new Error(`column '${column.name}' is missing a required id`);
-        }
-        if (!Number.isInteger(column.id) || column.id < 1) {
-            throw new Error(
-                `column '${column.name}' has invalid id ${column.id}; ids must be positive integers`,
-            );
-        }
-        if (taken.has(column.id)) {
-            throw new Error(`duplicate column id ${column.id} on column '${column.name}'`);
-        }
-        taken.add(column.id);
-        return column.id;
-    });
+function claimFieldIds(
+    path: string,
+    id: number | undefined,
+    type: IcebergType,
+    pathById: Map<number, string>,
+): void {
+    /// jsii callers outside TypeScript can omit a required id.
+    if (id === undefined || id === null) {
+        throw new Error(`column '${path}' is missing a required id`);
+    }
+    if (!Number.isInteger(id) || id < 1) {
+        throw new Error(`column '${path}' has invalid id ${id}; ids must be positive integers`);
+    }
+    const owner = pathById.get(id);
+    if (owner !== undefined) {
+        throw new Error(`duplicate field id ${id} on column '${path}', already used by '${owner}'`);
+    }
+    pathById.set(id, path);
+    if (type.listElement !== undefined) {
+        claimFieldIds(`${path}.element`, type.listElementId, type.listElement, pathById);
+    }
+    if (type.mapKey !== undefined) {
+        claimFieldIds(`${path}.key`, type.mapKeyId, type.mapKey, pathById);
+        claimFieldIds(`${path}.value`, type.mapValueId, type.mapValue!, pathById);
+    }
+    for (const field of type.structFields ?? []) {
+        claimFieldIds(`${path}.${field.name}`, field.id, field.type, pathById);
+    }
 }
 
 /** @internal */

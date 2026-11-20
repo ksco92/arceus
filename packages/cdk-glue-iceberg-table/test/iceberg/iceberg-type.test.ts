@@ -1,20 +1,8 @@
 import {
     IcebergEdgeAlgorithm,
-    IcebergRenderContext,
     IcebergType,
     IcebergTypeKind,
 } from '../../lib/iceberg/iceberg-type';
-
-function makeContext(start = 1): IcebergRenderContext {
-    let next = start;
-    return {
-        nextId: () => {
-            const id = next;
-            next += 1;
-            return id;
-        },
-    };
-}
 
 describe('IcebergType — direct constructor', () => {
     it('rejects decimal without precision + scale', () => {
@@ -63,12 +51,13 @@ describe('IcebergType — direct constructor', () => {
         })).toThrow(/listElement/);
     });
 
-    it('defaults listElementRequired to true when omitted', () => {
+    it('defaults listElementRequired to false when omitted', () => {
         const type = new IcebergType({
             kind: IcebergTypeKind.LIST,
             listElement: IcebergType.STRING,
+            listElementId: 2,
         });
-        expect(type.listElementRequired).toBe(true);
+        expect(type.listElementRequired).toBe(false);
     });
 
     it('rejects map without mapKey or mapValue', () => {
@@ -81,13 +70,15 @@ describe('IcebergType — direct constructor', () => {
         })).toThrow(/mapKey and mapValue/);
     });
 
-    it('defaults mapValueRequired to true when omitted', () => {
+    it('defaults mapValueRequired to false when omitted', () => {
         const type = new IcebergType({
             kind: IcebergTypeKind.MAP,
             mapKey: IcebergType.STRING,
+            mapKeyId: 2,
             mapValue: IcebergType.INT,
+            mapValueId: 3,
         });
-        expect(type.mapValueRequired).toBe(true);
+        expect(type.mapValueRequired).toBe(false);
     });
 
     it('rejects struct without fields', () => {
@@ -180,7 +171,7 @@ describe('IcebergType — primitive', () => {
             'variant',
         ],
     ])('%s renders to %s', (_label, type, expected) => {
-        expect(type._render(makeContext())).toBe(expected);
+        expect(type._render()).toBe(expected);
         expect(type.isPrimitive(expected)).toBe(true);
     });
 
@@ -196,19 +187,20 @@ describe('IcebergType — decimal', () => {
         /// so a spaceless render makes schema-identical updates fail with
         /// `Cannot set last added schema`. Regression guard for issue #40.
         const type = IcebergType.decimal(10, 2);
-        expect(type._render(makeContext())).toBe('decimal(10, 2)');
+        expect(type._render()).toBe('decimal(10, 2)');
         expect(type.isDecimal()).toBe(true);
     });
 
     it('renders a decimal nested inside a struct in canonical form', () => {
         const type = IcebergType.struct([
             {
+                id: 2,
                 name: 'amount',
                 type: IcebergType.decimal(12, 4),
                 required: true,
             },
         ]);
-        const repr = JSON.parse(type._render(makeContext()));
+        const repr = JSON.parse(type._render());
         expect(repr.fields[0].type).toBe('decimal(12, 4)');
     });
 
@@ -233,7 +225,7 @@ describe('IcebergType — decimal', () => {
 describe('IcebergType — fixed', () => {
     it('renders fixed[L]', () => {
         const type = IcebergType.fixed(16);
-        expect(type._render(makeContext())).toBe('fixed[16]');
+        expect(type._render()).toBe('fixed[16]');
         expect(type.isFixed()).toBe(true);
     });
 
@@ -247,88 +239,104 @@ describe('IcebergType — fixed', () => {
 });
 
 describe('IcebergType — list', () => {
-    it('renders a primitive list with auto-assigned element id', () => {
-        const type = IcebergType.list(IcebergType.STRING);
-        const ctx = makeContext(100);
-        const repr = JSON.parse(type._render(ctx));
-        expect(repr).toEqual({
+    it('renders the pinned element id with nullable elements by default', () => {
+        const type = IcebergType.list({
+            element: IcebergType.STRING,
+            elementId: 100,
+        });
+        expect(JSON.parse(type._render())).toEqual({
             type: 'list',
             'element-id': 100,
-            'element-required': true,
+            'element-required': false,
             element: 'string',
         });
     });
 
-    it('honors elementRequired=false', () => {
-        const type = IcebergType.list(IcebergType.INT, false);
-        const repr = JSON.parse(type._render(makeContext()));
-        expect(repr['element-required']).toBe(false);
+    it('honors elementRequired=true', () => {
+        const type = IcebergType.list({
+            element: IcebergType.INT,
+            elementId: 2,
+            elementRequired: true,
+        });
+        expect(JSON.parse(type._render())['element-required']).toBe(true);
     });
 
     it('nests complex types as JSON objects (no double encoding)', () => {
         const inner = IcebergType.struct([
             {
+                id: 3,
                 name: 'k',
                 type: IcebergType.STRING,
                 required: true,
             },
         ]);
-        const type = IcebergType.list(inner);
-        const repr = JSON.parse(type._render(makeContext()));
+        const type = IcebergType.list({
+            element: inner,
+            elementId: 2,
+        });
+        const repr = JSON.parse(type._render());
         expect(typeof repr.element).toBe('object');
         expect(repr.element.type).toBe('struct');
     });
 });
 
 describe('IcebergType — map', () => {
-    it('renders with auto-assigned key and value ids', () => {
-        const type = IcebergType.map(IcebergType.STRING, IcebergType.INT);
-        const ctx = makeContext(50);
-        const repr = JSON.parse(type._render(ctx));
-        expect(repr).toEqual({
+    it('renders the pinned key and value ids with nullable values by default', () => {
+        const type = IcebergType.map({
+            key: IcebergType.STRING,
+            keyId: 50,
+            value: IcebergType.INT,
+            valueId: 77,
+        });
+        expect(JSON.parse(type._render())).toEqual({
             type: 'map',
             'key-id': 50,
             key: 'string',
-            'value-id': 51,
-            'value-required': true,
+            'value-id': 77,
+            'value-required': false,
             value: 'int',
         });
     });
 
-    it('honors valueRequired=false', () => {
-        const type = IcebergType.map(IcebergType.STRING, IcebergType.STRING, false);
-        const repr = JSON.parse(type._render(makeContext()));
-        expect(repr['value-required']).toBe(false);
+    it('honors valueRequired=true', () => {
+        const type = IcebergType.map({
+            key: IcebergType.STRING,
+            keyId: 2,
+            value: IcebergType.STRING,
+            valueId: 3,
+            valueRequired: true,
+        });
+        expect(JSON.parse(type._render())['value-required']).toBe(true);
     });
 });
 
 describe('IcebergType — struct', () => {
-    it('renders fields with monotonic ids', () => {
+    it('renders the pinned field ids', () => {
         const type = IcebergType.struct([
             {
+                id: 11,
                 name: 'a',
                 type: IcebergType.INT,
                 required: true,
             },
             {
+                id: 10,
                 name: 'b',
                 type: IcebergType.STRING,
                 doc: 'optional b',
             },
         ]);
-        const ctx = makeContext(10);
-        const repr = JSON.parse(type._render(ctx));
-        expect(repr).toEqual({
+        expect(JSON.parse(type._render())).toEqual({
             type: 'struct',
             fields: [
                 {
-                    id: 10,
+                    id: 11,
                     name: 'a',
                     required: true,
                     type: 'int',
                 },
                 {
-                    id: 11,
+                    id: 10,
                     name: 'b',
                     required: false,
                     type: 'string',
@@ -345,40 +353,16 @@ describe('IcebergType — struct', () => {
     it('rejects duplicate field names', () => {
         expect(() => IcebergType.struct([
             {
+                id: 1,
                 name: 'a',
                 type: IcebergType.INT,
             },
             {
+                id: 2,
                 name: 'a',
                 type: IcebergType.STRING,
             },
         ])).toThrow(/duplicate field name/);
-    });
-
-    it('threads ids across nested structs', () => {
-        const inner = IcebergType.struct([
-            {
-                name: 'inner_field',
-                type: IcebergType.INT,
-            },
-        ]);
-        const outer = IcebergType.struct([
-            {
-                name: 'outer_a',
-                type: inner,
-            },
-            {
-                name: 'outer_b',
-                type: IcebergType.STRING,
-            },
-        ]);
-        const ctx = makeContext(100);
-        const repr = JSON.parse(outer._render(ctx));
-        const outerAField = repr.fields[0];
-        const outerBField = repr.fields[1];
-        expect(outerAField.id).toBe(100);
-        expect(outerAField.type.fields[0].id).toBe(101);
-        expect(outerBField.id).toBe(102);
     });
 });
 
@@ -421,7 +405,7 @@ describe('IcebergType — geospatial', () => {
             'geography(EPSG:4326, andoyer)',
         ],
     ])('renders %#: %s', (type, expected) => {
-        expect(type._render(makeContext())).toBe(expected);
+        expect(type._render()).toBe(expected);
     });
 
     it.each([

@@ -1,5 +1,7 @@
 export {
     IcebergEdgeAlgorithm,
+    IcebergListDefinition,
+    IcebergMapDefinition,
     IcebergType,
     IcebergTypeKind,
     IcebergTypeOptions,
