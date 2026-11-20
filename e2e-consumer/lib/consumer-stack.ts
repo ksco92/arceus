@@ -77,18 +77,23 @@ export class ConsumerStack extends Stack {
                 },
                 {
                     name: 'tags',
-                    type: IcebergType.list(IcebergType.STRING),
+                    type: IcebergType.list({
+                        element: IcebergType.STRING,
+                        elementId: 8,
+                    }),
                     id: 5,
                 },
                 {
                     name: 'shipping_address',
                     type: IcebergType.struct([
                         {
+                            id: 9,
                             name: 'city',
                             type: IcebergType.STRING,
                             required: true,
                         },
                         {
+                            id: 10,
                             name: 'country',
                             type: IcebergType.STRING,
                             required: true,
@@ -98,7 +103,13 @@ export class ConsumerStack extends Stack {
                 },
                 {
                     name: 'metadata',
-                    type: IcebergType.map(IcebergType.STRING, IcebergType.STRING, false),
+                    type: IcebergType.map({
+                        key: IcebergType.STRING,
+                        keyId: 11,
+                        value: IcebergType.STRING,
+                        valueId: 12,
+                        valueRequired: false,
+                    }),
                     id: 7,
                 },
             ],

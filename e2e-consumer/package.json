@@ -8,7 +8,7 @@
     },
     "dependencies": {
         "aws-cdk-lib": "^2.273.0",
-        "cdk-glue-iceberg-table": "^0.11.0",
+        "cdk-glue-iceberg-table": "^0.13.0",
         "constructs": "^10.8.1"
     },
     "devDependencies": {

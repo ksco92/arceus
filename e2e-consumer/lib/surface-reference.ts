@@ -15,6 +15,8 @@
  */
 import type {
     IcebergColumn,
+    IcebergListDefinition,
+    IcebergMapDefinition,
     IcebergPartitionField,
     IcebergPartitionTransformOptions,
     IcebergSortField,
@@ -26,6 +28,7 @@ import type {
 } from 'cdk-glue-iceberg-table';
 import {
     IcebergDataFormat,
+    IcebergEdgeAlgorithm,
     IcebergFormatVersion,
     IcebergNullOrder,
     IcebergPartitionTransform,
@@ -50,15 +53,30 @@ const types = [
     IcebergType.STRING,
     IcebergType.UUID,
     IcebergType.BINARY,
+    IcebergType.UNKNOWN,
+    IcebergType.TIMESTAMP_NS,
+    IcebergType.TIMESTAMPTZ_NS,
+    IcebergType.VARIANT,
 ];
 
 const parameterized = [
     IcebergType.decimal(10, 2),
     IcebergType.fixed(16),
-    IcebergType.list(IcebergType.STRING),
-    IcebergType.map(IcebergType.STRING, IcebergType.INT),
+    IcebergType.list({
+        element: IcebergType.STRING,
+        elementId: 1,
+    }),
+    IcebergType.map({
+        key: IcebergType.STRING,
+        keyId: 1,
+        value: IcebergType.INT,
+        valueId: 2,
+    }),
+    IcebergType.geometry(),
+    IcebergType.geography(),
     IcebergType.struct([
         {
+            id: 1,
             name: 'k',
             type: IcebergType.STRING,
             required: true,
@@ -87,6 +105,7 @@ const enums = [
     IcebergDataFormat.AVRO,
     IcebergFormatVersion.V1,
     IcebergFormatVersion.V2,
+    IcebergFormatVersion.V3,
     IcebergTypeKind.BOOLEAN,
     IcebergTypeKind.INT,
     IcebergTypeKind.LONG,
@@ -104,6 +123,17 @@ const enums = [
     IcebergTypeKind.LIST,
     IcebergTypeKind.MAP,
     IcebergTypeKind.STRUCT,
+    IcebergTypeKind.UNKNOWN,
+    IcebergTypeKind.TIMESTAMP_NS,
+    IcebergTypeKind.TIMESTAMPTZ_NS,
+    IcebergTypeKind.VARIANT,
+    IcebergTypeKind.GEOMETRY,
+    IcebergTypeKind.GEOGRAPHY,
+    IcebergEdgeAlgorithm.SPHERICAL,
+    IcebergEdgeAlgorithm.VINCENTY,
+    IcebergEdgeAlgorithm.THOMAS,
+    IcebergEdgeAlgorithm.ANDOYER,
+    IcebergEdgeAlgorithm.KARNEY,
     IcebergPartitionTransformKind.IDENTITY,
     IcebergPartitionTransformKind.YEAR,
     IcebergPartitionTransformKind.MONTH,
@@ -138,6 +168,8 @@ const propertyKeys = [
 // anchors each one.
 const typeAnchors: Array<unknown> = [
     null as unknown as IcebergColumn,
+    null as unknown as IcebergListDefinition,
+    null as unknown as IcebergMapDefinition,
     null as unknown as IcebergPartitionField,
     null as unknown as IcebergPartitionTransformOptions,
     null as unknown as IcebergSortField,
