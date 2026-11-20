@@ -2466,6 +2466,81 @@ describe('IcebergTable — v3 types', () => {
     });
 
     it.each([
+        [
+            'float',
+            IcebergType.FLOAT,
+        ],
+        [
+            'double',
+            IcebergType.DOUBLE,
+        ],
+        [
+            'list',
+            IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: 3,
+            }),
+        ],
+        [
+            'map',
+            IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 3,
+                value: IcebergType.STRING,
+                valueId: 4,
+            }),
+        ],
+        [
+            'struct',
+            IcebergType.struct([
+                {
+                    id: 3,
+                    name: 'f',
+                    type: IcebergType.STRING,
+                },
+            ]),
+        ],
+    ])('rejects a %s column in identifierFieldNames', (kind, type) => {
+        expect(() => build(IcebergFormatVersion.V2, {
+            type,
+            required: true,
+        }, [
+            'id',
+            'c',
+        ])).toThrow(`identifierFieldNames references column 'c' of type '${kind}', which cannot identify a row`);
+    });
+
+    it.each([
+        [
+            'decimal',
+            IcebergType.decimal(10, 2),
+        ],
+        [
+            'long',
+            IcebergType.LONG,
+        ],
+        [
+            'string',
+            IcebergType.STRING,
+        ],
+        [
+            'uuid',
+            IcebergType.UUID,
+        ],
+        [
+            'date',
+            IcebergType.DATE,
+        ],
+    ])('accepts a %s column in identifierFieldNames', (_kind, type) => {
+        expect(() => build(IcebergFormatVersion.V2, {
+            type,
+            required: true,
+        }, [
+            'c',
+        ])).not.toThrow();
+    });
+
+    it.each([
         IcebergType.TIMESTAMP_NS,
         IcebergType.TIMESTAMPTZ_NS,
     ])('accepts nanosecond timestamp %s in identifierFieldNames', (type) => {

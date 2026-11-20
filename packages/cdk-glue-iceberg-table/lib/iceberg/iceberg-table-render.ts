@@ -73,13 +73,18 @@ const V3_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
     IcebergTypeKind.GEOGRAPHY,
 ]);
 
-const NON_IDENTIFIER_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set(
-    [
+const NON_IDENTIFIER_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
+    ...[
         ...V3_TYPE_KINDS,
     ].filter(
         (kind) => kind !== IcebergTypeKind.TIMESTAMP_NS && kind !== IcebergTypeKind.TIMESTAMPTZ_NS,
     ),
-);
+    IcebergTypeKind.FLOAT,
+    IcebergTypeKind.DOUBLE,
+    IcebergTypeKind.LIST,
+    IcebergTypeKind.MAP,
+    IcebergTypeKind.STRUCT,
+]);
 
 /**
  * Throws if the field at `path`, or any field nested in it, uses a v3
