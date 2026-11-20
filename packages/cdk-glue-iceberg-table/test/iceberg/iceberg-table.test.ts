@@ -2451,21 +2451,6 @@ describe('IcebergTable — v3 types', () => {
             'geography',
             IcebergType.geography(),
         ],
-    ])('rejects a %s column in identifierFieldNames and accepts it outside them', (kind, type) => {
-        expect(() => build(IcebergFormatVersion.V3, {
-            type,
-        }, [
-            'id',
-            'c',
-        ])).toThrow(`identifierFieldNames references column 'c' of type '${kind}', which cannot identify a row`);
-        expect(() => build(IcebergFormatVersion.V3, {
-            type,
-        }, [
-            'id',
-        ])).not.toThrow();
-    });
-
-    it.each([
         [
             'float',
             IcebergType.FLOAT,
@@ -2500,14 +2485,18 @@ describe('IcebergTable — v3 types', () => {
                 },
             ]),
         ],
-    ])('rejects a %s column in identifierFieldNames', (kind, type) => {
-        expect(() => build(IcebergFormatVersion.V2, {
+    ])('rejects a %s column in identifierFieldNames and accepts it outside them', (kind, type) => {
+        expect(() => build(IcebergFormatVersion.V3, {
             type,
-            required: true,
         }, [
             'id',
             'c',
         ])).toThrow(`identifierFieldNames references column 'c' of type '${kind}', which cannot identify a row`);
+        expect(() => build(IcebergFormatVersion.V3, {
+            type,
+        }, [
+            'id',
+        ])).not.toThrow();
     });
 
     it.each([
