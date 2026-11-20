@@ -75,3 +75,20 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: '123456789012'
           CDK_DEFAULT_REGION: us-east-1
+
+  peer-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install the declared peer floors
+        run: |
+          floor() { node -p "require('./packages/cdk-glue-iceberg-table/package.json').peerDependencies['$1'].replace(/^[^0-9]*/, '')"; }
+          npm install --no-save "aws-cdk-lib@$(floor aws-cdk-lib)" "constructs@$(floor constructs)"
+          npm ls aws-cdk-lib constructs
+      - run: npm test --workspace cdk-glue-iceberg-table
