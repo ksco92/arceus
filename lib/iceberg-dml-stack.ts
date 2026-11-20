@@ -124,6 +124,8 @@ export class IcebergDmlStack extends Stack {
                 'write.delete.mode': 'merge-on-read',
                 'write.update.mode': 'merge-on-read',
                 'write.merge.mode': 'merge-on-read',
+                /// Athena VACUUM expires only snapshots older than this.
+                'history.expire.max-snapshot-age-ms': '1000',
             },
             removalPolicy: RemovalPolicy.DESTROY,
         });
