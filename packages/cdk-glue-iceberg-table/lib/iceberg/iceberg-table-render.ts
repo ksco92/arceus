@@ -100,6 +100,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         tableName,
         columns,
         location,
+        encryptionKey,
         partitionSpec,
         sortOrder,
         identifierFieldNames,
@@ -112,6 +113,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
     } = props;
     return {
         database,
+        encryptionKey,
         removalPolicy,
         tableName: primitive('tableName', tableName, 'string'),
         location: primitive('location', location, 'string', {
