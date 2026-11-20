@@ -26,9 +26,10 @@ function synthAt(step: number | string): Template {
     return Template.fromStack(stack);
 }
 
-function icebergInputAt(step: number | string) {
-    const tables = synthAt(step).findResources('AWS::Glue::Table');
-    return Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
+function icebergInputAt(step: number | string, tableName = 'evolution_test') {
+    const tables = Object.values(synthAt(step).findResources('AWS::Glue::Table'));
+    const table = tables.find((resource) => resource.Properties.Name === tableName);
+    return table!.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
 }
 
 function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
@@ -208,6 +209,111 @@ describe('IcebergEvolutionStack — identifier evolution', () => {
     });
 });
 
+function nestedFieldsAt(step: number): Array<{ Id: number; Name: string; Type: unknown }> {
+    return icebergInputAt(step, 'nested_evolution_test').Schema.Fields.map((field: { Id: number; Name: string; Type: string }) => ({
+        Id: field.Id,
+        Name: field.Name,
+        Type: field.Type.startsWith('{') ? JSON.parse(field.Type) : field.Type,
+    }));
+}
+
+describe('IcebergEvolutionStack — nested evolution', () => {
+    const structField = (id: number, name: string) => ({
+        id,
+        name,
+        required: false,
+        type: 'string',
+    });
+    const baseline = [
+        {
+            Id: 1,
+            Name: 'id',
+            Type: 'long',
+        },
+        {
+            Id: 2,
+            Name: 'tags',
+            Type: {
+                type: 'list',
+                'element-id': 5,
+                'element-required': false,
+                element: 'string',
+            },
+        },
+        {
+            Id: 3,
+            Name: 'attrs',
+            Type: {
+                type: 'map',
+                'key-id': 6,
+                key: 'string',
+                'value-id': 7,
+                'value-required': false,
+                value: 'string',
+            },
+        },
+        {
+            Id: 4,
+            Name: 'addr',
+            Type: {
+                type: 'struct',
+                fields: [
+                    structField(8, 'line1'),
+                    structField(9, 'city'),
+                ],
+            },
+        },
+    ];
+    const withNote = [
+        ...baseline,
+        {
+            Id: 10,
+            Name: 'note',
+            Type: 'string',
+        },
+    ];
+    const withZip = withNote.map((field) => (field.Name === 'addr' ? {
+        ...field,
+        Type: {
+            type: 'struct',
+            fields: [
+                structField(8, 'line1'),
+                structField(11, 'zip'),
+                structField(9, 'city'),
+            ],
+        },
+    } : field));
+
+    it.each([
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+    ])('step %i renders the baseline nested table', (step) => {
+        expect(nestedFieldsAt(step)).toEqual(baseline);
+    });
+
+    it.each([
+        [
+            7,
+            withNote,
+        ],
+        [
+            8,
+            withZip,
+        ],
+    ])('step %i renders the nested table with its added field', (step, expected) => {
+        expect(nestedFieldsAt(step)).toEqual(expected);
+    });
+
+    it('steps 7 and 8 leave the evolution_test table at its step 6 shape', () => {
+        expect(icebergInputAt(7)).toEqual(icebergInputAt(6));
+        expect(icebergInputAt(8)).toEqual(icebergInputAt(6));
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -227,23 +333,41 @@ describe('IcebergEvolutionStack — wiring', () => {
     });
 
     it('rejects an out-of-range step', () => {
-        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, or 6/);
+        expect(() => synthAt(99)).toThrow(/evolutionStep must be 1, 2, 3, 4, 5, 6, 7, or 8/);
     });
 
-    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on the table', () => {
+    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on both tables', () => {
         const template = synthAt(1);
-        const permissions = template.findResources('AWS::LakeFormation::Permissions');
-        const permission = Object.values(permissions)[0];
-        expect(permission.Properties.Permissions).toEqual(expect.arrayContaining([
-            'SELECT',
-            'INSERT',
-            'DELETE',
-            'ALTER',
-            'DESCRIBE',
+        const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'));
+        const tableIds = Object.fromEntries(Object.entries(template.findResources('AWS::Glue::Table')).map(([
+            logicalId,
+            table,
+        ]) => [
+            table.Properties.Name,
+            logicalId,
         ]));
-        /// Partition is a CFN intrinsic; resolve to JSON and assert
-        /// the user-name + account literals end up in the identifier.
-        const identifier = JSON.stringify(permission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier);
-        expect(identifier).toContain('iam::123456789012:user/me');
+        expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
+            'evolution_test',
+            'nested_evolution_test',
+        ]);
+        permissions.forEach((permission) => {
+            expect([
+                ...permission.Properties.Permissions,
+            ].sort()).toEqual([
+                'ALTER',
+                'DELETE',
+                'DESCRIBE',
+                'INSERT',
+                'SELECT',
+            ]);
+            expect(permission.Properties.PermissionsWithGrantOption).toEqual([]);
+            expect(permission.DependsOn).toEqual([
+                tableIds[permission.Properties.Resource.TableResource.Name],
+            ]);
+            /// Partition is a CFN intrinsic; resolve to JSON and assert
+            /// the user-name + account literals end up in the identifier.
+            const identifier = JSON.stringify(permission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier);
+            expect(identifier).toContain('iam::123456789012:user/me');
+        });
     });
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # End-to-end integration test for IcebergTable schema + partition
-# evolution. Drives the `IcebergEvolutionStack` through six real
+# evolution. Drives the `IcebergEvolutionStack` through eight real
 # `cdk deploy`s and verifies the resulting Glue / Iceberg metadata
 # after each.
 #
@@ -32,6 +32,7 @@ set -euo pipefail
 AWS_REGION="${AWS_REGION:-us-east-1}"
 DATABASE="sample_database"
 TABLE="evolution_test"
+NESTED_TABLE="nested_evolution_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -46,7 +47,7 @@ header() { printf '\n=== %s ===\n' "$*"; }
 table_column_names() {
     META_LOC=$(aws glue get-table \
         --database-name "$DATABASE" \
-        --name "$TABLE" \
+        --name "${1:-$TABLE}" \
         --region "$AWS_REGION" \
         --query 'Table.Parameters.metadata_location' \
         --output text)
@@ -54,6 +55,23 @@ table_column_names() {
         | python3 -c "
 import json, sys
 m = json.load(sys.stdin)
+nested = []
+
+def walk(path, t):
+    if not isinstance(t, dict):
+        return
+    if t['type'] == 'struct':
+        for f in t['fields']:
+            nested.append('%s.%s:%d' % (path, f['name'], f['id']))
+            walk(path + '.' + f['name'], f['type'])
+    elif t['type'] == 'list':
+        nested.append('%s.element:%d' % (path, t['element-id']))
+        walk(path + '.element', t['element'])
+    elif t['type'] == 'map':
+        nested.append('%s.key:%d' % (path, t['key-id']))
+        nested.append('%s.value:%d' % (path, t['value-id']))
+        walk(path + '.value', t['value'])
+
 current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
 current_spec = next(s for s in m['partition-specs'] if s['spec-id'] == m['default-spec-id'])
 print('schema-id', m['current-schema-id'])
@@ -61,6 +79,10 @@ print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
+for f in current_schema['fields']:
+    nested.append('%s:%d' % (f['name'], f['id']))
+    walk(f['name'], f['type'])
+print('nested-ids', ','.join(nested))
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
 print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
@@ -158,6 +180,21 @@ assert_identifiers() {
     fi
 }
 
+assert_nested_ids() {
+    local expected="$1 $2"
+    local listing actual
+    listing=$(table_column_names "$NESTED_TABLE")
+    actual="$(echo "$listing" | grep ^nested-ids | cut -d' ' -f2) $(echo "$listing" | grep ^last-column-id | cut -d' ' -f2)"
+    if [ "$actual" = "$expected" ]; then
+        green "  nested ids ✓ ($actual)"
+    else
+        red   "  nested ids ✗"
+        red   "    expected: $expected"
+        red   "    actual:   $actual"
+        return 1
+    fi
+}
+
 deploy_step() {
     local step="$1"
     header "STEP $step — cdk deploy"
@@ -175,8 +212,11 @@ deploy_step() {
 header "TEARDOWN any existing IcebergEvolutionStack from a prior run"
 npx cdk destroy "$STACK" --force --region "$AWS_REGION" 2>&1 | tail -3 || true
 yellow "  Also clearing the table's S3 prefix so Iceberg starts fresh."
-aws s3 rm "s3://data-lake-bucket-$(aws sts get-caller-identity --query Account --output text)/${DATABASE}/${TABLE}/" \
-    --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+for prefix in "$TABLE" "$NESTED_TABLE"; do
+    aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
+        --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
+done
 
 ################################################
 ################################################
@@ -189,7 +229,10 @@ assert_columns "1:customer_id,2:email,3:signed_up_at"
 assert_partitions "signed_up_at_day"
 assert_identifiers "1" "customer_id"
 
-header "SPARK step 1 (INSERT seed rows)"
+BASE_IDS="id:1,tags:2,tags.element:5,attrs:3,attrs.key:6,attrs.value:7,addr:4,addr.line1:8"
+assert_nested_ids "${BASE_IDS},addr.city:9" "9"
+
+header "SPARK step 1 (INSERT seed rows, including the nested row)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
 
 ################################################
@@ -270,6 +313,30 @@ header "VERIFY step 6 (CHANGE identifier fields only)"
 assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
 assert_partitions "signed_up_at_month"
 assert_identifiers "2" "contact_email"
+
+################################################
+################################################
+# Step 7: ADD top-level column `note` (id 10) to the nested table.
+
+deploy_step 7
+
+header "VERIFY step 7 (nested ids after ADD top-level column)"
+assert_nested_ids "${BASE_IDS},addr.city:9,note:10" "10"
+
+header "SPARK step 7 (old nested row readable by name, INSERT a new row)"
+spark_submit "$VERIFY_PROGRAM" --phase 7
+
+################################################
+################################################
+# Step 8: ADD struct field `addr.zip` (id 11) between line1 and city.
+
+deploy_step 8
+
+header "VERIFY step 8 (nested ids after ADD struct field in the middle)"
+assert_nested_ids "${BASE_IDS},addr.zip:11,addr.city:9,note:10" "11"
+
+header "SPARK step 8 (old nested rows readable by name, INSERT a row with zip)"
+spark_submit "$VERIFY_PROGRAM" --phase 8
 
 ################################################
 ################################################
