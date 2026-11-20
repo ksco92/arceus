@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # End-to-end integration test for IcebergTable schema + partition
-# evolution. Drives the `IcebergEvolutionStack` through eight real
+# evolution. Drives the `IcebergEvolutionStack` through twelve real
 # `cdk deploy`s and verifies the resulting Glue / Iceberg metadata
 # after each, then the rows and column shape through Spark and Athena.
+# The step 11 deploy fails by design and rolls back.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -64,8 +65,15 @@ m = json.load(sys.stdin)
 current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
 current_spec = next(s for s in m['partition-specs'] if s['spec-id'] == m['default-spec-id'])
 print('schema-id', m['current-schema-id'])
+print('max-schema-id', max(s['schema-id'] for s in m['schemas']))
 print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
+print('default-spec-id', m['default-spec-id'])
+print('default-sort-order-id', m['default-sort-order-id'])
+print('sort-orders', ';'.join(str(o['order-id']) + ':' + ','.join(
+    f\"{f['transform']}({f['source-id']})/{f['direction']}/{f['null-order']}\" for f in o['fields'])
+    for o in m['sort-orders']))
+print('commit-retries', m['properties'].get('commit.retry.num-retries', 'unset'))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
@@ -151,6 +159,27 @@ if m['last-partition-id'] < max_field_id:
     fi
 }
 
+assert_same() {
+    local label="$1" expected="$2" actual="$3"
+    if [ "$actual" = "$expected" ]; then
+        green "  $label ✓"
+    else
+        red   "  $label ✗"
+        red   "    expected: $expected"
+        red   "    actual:   $actual"
+        return 1
+    fi
+}
+
+assert_meta() {
+    assert_same "$1 = $2" "$2" "$(table_column_names | grep "^$1 " | cut -d' ' -f2)"
+}
+
+# The listing of `evolution_test` without the lines whose key matches $1.
+listing_without() {
+    table_column_names | grep -vE "^($1) "
+}
+
 assert_identifiers() {
     local expected="$1 $2"
     local listing actual
@@ -191,6 +220,7 @@ ROW_11="11|b@example.com|2026-01-02 09:00:00.000000 UTC"
 ROW_12="12|c@example.com|2026-01-03 09:00:00.000000 UTC"
 ROW_13="13|d@example.com|2026-02-01 09:00:00.000000 UTC"
 ROW_14="14|e@example.com|2026-03-05 09:00:00.000000 UTC"
+ROLLBACK_REASON="Cannot wait on specified Handle URL - handle must originate from within the same stack"
 ROW_100="100|t1|t2|v1|v2|L1|C1"
 ROW_101="101|u1|u2|w1|w2|M1|D1"
 
@@ -374,6 +404,92 @@ header "ATHENA step 8"
 athena_expect "nested rows with addr.zip" "${NESTED_ROWS}, note, addr.zip AS zip FROM ${NESTED_TABLE} ORDER BY id" \
     "id|tag1|tag2|k1|k2|line1|city|note|zip" \
     "${ROW_100}|NULL|NULL" "${ROW_101}|n101|NULL" "102|x1|x2|y1|y2|N1|E1|n102|Z102"
+
+################################################
+################################################
+# Step 9: CHANGE one table property of evolution_test, nothing else.
+
+assert_meta commit-retries unset
+BEFORE=$(listing_without commit-retries)
+
+deploy_step 9
+
+header "VERIFY step 9 (property-only update)"
+assert_meta commit-retries 5
+assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without commit-retries)"
+
+header "ATHENA step 9"
+athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" \
+    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+
+################################################
+################################################
+# Step 10: CHANGE the sort order from customer_id to signed_up_at DESC.
+
+assert_meta sort-orders "1:identity(1)/asc/nulls-last"
+BEFORE=$(listing_without "default-sort-order-id|sort-orders")
+
+deploy_step 10
+
+header "VERIFY step 10 (sort order change)"
+assert_meta default-sort-order-id 2
+assert_meta sort-orders "1:identity(1)/asc/nulls-last;2:identity(3)/desc/nulls-first"
+assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without "default-sort-order-id|sort-orders")"
+
+header "ATHENA step 10"
+athena_expect "rows unchanged" "$ROWS" "customer_id|contact_email|signed_up_at" \
+    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+
+################################################
+################################################
+# Step 11: ADD column country (id 5) in a deploy whose wait condition,
+# created after the table update, fails. The stack must roll back.
+
+SCHEMAS_BEFORE=$(table_column_names | grep ^schemas-count | cut -d' ' -f2)
+BEFORE=$(listing_without "max-schema-id|last-column-id|schemas-count")
+
+header "STEP 11 — cdk deploy (fails by design)"
+if DEPLOY_OUTPUT=$(npx cdk deploy "$STACK" \
+    --require-approval=never \
+    --region "$AWS_REGION" \
+    --context "evolutionStep=11" 2>&1); then
+    red "  step 11 deploy succeeded; expected a failure and a rollback"
+    exit 1
+fi
+echo "$DEPLOY_OUTPUT" | tail -3
+
+header "VERIFY step 11 (rolled back)"
+assert_same "stack status" UPDATE_ROLLBACK_COMPLETE "$(aws cloudformation describe-stacks \
+    --stack-name "$STACK" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text)"
+assert_same "only RollbackTrigger failed" "$(printf 'RollbackTrigger\t%s' "$ROLLBACK_REASON")" \
+    "$(aws cloudformation describe-stack-events --stack-name "$STACK" --region "$AWS_REGION" \
+        --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[LogicalResourceId,ResourceStatusReason]" \
+        --output text)"
+assert_same "current schema, columns and orders as before step 11" "$BEFORE" \
+    "$(listing_without "max-schema-id|last-column-id|schemas-count")"
+assert_meta last-column-id 5
+assert_meta schemas-count $((SCHEMAS_BEFORE + 1))
+ROLLED_BACK_SCHEMA_ID=$(table_column_names | grep ^max-schema-id | cut -d' ' -f2)
+
+header "ATHENA step 11"
+athena_expect "rows unchanged after the rollback" "$ROWS" "customer_id|contact_email|signed_up_at" \
+    "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
+
+################################################
+################################################
+# Step 12: the step 11 change again, without the failing resource.
+
+deploy_step 12
+
+header "VERIFY step 12 (redeploy of the rolled-back change)"
+assert_columns "1:customer_id,2:contact_email,3:signed_up_at,5:country"
+assert_meta schema-id "$ROLLED_BACK_SCHEMA_ID"
+assert_meta schemas-count $((SCHEMAS_BEFORE + 1))
+assert_meta last-column-id 5
+
+header "ATHENA step 12"
+athena_expect "old rows read country NULL" "$ROWS" "customer_id|contact_email|signed_up_at|country" \
+    "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|NULL" "${ROW_14}|NULL"
 
 ################################################
 ################################################
