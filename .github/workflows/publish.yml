@@ -97,7 +97,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: 24 # .nvmrc value; no checkout in this job
+          node-version: 24 # keep in step with .nvmrc
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm >= 11.5.1; the npm bundled with
       # setup-node is older.
