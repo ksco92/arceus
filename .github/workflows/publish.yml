@@ -2,8 +2,7 @@ name: Publish to npm and PyPI
 
 # Runs on every push to `main` (every PR merge) and on manual dispatch.
 # Publishes the version in package.json to each registry only when it
-# differs from the version already there, so a PR that forgets to bump
-# is a no-op.
+# differs from the version already there.
 #
 # Trusted publishing (OIDC, no registry token secrets) is configured on
 # npmjs.com and pypi.org for repo ksco92/arceus and workflow `publish.yml`,
@@ -101,7 +100,7 @@ jobs:
           node-version: 24 # .nvmrc value; no checkout in this job
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm >= 11.5.1; the npm bundled with
-      # setup-node is older. This is the only install in the job.
+      # setup-node is older.
       - run: npm install -g npm@latest
       - uses: actions/download-artifact@v8
         with:
