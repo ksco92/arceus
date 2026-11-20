@@ -133,12 +133,12 @@ header "ATHENA OPTIMIZE REWRITE DATA USING BIN_PACK"
 run_athena "OPTIMIZE ${TABLE} REWRITE DATA USING BIN_PACK" >/dev/null
 athena_expect "latest snapshot is the rewrite" \
     "SELECT operation FROM \"${TABLE}\$snapshots\" ORDER BY committed_at DESC LIMIT 1" "operation" "replace"
-athena_expect "rows unchanged" "$OWN_ROWS" "${FINAL[@]}"
+athena_expect "rows unchanged after OPTIMIZE" "$OWN_ROWS" "${FINAL[@]}"
 
 header "ATHENA VACUUM"
 run_athena "VACUUM ${TABLE}" >/dev/null
 athena_expect "snapshots expired" "SELECT count(*) AS snapshots FROM \"${TABLE}\$snapshots\"" "snapshots" "1"
-athena_expect "rows unchanged" "$OWN_ROWS" "${FINAL[@]}"
+athena_expect "rows unchanged after VACUUM" "$OWN_ROWS" "${FINAL[@]}"
 
 header "SPARK reads the rows Athena wrote"
 spark_submit "$VERIFY_PROGRAM" --phase athena-rows

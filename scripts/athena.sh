@@ -8,15 +8,13 @@
 #
 # Optional env vars:
 #   ATHENA_WORKGROUP       - default primary
-#   ATHENA_OUTPUT_LOCATION - default s3://data-lake-bucket-<account>/athena-results/
+#   ATHENA_OUTPUT_LOCATION - default s3://data-lake-bucket-<ACCOUNT_ID>/athena-results/
 #   ATHENA_TIMEOUT_SECONDS - default 600
-#   AWS_REGION             - default us-east-1
 
 ATHENA_WORKGROUP="${ATHENA_WORKGROUP:-primary}"
-# ponytail: query results accumulate under the location; add an S3 lifecycle rule if it grows
+# Query results accumulate under the location; add an S3 lifecycle rule if that grows.
 ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://data-lake-bucket-$(aws sts get-caller-identity --query Account --output text)/athena-results/}"
 ATHENA_TIMEOUT_SECONDS="${ATHENA_TIMEOUT_SECONDS:-600}"
-AWS_REGION="${AWS_REGION:-us-east-1}"
 
 run_athena() {
     local sql="$1" qid state deadline=$((SECONDS + ATHENA_TIMEOUT_SECONDS))

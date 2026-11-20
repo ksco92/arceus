@@ -31,7 +31,7 @@ def snapshot_ids():
     return [row[0] for row in rows]
 
 
-def dml():
+def insert_update_delete():
     print("STEP 1 - INSERT 5 seed accounts")
     spark.sql(f"""INSERT INTO {TABLE} VALUES
       (1, 'a@example.com', CAST(100.00 AS DECIMAL(12,2)), TIMESTAMP '2026-01-01 09:00:00+00:00'),
@@ -53,6 +53,8 @@ def dml():
     check("row count after DELETE", 4, count())
     check("deleted row gone", 0, count("WHERE account_id = 4"))
 
+
+def merge_and_time_travel():
     print("STEP 4 - capture pre-MERGE snapshot id")
     snapshot_pre_merge = snapshot_ids()[-1]
     print(f"  pre-MERGE snapshot_id = {snapshot_pre_merge}")
@@ -84,6 +86,8 @@ def dml():
     check("time-travel count", 4, count(as_of))
     check("time-travel pre-MERGE sees no id=6", 0, count(f"{as_of} WHERE account_id = 6"))
 
+
+def maintenance():
     print("STEP 7 - rewrite_data_files")
     spark.sql(f"CALL glue.system.rewrite_data_files(table => '{PROCEDURE_TABLE}')")
     check("row count unchanged after compaction", 6, count())
@@ -105,6 +109,12 @@ def dml():
     actual = [(row[0], str(row[1])) for row in rows]
     expected = [(1, "100.00"), (2, "250.00"), (3, "333.00"), (5, "500.00"), (6, "600.00"), (7, "700.00")]
     check("final state", expected, actual)
+
+
+def dml():
+    insert_update_delete()
+    merge_and_time_travel()
+    maintenance()
 
 
 def athena_rows():
