@@ -199,7 +199,6 @@ function claimFieldIds(
     type: IcebergType,
     pathById: Map<number, string>,
 ): void {
-    /// jsii callers outside TypeScript can omit a required id.
     if (id === undefined || id === null) {
         throw new Error(`column '${path}' is missing a required id`);
     }
