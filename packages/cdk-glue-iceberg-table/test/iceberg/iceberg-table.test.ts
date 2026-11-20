@@ -1375,63 +1375,40 @@ describe('IcebergTable — nested field ids', () => {
         ])).toThrow(`column 'c' has invalid id 5 of type ${typeName}; ids must be numbers`);
     });
 
-    it('keeps id message paths distinct when names contain backquotes and dots', () => {
-        let message = '';
-        try {
-            synthFields([
-                {
-                    name: 'a.`b',
-                    type: IcebergType.STRING,
-                    id: 1,
-                },
-                {
-                    name: '`a',
-                    type: IcebergType.struct([
-                        {
-                            id: 1,
-                            name: '`b`',
-                            type: IcebergType.STRING,
-                        },
-                    ]),
-                    id: 2,
-                },
-            ]);
-        } catch (e) {
-            message = (e as Error).message;
-        }
-        const [
-            , path,
-            owner,
-        ] = /^duplicate field id 1 on column '(.*)', already used by '(.*)'$/.exec(message) ?? [];
-        expect([
-            path,
-            owner,
-        ]).toEqual([
-            '```a`.```b```',
-            '`a.``b`',
-        ]);
-        expect(path).not.toBe(owner);
-    });
-
-    it('backquotes a name that contains a dot in id messages', () => {
+    it.each([
+        [
+            'a dot',
+            'a.b',
+            'a',
+            'b',
+            "duplicate field id 1 on column 'a.b', already used by '`a.b`'",
+        ],
+        [
+            'backquotes and a dot',
+            'a.`b',
+            '`a',
+            '`b`',
+            "duplicate field id 1 on column '```a`.```b```', already used by '`a.``b`'",
+        ],
+    ])('keeps id message paths distinct when names contain %s', (_label, columnName, structName, fieldName, message) => {
         expect(() => synthFields([
             {
-                name: 'a.b',
+                name: columnName,
                 type: IcebergType.STRING,
                 id: 1,
             },
             {
-                name: 'a',
+                name: structName,
                 type: IcebergType.struct([
                     {
                         id: 1,
-                        name: 'b',
+                        name: fieldName,
                         type: IcebergType.STRING,
                     },
                 ]),
                 id: 2,
             },
-        ])).toThrow("duplicate field id 1 on column 'a.b', already used by '`a.b`'");
+        ])).toThrow(message);
     });
 
     it.each([
