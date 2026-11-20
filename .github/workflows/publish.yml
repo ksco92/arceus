@@ -5,16 +5,9 @@ name: Publish to npm and PyPI
 # differs from the version already there, so a PR that forgets to bump
 # is a no-op.
 #
-# Jobs: `check` reads the versions, `build` installs, tests and packages
-# with read-only permissions, and `publish-npm` / `publish-pypi` upload
-# the built artifacts. Only the two publish jobs hold the OIDC token
-# permission, and neither installs dependencies, builds or runs a package
-# lifecycle script. The registries are independent: neither publish job
-# needs the other.
-#
-# Trusted publishing (OIDC, no registry token secrets) is configured for
-# repo ksco92/arceus, workflow `publish.yml`, branch `main`, with no
-# environment, on npmjs.com and pypi.org.
+# Trusted publishing (OIDC, no registry token secrets) is configured on
+# npmjs.com and pypi.org for repo ksco92/arceus and workflow `publish.yml`,
+# with no environment. Neither registry binds a branch.
 
 on:
   push:
@@ -78,21 +71,17 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Pack the npm tarball
-        if: needs.check.outputs.npm == 'true'
         working-directory: packages/cdk-glue-iceberg-table
-        run: npm pack --pack-destination "$RUNNER_TEMP/npm-dist"
+        run: npm pack
       - name: Build Python distribution with jsii-pacmak
-        if: needs.check.outputs.pypi == 'true'
         run: npm run package:python --workspace cdk-glue-iceberg-table
       - name: Upload npm tarball
-        if: needs.check.outputs.npm == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: npm-dist
-          path: ${{ runner.temp }}/npm-dist/*.tgz
+          path: packages/cdk-glue-iceberg-table/*.tgz
           if-no-files-found: error
       - name: Upload Python distribution
-        if: needs.check.outputs.pypi == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: python-dist
@@ -109,7 +98,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: 24 # matches .nvmrc, which this job does not check out
+          node-version: 24 # .nvmrc value; no checkout in this job
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm >= 11.5.1; the npm bundled with
       # setup-node is older. This is the only install in the job.
