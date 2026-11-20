@@ -49,6 +49,7 @@ import {
     snapshotProps,
     validatePartitionSpec,
     validateProps,
+    validateLocation,
     validateSortOrder,
     validateTableName,
 } from './iceberg-table-render';
@@ -120,10 +121,10 @@ export interface IcebergPartitionField {
     readonly name?: string;
 
     /**
-     * Iceberg partition field id. Required: every partition field mus
+     * Iceberg partition field id. Required: every partition field must
      * be pinned to a stable integer >= 1000 (the Iceberg spec reserves
      * ids below 1000 for schema columns) that is unique across the
-     * table's entire partition-spec history — not just the curren
+     * table's entire partition-spec history — not just the current
      * spec. Iceberg's strict engines (Spark, Trino) reject a table
      * whose spec history carries two different partition fields with
      * the same id.
@@ -133,7 +134,7 @@ export interface IcebergPartitionField {
      * different transform, a different source column — makes it a NEW
      * field that needs a fresh, never-before-used id. Only an
      * untouched field keeps its id across deploys. Once a field is
-     * changed or dropped, its id is retired for good; the construc
+     * changed or dropped, its id is retired for good; the construct
      * cannot see prior deploys, so honoring retirement is on you.
      */
     readonly fieldId: number;
@@ -251,7 +252,7 @@ export interface IIcebergTable {
  * A Glue table created in the Apache Iceberg open table format.
  *
  * The construct emits the
- * `OpenTableFormatInput.IcebergInput.IcebergTableInput` shape tha
+ * `OpenTableFormatInput.IcebergInput.IcebergTableInput` shape that
  * survives CloudFormation `Update` (the alternative — placing columns
  * under `tableInput.storageDescriptor.columns` — silently strips
  * `table_type=ICEBERG` from Glue parameters on the first update and
@@ -387,9 +388,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         if (!Token.isUnresolved(tableName)) {
             validateTableName(tableName);
         }
-        if (!importedLocation.startsWith('s3://')) {
-            throw new Error(`location must start with 's3://', got '${importedLocation}'`);
-        }
+        validateLocation(importedLocation);
         const stack = Stack.of(scope);
         const location = normalizeLocation(importedLocation);
         const parsed = parseS3Uri(location);

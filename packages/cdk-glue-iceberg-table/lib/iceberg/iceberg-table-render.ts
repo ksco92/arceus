@@ -144,6 +144,13 @@ export function validateTableName(tableName: string): void {
 }
 
 /** @internal */
+export function validateLocation(location: string): void {
+    if (!location.startsWith('s3://')) {
+        throw new Error(`location must start with 's3://', got '${location}'`);
+    }
+}
+
+/** @internal */
 export function validateProps(props: IcebergTableProps): void {
     validateTableName(props.tableName);
     if (props.columns.length === 0) {
@@ -162,9 +169,7 @@ export function validateProps(props: IcebergTableProps): void {
             );
         }
     }
-    if (!props.location.startsWith('s3://')) {
-        throw new Error(`location must start with 's3://', got '${props.location}'`);
-    }
+    validateLocation(props.location);
     for (const column of props.columns) {
         validateFieldType(column.name, column.type, column.required ?? false, props.formatVersion);
     }

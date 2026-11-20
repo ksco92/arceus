@@ -247,7 +247,7 @@ describe('IcebergTable — happy path', () => {
             ],
             location: 's3://my-bucket/events/',
             /// Non-contiguous, non-sorted ids: the first declared field
-            /// carries the higher id. A positional allocator would emi
+            /// carries the higher id. A positional allocator would emit
             /// 1000/1001 here instead.
             partitionSpec: [
                 {
@@ -2647,7 +2647,7 @@ describe('IcebergTable — grants', () => {
         expect(glueStatements).toHaveLength(1);
 
         /// `s3:ListBucketMultipartUploads` must NOT carry an
-        /// `s3:prefix` condition (the action does not support tha
+        /// `s3:prefix` condition (the action does not support that
         /// condition key).
         const mpuStatements = statementsByAction(statements, 's3:ListBucketMultipartUploads');
         expect(mpuStatements).toHaveLength(1);

@@ -156,7 +156,7 @@ export interface IcebergTypeOptions {
 }
 
 /**
- * Iceberg type. Use the static factories on this class to construc
+ * Iceberg type. Use the static factories on this class to construct
  * primitives, decimals, fixed, geospatial types, lists, maps, and structs.
  */
 export class IcebergType {
@@ -488,7 +488,7 @@ export class IcebergType {
                 /// canonical decimal form is `decimal(P, S)`, and that is
                 /// exactly what Glue writes into the stored table metadata.
                 /// Emitting `decimal(P,S)` (no space) makes every later
-                /// schema-identical UpdateTable submit a type string tha
+                /// schema-identical UpdateTable submit a type string that
                 /// differs textually from the stored one; Glue reads that as
                 /// a phantom column change that adds no schema, then its
                 /// set-current-schema step dereferences a "last added schema"
