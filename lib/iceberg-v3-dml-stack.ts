@@ -31,13 +31,14 @@ export interface IcebergV3DmlStackProps extends StackProps {
     /** Name of the existing Glue database to publish the tables to. */
     readonly importedDatabaseName: string;
 
-    /** ARN of the IAM principal granted SELECT/INSERT/DELETE/ALTER/DESCRIBE on both tables. */
+    /** ARN of the IAM principal granted SELECT/INSERT/DELETE/ALTER/DESCRIBE on the three tables. */
     readonly principalArn: string;
 }
 
 /**
  * A v3 merge-on-read table (`v3_dml_test`) and a v2 table that Spark upgrades
- * in place (`v3_upgrade_test`), driven by `scripts/spark/verify_v3_dml.py`.
+ * in place (`v3_upgrade_test`), driven by `scripts/spark/verify_v3_dml.py`, and a
+ * v3 table with geometry and geography columns (`v3_geo_test`) that no Spark job opens.
  */
 export class IcebergV3DmlStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergV3DmlStackProps) {
@@ -81,24 +82,14 @@ export class IcebergV3DmlStack extends Stack {
                     id: 4,
                 },
                 {
-                    name: 'home',
-                    type: IcebergType.geography('OGC:CRS84', IcebergEdgeAlgorithm.SPHERICAL),
-                    id: 5,
-                },
-                {
-                    name: 'shape',
-                    type: IcebergType.geometry(),
-                    id: 6,
-                },
-                {
                     name: 'balance',
                     type: IcebergType.decimal(12, 2),
-                    id: 7,
+                    id: 5,
                 },
                 {
                     name: 'updated_at',
                     type: IcebergType.TIMESTAMPTZ,
-                    id: 8,
+                    id: 6,
                 },
             ],
             location: location('v3_dml_test'),
@@ -118,6 +109,26 @@ export class IcebergV3DmlStack extends Stack {
                 'write.update.mode': 'merge-on-read',
                 'write.merge.mode': 'merge-on-read',
             },
+            removalPolicy: RemovalPolicy.DESTROY,
+        });
+
+        const geoTable = new IcebergTable(this, 'V3GeoTable', {
+            database: importedDatabase,
+            tableName: 'v3_geo_test',
+            columns: [
+                {
+                    name: 'home',
+                    type: IcebergType.geography('OGC:CRS84', IcebergEdgeAlgorithm.SPHERICAL),
+                    id: 1,
+                },
+                {
+                    name: 'shape',
+                    type: IcebergType.geometry(),
+                    id: 2,
+                },
+            ],
+            location: location('v3_geo_test'),
+            formatVersion: IcebergFormatVersion.V3,
             removalPolicy: RemovalPolicy.DESTROY,
         });
 
@@ -152,6 +163,10 @@ export class IcebergV3DmlStack extends Stack {
             [
                 'V3UpgradeTablePermission',
                 upgradeTable,
+            ],
+            [
+                'V3GeoTablePermission',
+                geoTable,
             ],
         ] as const) {
             const permission = new CfnPermissions(this, permissionId, {

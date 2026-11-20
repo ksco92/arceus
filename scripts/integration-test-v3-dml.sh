@@ -21,7 +21,7 @@ set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 DATABASE="sample_database"
-TABLES="v3_dml_test v3_upgrade_test"
+TABLES="v3_dml_test v3_upgrade_test v3_geo_test"
 STACK="IcebergV3DmlStack"
 
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -38,7 +38,7 @@ cleanup_table_prefixes() {
 }
 
 assert_metadata() {
-    local table="$1" format_version="$2" min_next_row_id="${3:-0}"
+    local table="$1" format_version="$2" min_next_row_id="${3:-0}" columns="${4:-}"
     local meta_loc
     meta_loc=$(aws glue get-table \
         --database-name "$DATABASE" \
@@ -47,14 +47,19 @@ assert_metadata() {
         --query 'Table.Parameters.metadata_location' \
         --output text)
     aws s3 cp "$meta_loc" - --region "$AWS_REGION" | python3 -c '
-import json, sys
+import ast, json, sys
 m = json.load(sys.stdin)
-table, format_version, min_next_row_id = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+table, format_version, min_next_row_id, columns = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
 found, next_row_id = m["format-version"], m.get("next-row-id", 0)
 assert found == format_version, f"{table}: format-version {found}, expected {format_version}"
 assert next_row_id >= min_next_row_id, f"{table}: next-row-id {next_row_id}, expected >= {min_next_row_id}"
 print(f"  {table}: format-version {found}, next-row-id {next_row_id} \u2713")
-' "$table" "$format_version" "$min_next_row_id"
+if columns:
+    schema = next(s for s in m["schemas"] if s["schema-id"] == m["current-schema-id"])
+    found_columns = [(f["id"], f["name"], f["required"], f["type"]) for f in schema["fields"]]
+    assert found_columns == ast.literal_eval(columns), f"{table}: columns {found_columns}, expected {columns}"
+    print(f"  {table}: columns {found_columns} \u2713")
+' "$table" "$format_version" "$min_next_row_id" "$columns"
 }
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -70,6 +75,7 @@ npx cdk deploy "$STACK" --require-approval=never 2>&1 | tail -5
 header "VERIFY metadata.json as CloudFormation wrote it"
 assert_metadata v3_dml_test 3
 assert_metadata v3_upgrade_test 2
+assert_metadata v3_geo_test 3 0 "[(1, 'home', False, 'geography(OGC:CRS84, spherical)'), (2, 'shape', False, 'geometry')]"
 
 header "SPARK verify_v3_dml.py"
 spark_submit "$(dirname "${BASH_SOURCE[0]}")/spark/verify_v3_dml.py"

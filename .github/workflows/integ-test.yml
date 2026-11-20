@@ -190,7 +190,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-v3-evolution.sh 2>&1 | tee -a /tmp/integ-test.log
-      - name: Run integration test — v3 DML (1 deploy + Spark deletion vectors / row lineage / variant / geo / v2 to v3 upgrade)
+      - name: Run integration test — v3 DML (1 deploy + Spark deletion vectors / row lineage / variant / v2 to v3 upgrade; geo columns from metadata.json)
         run: |
           set -o pipefail
           bash scripts/integration-test-v3-dml.sh 2>&1 | tee -a /tmp/integ-test.log

@@ -7,11 +7,9 @@
 #   SPARK_INSTALL_DIR - default <repo>/.spark
 #   AWS_REGION        - default us-east-1
 #   ACCOUNT_ID        - default: from `aws sts get-caller-identity`
-#
-# spark.sql.geospatial.enabled: Spark 4.1 ships the ST_* functions switched off.
 
-SPARK_VERSION="4.1.3"
-ICEBERG_VERSION="1.12.0"
+SPARK_VERSION="4.1.1"
+ICEBERG_VERSION="1.11.0"
 SPARK_DIST="spark-${SPARK_VERSION}-bin-hadoop3"
 ICEBERG_SPARK_ARTIFACT="iceberg-spark-runtime-4.1_2.13"
 ICEBERG_RUNTIME_JAR="${ICEBERG_SPARK_ARTIFACT}-${ICEBERG_VERSION}.jar"
@@ -29,7 +27,6 @@ spark_submit() {
         --master 'local[2]' \
         --jars "$SPARK_JARS" \
         --conf spark.ui.enabled=false \
-        --conf spark.sql.geospatial.enabled=true \
         --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
         --conf spark.sql.catalog.glue=org.apache.iceberg.spark.SparkCatalog \
         --conf spark.sql.catalog.glue.catalog-impl=org.apache.iceberg.aws.glue.GlueCatalog \
