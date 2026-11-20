@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: integ-gate-${{ github.event.pull_request.number }}
+  group: integ-gate-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && github.event.changes.base == null && 'idle' || 'classify' }}
   cancel-in-progress: true
 
 jobs:
