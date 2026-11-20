@@ -5,6 +5,9 @@ import {
 import {
     IcebergType,
 } from '../../lib/iceberg/iceberg-type';
+import {
+    withGetter,
+} from './read-once';
 
 describe('IcebergPartitionTransform — strings', () => {
     it.each([
@@ -281,5 +284,47 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.UNKNOWN,
     ])('void accepts %s', (type) => {
         expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', type)).not.toThrow();
+    });
+});
+
+describe('IcebergPartitionTransform — constructor', () => {
+    it('rejects a kind that is not an IcebergPartitionTransformKind', () => {
+        expect(() => new IcebergPartitionTransform({
+            kind: 'bogus' as IcebergPartitionTransformKind,
+        })).toThrow('unknown IcebergPartitionTransformKind: bogus');
+    });
+
+    it.each([
+        [
+            'kind',
+            {},
+            IcebergPartitionTransformKind.IDENTITY,
+            IcebergPartitionTransformKind.YEAR,
+            'identity',
+        ],
+        [
+            'bucketCount',
+            {
+                kind: IcebergPartitionTransformKind.BUCKET,
+            },
+            4,
+            8,
+            'bucket[4]',
+        ],
+        [
+            'truncateWidth',
+            {
+                kind: IcebergPartitionTransformKind.TRUNCATE,
+            },
+            5,
+            9,
+            'truncate[5]',
+        ],
+    ])('renders the %s that was read once', (key, base, first, rest, expected) => {
+        const options = withGetter({
+            kind: IcebergPartitionTransformKind.IDENTITY,
+            ...base,
+        }, key, first, rest);
+        expect(new IcebergPartitionTransform(options).toTransformString()).toBe(expected);
     });
 });

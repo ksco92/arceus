@@ -141,7 +141,6 @@ export class IcebergPartitionTransform {
                 }
                 this.truncateWidth = truncateWidth;
                 break;
-            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
             default: {
                 const exhaustive: never = kind;
                 throw new Error(`unknown IcebergPartitionTransformKind: ${exhaustive}`);
@@ -241,19 +240,6 @@ export class IcebergPartitionTransform {
             }
         }
     }
-}
-
-/**
- * A copy of `transform` built from one read of each of its public fields.
- *
- * @internal
- */
-export function snapshotTransform(transform: IcebergPartitionTransform): IcebergPartitionTransform {
-    return new IcebergPartitionTransform({
-        kind: transform.kind,
-        bucketCount: transform.bucketCount,
-        truncateWidth: transform.truncateWidth,
-    });
 }
 
 function isTemporal(type: IcebergType): boolean {
