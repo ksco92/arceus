@@ -30,9 +30,9 @@ describe('IcebergV3DmlStack', () => {
         template = synth();
     });
 
-    it('creates two Glue tables and two Lake Formation grants', () => {
-        template.resourceCountIs('AWS::Glue::Table', 2);
-        template.resourceCountIs('AWS::LakeFormation::Permissions', 2);
+    it('creates three Glue tables and three Lake Formation grants', () => {
+        template.resourceCountIs('AWS::Glue::Table', 3);
+        template.resourceCountIs('AWS::LakeFormation::Permissions', 3);
     });
 
     it('renders the v3 column types of v3_dml_test with stable ids', () => {
@@ -72,24 +72,12 @@ describe('IcebergV3DmlStack', () => {
                                 },
                                 {
                                     Id: 5,
-                                    Name: 'home',
-                                    Required: false,
-                                    Type: 'geography(OGC:CRS84, spherical)',
-                                },
-                                {
-                                    Id: 6,
-                                    Name: 'shape',
-                                    Required: false,
-                                    Type: 'geometry',
-                                },
-                                {
-                                    Id: 7,
                                     Name: 'balance',
                                     Required: false,
                                     Type: 'decimal(12, 2)',
                                 },
                                 {
-                                    Id: 8,
+                                    Id: 6,
                                     Name: 'updated_at',
                                     Required: false,
                                     Type: 'timestamptz',
@@ -132,6 +120,36 @@ describe('IcebergV3DmlStack', () => {
         });
     });
 
+    it('declares v3_geo_test as v3 with geography and geometry columns', () => {
+        template.hasResourceProperties('AWS::Glue::Table', {
+            Name: 'v3_geo_test',
+            OpenTableFormatInput: {
+                IcebergInput: Match.objectLike({
+                    Version: '3',
+                    IcebergTableInput: Match.objectLike({
+                        Location: 's3://data-lake-bucket-123456789012/sample_database/v3_geo_test/',
+                        Schema: Match.objectLike({
+                            Fields: [
+                                {
+                                    Id: 1,
+                                    Name: 'home',
+                                    Required: false,
+                                    Type: 'geography(OGC:CRS84, spherical)',
+                                },
+                                {
+                                    Id: 2,
+                                    Name: 'shape',
+                                    Required: false,
+                                    Type: 'geometry',
+                                },
+                            ],
+                        }),
+                    }),
+                }),
+            },
+        });
+    });
+
     it('declares v3_upgrade_test as unpartitioned v2', () => {
         template.hasResourceProperties('AWS::Glue::Table', {
             Name: 'v3_upgrade_test',
@@ -150,6 +168,7 @@ describe('IcebergV3DmlStack', () => {
     it.each([
         'v3_dml_test',
         'v3_upgrade_test',
+        'v3_geo_test',
     ])('grants the test principal SELECT/INSERT/DELETE/ALTER/DESCRIBE on %s', (tableName) => {
         template.hasResourceProperties('AWS::LakeFormation::Permissions', {
             Permissions: [
@@ -180,6 +199,10 @@ describe('IcebergV3DmlStack', () => {
         [
             'v3_upgrade_test',
             'V3UpgradeTable',
+        ],
+        [
+            'v3_geo_test',
+            'V3GeoTable',
         ],
     ])('creates the %s grant after the table', (tableName, tablePrefix) => {
         template.hasResource('AWS::LakeFormation::Permissions', {

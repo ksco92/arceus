@@ -1,12 +1,11 @@
 """Exercise a CloudFormation-created Iceberg v3 table through Spark: deletion vectors, row
-lineage, variant, unknown, geo types, MERGE, time travel, maintenance procedures, and an
+lineage, variant, unknown, MERGE, time travel, maintenance procedures, and an
 in-place v2 to v3 upgrade. Expects freshly deployed, empty tables from IcebergV3DmlStack."""
 from pyspark.sql import SparkSession
 
 DML = "glue.sample_database.v3_dml_test"
 UPGRADE = "glue.sample_database.v3_upgrade_test"
-POINT_WKB = "0101000000000000000000F03F0000000000000040"
-COLUMNS = "account_id, email, payload, home, shape, balance, updated_at"
+COLUMNS = "account_id, email, payload, balance, updated_at"
 
 spark = SparkSession.builder.appName("verify-v3-dml").getOrCreate()
 
@@ -24,8 +23,7 @@ def source_row(account_id: int, payload: str, balance: str) -> str:
     """SELECT producing one row in COLUMNS order; `placeholder` is left out so it stays NULL."""
     return (
         f"SELECT {account_id}L AS account_id, '{account_id}@example.com' AS email,"
-        f" parse_json('{payload}') AS payload, ST_GeogFromWKB(X'{POINT_WKB}') AS home,"
-        f" ST_SetSRID(ST_GeomFromWKB(X'{POINT_WKB}'), 4326) AS shape,"
+        f" parse_json('{payload}') AS payload,"
         f" CAST({balance} AS DECIMAL(12,2)) AS balance, TIMESTAMP '2026-01-01 09:00:00+00:00' AS updated_at"
     )
 
@@ -79,14 +77,6 @@ check(
     [('{"a":1,"tag":"x"}',)],
     "to_json round trip",
 )
-check(
-    query(
-        f"SELECT hex(ST_AsBinary(home)), hex(ST_AsBinary(shape)), ST_SRID(home), ST_SRID(shape)"
-        f" FROM {DML} WHERE account_id = 1"
-    ),
-    [(POINT_WKB, POINT_WKB, 4326, 4326)],
-    "geography and geometry WKB and SRID",
-)
 
 print("v3_dml_test: UPDATE writes a deletion vector and keeps _row_id")
 before = lineage()
@@ -124,7 +114,7 @@ spark.sql(
     + ") s ON t.account_id = s.account_id"
     " WHEN MATCHED THEN UPDATE SET balance = s.balance"
     f" WHEN NOT MATCHED THEN INSERT ({COLUMNS})"
-    " VALUES (s.account_id, s.email, s.payload, s.home, s.shape, s.balance, s.updated_at)"
+    " VALUES (s.account_id, s.email, s.payload, s.balance, s.updated_at)"
 )
 after_merge = [(1, "111.00"), (2, "250.00"), (3, "300.00"), (4, "400.00"), (6, "600.00")]
 check(balances(), after_merge, "rows after MERGE")

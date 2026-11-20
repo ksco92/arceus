@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # End-to-end test for Iceberg v3 tables created by CloudFormation,
-# driven through Spark against `IcebergV3DmlStack`.
+# driven through Spark against `IcebergV3DmlStack`. `v3_geo_test` (geometry and
+# geography columns) is asserted from metadata.json only; no Spark job opens it.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -21,7 +22,7 @@ set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 DATABASE="sample_database"
-TABLES="v3_dml_test v3_upgrade_test"
+TABLES="v3_dml_test v3_upgrade_test v3_geo_test"
 STACK="IcebergV3DmlStack"
 
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -57,6 +58,30 @@ print(f"  {table}: format-version {found}, next-row-id {next_row_id} \u2713")
 ' "$table" "$format_version" "$min_next_row_id"
 }
 
+assert_geo_columns() {
+    local meta_loc
+    meta_loc=$(aws glue get-table \
+        --database-name "$DATABASE" \
+        --name v3_geo_test \
+        --region "$AWS_REGION" \
+        --query 'Table.Parameters.metadata_location' \
+        --output text)
+    aws s3 cp "$meta_loc" - --region "$AWS_REGION" | python3 -c '
+import json, sys
+m = json.load(sys.stdin)
+schema = next(s for s in m["schemas"] if s["schema-id"] == m["current-schema-id"])
+found = [(f["id"], f["name"], f["required"], f["type"]) for f in schema["fields"]]
+expected = [
+    (1, "home", False, "geography(OGC:CRS84, spherical)"),
+    (2, "shape", False, "geometry"),
+]
+version = m["format-version"]
+assert version == 3, f"v3_geo_test: format-version {version}, expected 3"
+assert found == expected, f"v3_geo_test: columns {found}, expected {expected}"
+print(f"  v3_geo_test: format-version 3, columns {found} \u2713")
+'
+}
+
 # shellcheck source=scripts/spark/spark-env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
 
@@ -70,6 +95,7 @@ npx cdk deploy "$STACK" --require-approval=never 2>&1 | tail -5
 header "VERIFY metadata.json as CloudFormation wrote it"
 assert_metadata v3_dml_test 3
 assert_metadata v3_upgrade_test 2
+assert_geo_columns
 
 header "SPARK verify_v3_dml.py"
 spark_submit "$(dirname "${BASH_SOURCE[0]}")/spark/verify_v3_dml.py"
