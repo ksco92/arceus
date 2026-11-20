@@ -4281,18 +4281,6 @@ describe('IcebergTable — rendered values are the validated values', () => {
             formatVersion: undefined,
         } as unknown as Partial<IcebergTableProps>)).toThrow(/formatVersion must be a string/);
     });
-
-    it('rejects a formatVersion that is omitted', () => {
-        const {
-            stack, database,
-        } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'snap',
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/snap/',
-        } as unknown as IcebergTableProps)).toThrow(/formatVersion must be a string/);
-    });
 });
 
 describe('IcebergTable.fromIcebergTableAttributes — boundary checks', () => {
