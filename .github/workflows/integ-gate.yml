@@ -9,13 +9,12 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: integ-gate-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && github.event.changes.base == null && 'idle' || 'classify' }}
-  cancel-in-progress: true
-
 jobs:
   classify:
     if: github.event.action != 'edited' || github.event.changes.base != null
+    concurrency:
+      group: integ-gate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
