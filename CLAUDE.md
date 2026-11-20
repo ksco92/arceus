@@ -55,26 +55,11 @@ contributor is the sole credited author.
 PRs that change any file consumed by the workflow's `cdk deploy` must
 have the **Integration test** workflow
 (`.github/workflows/integ-test.yml`) run green on the PR head before
-merging. The trigger set is:
-
-- any construct source under
-  `packages/cdk-glue-iceberg-table/lib/iceberg/` (the published
-  construct the demo stacks deploy),
-- any demo stack under `lib/` (`lib/arceus-stack.ts`,
-  `lib/iceberg-evolution-stack.ts`, `lib/iceberg-dml-stack.ts`,
-  `lib/iceberg-surface-stack.ts`, `lib/iceberg-spark-smoke-stack.ts`,
-  `lib/iceberg-v3-evolution-stack.ts`, `lib/iceberg-v3-dml-stack.ts`),
-- `bin/arceus.ts` (`cdk.json`'s `app:` entry — every `cdk` invocation
-  parses it),
-- `cdk.json` (feature flags + the `app:` declaration),
-- the integration scripts under `scripts/`
-  (`integration-test-evolution.sh`, `integration-test-dml.sh`,
-  `integration-test-surface.sh`, `integration-test-spark-smoke.sh`,
-  `integration-test-v3-evolution.sh`, `integration-test-v3-dml.sh`,
-  `field_ids.py`, `athena.sh`),
-- the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
-  `spark-env.sh`, `smoke.py`, `verify_dml.py`, `verify_evolution.py`,
-  `verify_surface.py`, `verify_v3_dml.py`).
+merging. The trigger set is the path list in `.github/integ-trigger-set.txt`:
+directories and `*` patterns, so a new file under a listed directory is
+covered without an edit. A change to
+`packages/cdk-glue-iceberg-table/package.json` is outside the set only when
+its sole edited line is `"version"`; any other change to it is in the set.
 
 The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
@@ -110,12 +95,15 @@ Exemption list (no integ-test required):
 
 When in doubt, run it.
 
-This gate is **human-enforced**: GitHub does not require it as a
-status check for the protected branch, so a trigger-set PR can be
-merged with no integ-test ever fired. Reviewers must hold the line.
-Until / unless the gate is wired into `Settings → Branches →
-required status checks`, the written policy is the only thing
-stopping a slip.
+The `integ-gate` commit status reports the gate on every PR head. The
+**Integration gate** workflow (`.github/workflows/integ-gate.yml`) reads
+the PR's changed files through the API, matches them against that list, and posts `success` when no file is in the set and `pending`
+when one is. A green Integration test run posts `success` on the exact
+commit it ran on; a failed or cancelled one posts `failure`. A new commit
+has no status until the workflow posts one, so a push resets the check. A
+fork PR gets a read-only token, so nothing is posted and the check stays
+missing, including after a `workflow_dispatch` run, which sets no status. The one manual step is in branch protection: the owner marks
+`integ-gate` as a required status check.
 
 `e2e-consumer/` consumes the **published** npm package, so every
 version bump in `packages/cdk-glue-iceberg-table/package.json` should

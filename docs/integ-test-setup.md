@@ -11,6 +11,20 @@ and surface scripts. The workflow runs when:
 - the workflow is manually dispatched from the Actions tab, OR
 - the weekly schedule fires, against `main`.
 
+## The `integ-gate` status
+
+`.github/workflows/integ-gate.yml` runs on every same-repo PR push and posts
+the `integ-gate` commit status: `success` when no changed file matches
+`.github/integ-trigger-set.txt`, `pending` when one does. The integration run replaces
+`pending` with `success` or `failure` on the SHA it checked out. A push gives
+the new head no status until the gate workflow posts one.
+
+To enforce it, mark `integ-gate` as a required status check under
+Settings -> Branches -> branch protection rule for `main`. Fork PRs post no
+status (their token is read-only) and a `workflow_dispatch` run sets none, so
+a required check stays missing on them; merging one needs an admin bypass or
+a same-repo copy of the branch.
+
 ## Security note
 
 The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scripts/spark/install-spark.sh`, and every `scripts/integration-test-*.sh`) with **cloud-admin AWS credentials**. Same-repo PRs are auto-trusted because only collaborators can push to them. Fork PRs are refused at the gate on both the label-trigger path and the `/run-integ-test`-comment path: the gate fetches `head.repo.full_name` from the API and refuses to run unless it equals the workflow's own repo. If you want to run the workflow against a fork PR, manually `workflow_dispatch` after auditing every file in the diff — especially `package.json` (postinstall scripts), `scripts/spark/`, every `scripts/integration-test-*.sh`, and `bin/arceus.ts`.
@@ -237,7 +251,9 @@ The workflow reads it via `${{ vars.AWS_INTEG_ROLE_ARN }}`.
 - **Manually**: Actions tab → "Integration test" → Run workflow.
 
 A run started from a PR comments back on that PR with success / failure
-plus a link to the run logs. A failed weekly run opens or comments on a
+plus a link to the run logs. It also sets the `integ-gate`
+commit status on the PR head SHA the suites ran on (`success`, or `failure`
+when the run failed or was cancelled). A failed weekly run opens or comments on a
 GitHub issue with a link to the run.
 
 Each script's teardown step (`DESTROY=1`) deletes its stack at the end so
