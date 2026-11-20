@@ -23,12 +23,19 @@ import {
     IcebergNullOrder,
     IcebergPartitionField,
     IcebergPartitionTransform,
+    IcebergPartitionTransformKind,
     IcebergSortDirection,
     IcebergStructFieldDefinition,
     IcebergTable,
+    IcebergTableAttributes,
+    IcebergTableProps,
     IcebergType,
     IcebergTypeKind,
 } from '../../lib/iceberg';
+import {
+    firstReadThen,
+    withGetter,
+} from './read-once';
 
 function makeStack(): { stack: Stack; database: Database } {
     const app = new App();
@@ -1222,19 +1229,11 @@ describe('IcebergTable — nested field ids', () => {
         ])).toThrow(`column '${path}' has invalid id 2147483448; ids must be integers from 1 to 2147483447`);
     });
 
-    function firstReadThenOne(first: number): () => number {
-        let reads = 0;
-        return () => {
-            reads += 1;
-            return reads === 1 ? first : 1;
-        };
-    }
-
     it.each([
         [
             'column',
             (): IcebergColumn => {
-                const read = firstReadThenOne(2);
+                const read = firstReadThen(2, 1);
                 return {
                     name: 'c',
                     type: IcebergType.STRING,
@@ -1252,7 +1251,7 @@ describe('IcebergTable — nested field ids', () => {
         [
             'struct field',
             (): IcebergColumn => {
-                const read = firstReadThenOne(3);
+                const read = firstReadThen(3, 1);
                 return {
                     name: 'c',
                     type: IcebergType.struct([
@@ -1291,7 +1290,7 @@ describe('IcebergTable — nested field ids', () => {
     });
 
     it('carries the first-read column id into identifier, partition, and sort source ids', () => {
-        const read = firstReadThenOne(2);
+        const read = firstReadThen(2, 1);
         const {
             stack, database,
         } = makeStack();
@@ -1331,8 +1330,8 @@ describe('IcebergTable — nested field ids', () => {
         const input = Object.values(tables)[0].Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
         expect([
             input.Schema.IdentifierFieldIds,
-            input.PartitionSpec.Fields[0].SourceId,
-            input.WriteOrder.Fields[0].SourceId,
+            input.PartitionSpec!.Fields[0].SourceId,
+            input.WriteOrder!.Fields[0].SourceId,
         ]).toEqual([
             [
                 2,
@@ -3104,5 +3103,1265 @@ describe('IcebergTable.creationOrderFieldIds', () => {
             '`a.b`': 1,
             '`a.b`.c': 2,
         });
+    });
+});
+
+describe('IcebergTable — rendered values are the validated values', () => {
+    interface SynthedField {
+        Name: string;
+        Type: string;
+        Required?: boolean;
+        Doc?: string;
+    }
+
+    interface SynthedInput {
+        Location: string;
+        Schema: { Fields: SynthedField[]; IdentifierFieldIds?: number[] };
+        PartitionSpec?: { Fields: Array<{ Transform: string }> };
+        WriteOrder?: { Fields: Array<{ Transform: string }> };
+        Properties: { [key: string]: string };
+    }
+
+    interface SynthedTable {
+        DeletionPolicy: string;
+        Properties: {
+            Name: string;
+            OpenTableFormatInput: { IcebergInput: { Version: string; IcebergTableInput: SynthedInput } };
+        };
+    }
+
+    function synthInput(
+        overrides: Partial<IcebergTableProps> = {},
+    ): { input: SynthedInput; resource: SynthedTable } {
+        const {
+            stack, database,
+        } = makeStack();
+        const props = Object.defineProperties({
+            database,
+            tableName: 'snap',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/snap/',
+        }, Object.getOwnPropertyDescriptors(overrides));
+        new IcebergTable(stack, 'Tbl', props);
+        const resource = Object.values(Template.fromStack(stack).findResources('AWS::Glue::Table'))[0] as SynthedTable;
+        return {
+            input: resource.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput,
+            resource,
+        };
+    }
+
+    function fieldsOf(columns: IcebergColumn[], formatVersion = IcebergFormatVersion.V2): SynthedField[] {
+        return synthInput({
+            columns,
+            formatVersion,
+        }).input.Schema.Fields;
+    }
+
+    const ID_COLUMN: IcebergColumn = {
+        name: 'a',
+        type: IcebergType.STRING,
+        id: 1,
+    };
+
+    it('renders only the struct fields present at IcebergType.struct', () => {
+        const fields: IcebergStructFieldDefinition[] = [
+            {
+                id: 3,
+                name: 'x',
+                type: IcebergType.STRING,
+            },
+        ];
+        const struct = IcebergType.struct(fields);
+        fields.push({
+            id: 4,
+            name: 'x',
+            type: IcebergType.INT,
+        });
+        const rendered = JSON.parse(fieldsOf([
+            ID_COLUMN,
+            {
+                name: 's',
+                type: struct,
+                id: 2,
+            },
+        ])[1].Type);
+        expect(rendered.fields.map((f: { name: string }) => f.name)).toEqual([
+            'x',
+        ]);
+    });
+
+    it('renders a struct field as it was at IcebergType.struct when the field object changes later', () => {
+        const field = {
+            id: 3,
+            name: 'x',
+            type: IcebergType.STRING,
+            required: true,
+            doc: 'first',
+        };
+        const struct = IcebergType.struct([
+            field,
+        ]);
+        Object.assign(field, {
+            name: 'y',
+            type: IcebergType.INT,
+            required: false,
+            doc: 'second',
+        });
+        const rendered = JSON.parse(fieldsOf([
+            ID_COLUMN,
+            {
+                name: 's',
+                type: struct,
+                id: 2,
+            },
+        ])[1].Type);
+        expect(rendered.fields).toEqual([
+            {
+                id: 3,
+                name: 'x',
+                required: true,
+                type: 'string',
+                doc: 'first',
+            },
+        ]);
+    });
+
+    it('renders list and map element types as they were when the type was built', () => {
+        const inner = IcebergType.struct([
+            {
+                id: 5,
+                name: 'k',
+                type: IcebergType.STRING,
+            },
+        ]);
+        const innerValue = IcebergType.struct([
+            {
+                id: 8,
+                name: 'k',
+                type: IcebergType.STRING,
+            },
+        ]);
+        const list = IcebergType.list({
+            element: inner,
+            elementId: 3,
+        });
+        const map = IcebergType.map({
+            key: IcebergType.STRING,
+            keyId: 6,
+            value: innerValue,
+            valueId: 7,
+        });
+        Object.assign(inner.structFields![0], {
+            name: 'changed',
+        });
+        Object.assign(innerValue.structFields![0], {
+            name: 'changed',
+        });
+        const [
+            , l,
+            m,
+        ] = fieldsOf([
+            ID_COLUMN,
+            {
+                name: 'l',
+                type: list,
+                id: 2,
+            },
+            {
+                name: 'm',
+                type: map,
+                id: 4,
+            },
+        ]);
+        expect([
+            JSON.parse(l.Type).element.fields[0].name,
+            JSON.parse(m.Type).value.fields[0].name,
+        ]).toEqual([
+            'k',
+            'k',
+        ]);
+    });
+
+    it('renders the validated name when a column name accessor returns another name later', () => {
+        const names = fieldsOf([
+            ID_COLUMN,
+            withGetter({
+                name: 'b',
+                type: IcebergType.STRING,
+                id: 2,
+            }, 'name', 'b', 'a'),
+        ]).map((f) => f.Name);
+        expect(names).toEqual([
+            'a',
+            'b',
+        ]);
+    });
+
+    it('renders the validated type when a column type accessor returns a v3 type later', () => {
+        const fields = fieldsOf([
+            withGetter(ID_COLUMN, 'type', IcebergType.STRING, IcebergType.VARIANT),
+        ]);
+        expect(fields[0].Type).toBe('string');
+    });
+
+    it('renders the validated type of a required column whose type accessor returns unknown later', () => {
+        const fields = fieldsOf([
+            withGetter({
+                ...ID_COLUMN,
+                required: true,
+            }, 'type', IcebergType.STRING, IcebergType.UNKNOWN),
+        ]);
+        expect(fields[0]).toMatchObject({
+            Type: 'string',
+            Required: true,
+        });
+    });
+
+    it('renders the validated required flag and doc of a column', () => {
+        const [
+            field,
+        ] = fieldsOf([
+            withGetter(withGetter(ID_COLUMN, 'required', true, false), 'doc', 'checked', 'later'),
+        ]);
+        expect(field).toMatchObject({
+            Required: true,
+            Doc: 'checked',
+        });
+    });
+
+    it('renders the validated type of a struct field whose type accessor returns a v3 type later', () => {
+        const struct = IcebergType.struct([
+            withGetter({
+                id: 3,
+                name: 'x',
+                type: IcebergType.STRING,
+            }, 'type', IcebergType.STRING, IcebergType.VARIANT),
+        ]);
+        const rendered = JSON.parse(fieldsOf([
+            ID_COLUMN,
+            {
+                name: 's',
+                type: struct,
+                id: 2,
+            },
+        ])[1].Type);
+        expect(rendered.fields[0].type).toBe('string');
+    });
+
+    it('renders the validated name, required flag and doc of a struct field', () => {
+        const struct = IcebergType.struct([
+            withGetter(withGetter(withGetter({
+                id: 3,
+                name: 'x',
+                type: IcebergType.STRING,
+            }, 'name', 'x', 'y'), 'required', true, false), 'doc', 'checked', 'later'),
+        ]);
+        const rendered = JSON.parse(fieldsOf([
+            ID_COLUMN,
+            {
+                name: 's',
+                type: struct,
+                id: 2,
+            },
+        ])[1].Type);
+        expect(rendered.fields[0]).toEqual({
+            id: 3,
+            name: 'x',
+            required: true,
+            type: 'string',
+            doc: 'checked',
+        });
+    });
+
+    it('renders the validated type when a type object returns another kind on a later read', () => {
+        const long = Object.create(IcebergType.prototype, {
+            kind: {
+                get: firstReadThen(IcebergTypeKind.LONG, IcebergTypeKind.FLOAT),
+            },
+        });
+        const {
+            input,
+        } = synthInput({
+            columns: [
+                {
+                    name: 'a',
+                    type: long,
+                    required: true,
+                    id: 1,
+                },
+            ],
+            identifierFieldNames: [
+                'a',
+            ],
+        });
+        expect(input.Schema.Fields[0].Type).toBe('long');
+        expect(input.Schema.IdentifierFieldIds).toEqual([
+            1,
+        ]);
+    });
+
+    it('renders the kind of a plain type object, not the output of its own _render', () => {
+        const fake = {
+            kind: IcebergTypeKind.STRING,
+            _render: () => 'long',
+        };
+        const fields = fieldsOf([
+            {
+                ...ID_COLUMN,
+                type: fake as unknown as IcebergType,
+            },
+        ]);
+        expect(fields[0].Type).toBe('string');
+    });
+
+    it('rejects a column name that is not a string', () => {
+        expect(() => fieldsOf([
+            {
+                ...ID_COLUMN,
+                name: 5 as unknown as string,
+            },
+        ])).toThrow('field name must be a string, got number');
+    });
+
+    it('rejects a struct field name that is not a string', () => {
+        expect(() => IcebergType.struct([
+            {
+                id: 3,
+                name: 5 as unknown as string,
+                type: IcebergType.STRING,
+            },
+        ])).toThrow('field name must be a string, got number');
+    });
+
+    it('renders the validated partition fields when a field object returns other values later', () => {
+        const columns: IcebergColumn[] = [
+            ID_COLUMN,
+            {
+                name: 'b',
+                type: IcebergType.STRING,
+                id: 2,
+            },
+        ];
+        const field = withGetter(withGetter(withGetter(withGetter({
+            sourceColumn: 'a',
+            transform: IcebergPartitionTransform.IDENTITY,
+            name: 'pa',
+            fieldId: 1000,
+        }, 'sourceColumn', 'a', 'b'), 'name', 'pa', 'pb'), 'fieldId', 1000, 1), 'transform',
+        IcebergPartitionTransform.IDENTITY, IcebergPartitionTransform.bucket(4));
+        expect(synthInput({
+            columns,
+            partitionSpec: [
+                field,
+            ],
+        }).input.PartitionSpec).toEqual({
+            SpecId: 0,
+            Fields: [
+                {
+                    Name: 'pa',
+                    SourceId: 1,
+                    Transform: 'identity',
+                    FieldId: 1000,
+                },
+            ],
+        });
+    });
+
+    it('renders the validated transform when a transform object returns another kind later', () => {
+        const day = Object.create(IcebergPartitionTransform.prototype, {
+            kind: {
+                get: firstReadThen('identity', 'void'),
+            },
+        });
+        const {
+            input,
+        } = synthInput({
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: day,
+                    fieldId: 1000,
+                },
+            ],
+            sortOrder: [
+                {
+                    sourceColumn: 'id',
+                    transform: Object.create(IcebergPartitionTransform.prototype, {
+                        kind: {
+                            get: firstReadThen('identity', 'void'),
+                        },
+                    }),
+                },
+            ],
+        });
+        expect(input.PartitionSpec!.Fields[0].Transform).toBe('identity');
+        expect(input.WriteOrder!.Fields[0].Transform).toBe('identity');
+    });
+
+    it('renders the validated sort fields when a field object returns other values later', () => {
+        const columns: IcebergColumn[] = [
+            ID_COLUMN,
+            {
+                name: 'b',
+                type: IcebergType.STRING,
+                id: 2,
+            },
+        ];
+        const field = withGetter(withGetter(withGetter(withGetter({
+            sourceColumn: 'a',
+        }, 'sourceColumn', 'a', 'b'), 'transform', IcebergPartitionTransform.IDENTITY,
+        IcebergPartitionTransform.bucket(4)), 'direction', IcebergSortDirection.DESC, IcebergSortDirection.ASC),
+        'nullOrder', IcebergNullOrder.NULLS_FIRST, IcebergNullOrder.NULLS_LAST);
+        expect(synthInput({
+            columns,
+            sortOrder: [
+                field,
+            ],
+        }).input.WriteOrder).toEqual({
+            OrderId: 1,
+            Fields: [
+                {
+                    SourceId: 1,
+                    Transform: 'identity',
+                    Direction: 'desc',
+                    NullOrder: 'nulls-first',
+                },
+            ],
+        });
+    });
+
+    it('renders the identifier field names validated, whatever later reads return', () => {
+        const read = firstReadThen('id', 'a');
+        const names = new Proxy([
+            'id',
+        ], {
+            get: (target, key, receiver) => (key === '0' ? read() : Reflect.get(target, key, receiver)),
+        });
+        const {
+            input,
+        } = synthInput({
+            columns: [
+                MINIMAL_COLUMNS[0],
+                ID_COLUMN,
+            ].map((c, i) => ({
+                ...c,
+                required: true,
+                id: i + 1,
+            })),
+            identifierFieldNames: names,
+        });
+        expect(input.Schema.IdentifierFieldIds).toEqual([
+            1,
+        ]);
+        expect(input.Schema.Fields.map((f: { Doc?: string }) => f.Doc)).toEqual([
+            '(PK) ',
+            undefined,
+        ]);
+    });
+
+    it.each([
+        [
+            'tableName',
+            'snap',
+            'Bad Name',
+            (r: SynthedTable) => r.Properties.Name,
+        ],
+        [
+            'location',
+            's3://my-bucket/snap/',
+            'http://nope',
+            (r: SynthedTable) => r.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Location,
+        ],
+        [
+            'formatVersion',
+            IcebergFormatVersion.V2,
+            IcebergFormatVersion.V3,
+            (r: SynthedTable) => r.Properties.OpenTableFormatInput.IcebergInput.Version,
+        ],
+        [
+            'dataFormat',
+            IcebergDataFormat.ORC,
+            IcebergDataFormat.PARQUET,
+            (r: SynthedTable) => r.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Properties['write.format.default'],
+        ],
+        [
+            'comment',
+            'first',
+            'second',
+            (r: SynthedTable) => r.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Properties.comment,
+        ],
+        [
+            'removalPolicy',
+            RemovalPolicy.DESTROY,
+            RemovalPolicy.RETAIN,
+            (r: SynthedTable) => r.DeletionPolicy,
+        ],
+    ])('renders the %s that was read once', (key, first, rest, pick) => {
+        const {
+            resource,
+        } = synthInput(withGetter({}, key, first, rest) as Partial<IcebergTableProps>);
+        expect(pick(resource)).toBe(first === RemovalPolicy.DESTROY ? 'Delete' : first);
+    });
+
+    function hostileArrays<T>(good: T[], bad: T[]): T[][] {
+        const mapBad = (cb: (value: T) => unknown): unknown[] => bad.map((value) => cb(value));
+        class Subclass extends Array<T> {}
+        Object.defineProperty(Subclass.prototype, 'map', {
+            value: mapBad,
+        });
+        return [
+            Object.assign([
+                ...good,
+            ], {
+                map: mapBad,
+            }),
+            Subclass.from(good),
+            new Proxy([
+                ...good,
+            ], {
+                get: (target, key, receiver) => (key === 'map' ? mapBad : Reflect.get(target, key, receiver)),
+            }),
+            Object.assign([
+                ...bad,
+            ], {
+                [Symbol.iterator]: () => good[Symbol.iterator](),
+            }),
+        ];
+    }
+
+    const BAD_COLUMN: IcebergColumn = {
+        name: 'bad',
+        type: IcebergType.VARIANT,
+        id: 9,
+    };
+
+    it.each(hostileArrays([
+        ID_COLUMN,
+    ], [
+        BAD_COLUMN,
+    ]).map((columns) => [
+        columns,
+    ]))(
+        'renders the columns the caller array iterates to, not those its map returns (%#)',
+        (columns) => {
+            expect(fieldsOf(columns).map((f) => f.Name)).toEqual([
+                'a',
+            ]);
+        },
+    );
+
+    const GOOD_FIELD = {
+        id: 3,
+        name: 'x',
+        type: IcebergType.STRING,
+    };
+
+    const BAD_FIELDS = [
+        {
+            id: 3,
+            name: 'n',
+            type: IcebergType.STRING,
+        },
+        {
+            id: 4,
+            name: 'n',
+            type: IcebergType.UNKNOWN,
+            required: true,
+        },
+    ];
+
+    it.each(hostileArrays([
+        GOOD_FIELD,
+    ], BAD_FIELDS).map((fields) => [
+        fields,
+    ]))(
+        'renders the struct fields the caller array iterates to (%#)',
+        (fields) => {
+            const [
+                , struct,
+            ] = fieldsOf([
+                ID_COLUMN,
+                {
+                    name: 's',
+                    type: IcebergType.struct(fields),
+                    id: 2,
+                },
+            ]);
+            expect(JSON.parse(struct.Type).fields.map((f: { name: string }) => f.name)).toEqual([
+                'x',
+            ]);
+        },
+    );
+
+    it.each(hostileArrays([
+        GOOD_FIELD,
+    ], BAD_FIELDS).map((fields) => [
+        fields,
+    ]))(
+        'renders the fields of a struct nested in a list as the caller array iterates (%#)',
+        (fields) => {
+            const [
+                , list,
+            ] = fieldsOf([
+                ID_COLUMN,
+                {
+                    name: 'l',
+                    type: IcebergType.list({
+                        element: IcebergType.struct(fields),
+                        elementId: 2,
+                    }),
+                    id: 4,
+                },
+            ]);
+            expect(JSON.parse(list.Type).element.fields.map((f: { name: string }) => f.name)).toEqual([
+                'x',
+            ]);
+        },
+    );
+
+    const GOOD_PARTITION: IcebergPartitionField = {
+        sourceColumn: 'id',
+        transform: IcebergPartitionTransform.IDENTITY,
+        fieldId: 1000,
+    };
+
+    it.each(hostileArrays([
+        GOOD_PARTITION,
+    ], [
+        {
+            ...GOOD_PARTITION,
+            fieldId: 1,
+        },
+        {
+            ...GOOD_PARTITION,
+            fieldId: 1,
+        },
+    ]).map((spec) => [
+        spec,
+    ]))('renders the partition fields the caller array iterates to (%#)', (spec) => {
+        expect(synthInput({
+            partitionSpec: spec,
+        }).input.PartitionSpec).toMatchObject({
+            Fields: [
+                {
+                    FieldId: 1000,
+                },
+            ],
+        });
+    });
+
+    it.each(hostileArrays([
+        {
+            sourceColumn: 'id',
+        },
+    ], [
+        {
+            sourceColumn: 'id',
+            direction: IcebergSortDirection.DESC,
+        },
+    ]).map((order) => [
+        order,
+    ]))('renders the sort fields the caller array iterates to (%#)', (order) => {
+        expect(synthInput({
+            sortOrder: order,
+        }).input.WriteOrder).toMatchObject({
+            Fields: [
+                {
+                    Direction: 'asc',
+                },
+            ],
+        });
+    });
+
+    it.each(hostileArrays([
+        'id',
+    ], [
+        'missing',
+    ]).map((names) => [
+        names,
+    ]))(
+        'renders the identifier names the caller array iterates to (%#)',
+        (names) => {
+            expect(synthInput({
+                columns: [
+                    {
+                        ...MINIMAL_COLUMNS[0],
+                        required: true,
+                    },
+                ],
+                identifierFieldNames: names,
+            }).input.Schema.IdentifierFieldIds).toEqual([
+                1,
+            ]);
+        },
+    );
+
+    it.each([
+        [
+            'columns',
+            'columns',
+        ],
+        [
+            'struct fields',
+            'structFields',
+        ],
+        [
+            'partitionSpec',
+            'partitionSpec',
+        ],
+        [
+            'sortOrder',
+            'sortOrder',
+        ],
+        [
+            'identifierFieldNames',
+            'identifierFieldNames',
+        ],
+    ])('rejects %s that is not an array', (_label, key) => {
+        const notArray = 'abc' as unknown as never;
+        expect(() => {
+            if (key === 'structFields') {
+                IcebergType.struct(notArray);
+            } else {
+                synthInput({
+                    [key]: notArray,
+                });
+            }
+        }).toThrow(`${key} must be an array, got string`);
+    });
+
+    const OBJECTS = [
+        [
+            'a String object',
+            new String('x'),
+        ],
+        [
+            'an object with toString only',
+            {
+                toString: () => 'x',
+            },
+        ],
+        [
+            'an object with Symbol.toPrimitive',
+            {
+                [Symbol.toPrimitive]: () => 'x',
+            },
+        ],
+        [
+            'an object with its own startsWith, match and resolve',
+            {
+                startsWith: () => true,
+                match: () => [],
+                resolve: () => 'x',
+            },
+        ],
+    ] as const;
+
+    const LITERAL_FIELDS: Array<[string, (value: string) => void]> = [
+        [
+            'column name',
+            (name) => fieldsOf([
+                {
+                    ...ID_COLUMN,
+                    name,
+                },
+            ]),
+        ],
+        [
+            'column doc',
+            (doc) => fieldsOf([
+                {
+                    ...ID_COLUMN,
+                    doc,
+                },
+            ]),
+        ],
+        [
+            'struct field name',
+            (name) => IcebergType.struct([
+                {
+                    ...GOOD_FIELD,
+                    name,
+                },
+            ]),
+        ],
+        [
+            'struct field doc',
+            (doc) => IcebergType.struct([
+                {
+                    ...GOOD_FIELD,
+                    doc,
+                },
+            ]),
+        ],
+        [
+            'geometry CRS',
+            (crs) => IcebergType.geometry(crs),
+        ],
+        [
+            'geography CRS',
+            (crs) => IcebergType.geography(crs),
+        ],
+        [
+            'partition field name',
+            (name) => synthInput({
+                partitionSpec: [
+                    {
+                        ...GOOD_PARTITION,
+                        name,
+                    },
+                ],
+            }),
+        ],
+        [
+            'partition sourceColumn',
+            (sourceColumn) => synthInput({
+                partitionSpec: [
+                    {
+                        ...GOOD_PARTITION,
+                        sourceColumn,
+                    },
+                ],
+            }),
+        ],
+        [
+            'sort sourceColumn',
+            (sourceColumn) => synthInput({
+                sortOrder: [
+                    {
+                        sourceColumn,
+                    },
+                ],
+            }),
+        ],
+        [
+            'identifier field name',
+            (name) => synthInput({
+                identifierFieldNames: [
+                    name,
+                ],
+            }),
+        ],
+        [
+            'tableName',
+            (tableName) => synthInput({
+                tableName,
+            }),
+        ],
+    ];
+
+    describe.each(LITERAL_FIELDS)('%s', (_label, build) => {
+        it.each(OBJECTS)('rejects %s', (_kind, value) => {
+            expect(() => build(value as unknown as string)).toThrow(/must be a string, got object/);
+        });
+
+        it('rejects an unresolved token', () => {
+            expect(() => build(Lazy.string({
+                produce: () => 'x',
+            }))).toThrow(/must be a literal string, not a token/);
+        });
+    });
+
+    it.each(OBJECTS)('rejects a location that is %s', (_kind, value) => {
+        expect(() => synthInput({
+            location: value as unknown as string,
+        })).toThrow(/location must be a string, got object/);
+    });
+
+    it('accepts a token inside the location', () => {
+        expect(synthInput({
+            location: `s3://${Lazy.string({
+                produce: () => 'bucket',
+            })}/snap/`,
+        }).input.Location).toBe('s3://bucket/snap/');
+    });
+
+    it('rejects inline PROJJSON in the geoCrs of a plain type object', () => {
+        const plain = {
+            kind: IcebergTypeKind.GEOGRAPHY,
+            geoCrs: '{"type":"GeographicCRS"}',
+        };
+        expect(() => fieldsOf([
+            {
+                ...ID_COLUMN,
+                type: plain as unknown as IcebergType,
+            },
+        ], IcebergFormatVersion.V3)).toThrow(/geography CRS must be a non-empty identifier/);
+    });
+
+    it.each([
+        [
+            'required',
+            () => ({
+                required: 1,
+            }),
+        ],
+        [
+            'list elementRequired',
+            () => ({
+                type: IcebergType.list({
+                    element: IcebergType.STRING,
+                    elementId: 2,
+                    elementRequired: 1 as unknown as boolean,
+                }),
+            }),
+        ],
+        [
+            'map valueRequired',
+            () => ({
+                type: IcebergType.map({
+                    key: IcebergType.STRING,
+                    keyId: 2,
+                    value: IcebergType.STRING,
+                    valueId: 3,
+                    valueRequired: 'yes' as unknown as boolean,
+                }),
+            }),
+        ],
+    ])('rejects a %s that is not a boolean', (_label, patch) => {
+        expect(() => fieldsOf([
+            {
+                ...ID_COLUMN,
+                ...patch(),
+            } as IcebergColumn,
+        ])).toThrow(/must be a boolean, got/);
+    });
+
+    it('accepts a token as the comment and as a table property value', () => {
+        const input = synthInput({
+            comment: Lazy.string({
+                produce: () => 'c',
+            }),
+            tableProperties: {
+                'custom.key': Lazy.string({
+                    produce: () => 'v',
+                }),
+            },
+        }).input;
+        expect(input.Properties).toMatchObject({
+            'comment': 'c',
+            'custom.key': 'v',
+        });
+    });
+
+    it('rejects a table property value that is not a string', () => {
+        expect(() => synthInput({
+            tableProperties: {
+                comment: {
+                    toString: () => 'x',
+                } as unknown as string,
+            },
+        })).toThrow(/tableProperties\['comment'\] must be a string, got object/);
+    });
+
+    it.each([
+        [
+            firstReadThen<string | undefined>(undefined, 'x'),
+            /must be a string, got undefined/,
+        ],
+        [
+            firstReadThen<string | undefined>('x', undefined),
+            /in exactly one place/,
+        ],
+    ])('checks the tableProperties comment once, whatever later reads return', (read, message) => {
+        const properties = Object.defineProperty({}, 'comment', {
+            get: read,
+            enumerable: true,
+        });
+        expect(() => synthInput({
+            comment: 'z',
+            tableProperties: properties,
+        })).toThrow(message);
+    });
+
+    it('reads props.database once', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const other = new Database(stack, 'Other', {
+            databaseName: 'other_db',
+            locationUri: 's3://test-bucket/other_db/',
+        });
+        const table = new IcebergTable(stack, 'Tbl', withGetter({
+            tableName: 'snap',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: MINIMAL_COLUMNS,
+            location: 's3://my-bucket/snap/',
+        }, 'database', database, other) as IcebergTableProps);
+        expect(table.database).toBe(database);
+        expect(stack.resolve(table.resource.databaseName)).toEqual(stack.resolve(database.databaseName));
+    });
+
+    const LATER_COLUMNS = [
+        {
+            ...ID_COLUMN,
+            name: 'later',
+        },
+    ];
+
+    it.each([
+        [
+            'columns',
+            [
+                ID_COLUMN,
+            ],
+            LATER_COLUMNS,
+            (i: SynthedInput) => i.Schema.Fields.map((f) => f.Name),
+            [
+                'a',
+            ],
+        ],
+        [
+            'partitionSpec',
+            [
+                GOOD_PARTITION,
+            ],
+            [],
+            (i: SynthedInput) => i.PartitionSpec?.Fields.length,
+            1,
+        ],
+        [
+            'sortOrder',
+            [
+                {
+                    sourceColumn: 'id',
+                },
+            ],
+            [],
+            (i: SynthedInput) => i.WriteOrder?.Fields.length,
+            1,
+        ],
+        [
+            'identifierFieldNames',
+            [
+                'id',
+            ],
+            [],
+            (i: SynthedInput) => i.Schema.IdentifierFieldIds,
+            [
+                1,
+            ],
+        ],
+        [
+            'tableProperties',
+            {
+                comment: 'first',
+            },
+            {
+                comment: 'later',
+            },
+            (i: SynthedInput) => i.Properties.comment,
+            'first',
+        ],
+    ])('renders the %s that was read once', (key, first, rest, pick, expected) => {
+        const overrides: Partial<IcebergTableProps> = withGetter({
+            columns: [
+                {
+                    ...MINIMAL_COLUMNS[0],
+                    required: true,
+                },
+            ],
+        }, key, first, rest);
+        expect(pick(synthInput(overrides).input)).toEqual(expected);
+    });
+
+    it.each([
+        [
+            'write.format.default',
+            'avro',
+            IcebergFormatVersion.V2,
+        ],
+        [
+            'write.delete.mode',
+            'merge-on-read',
+            IcebergFormatVersion.V1,
+        ],
+        [
+            'comment',
+            'second',
+            IcebergFormatVersion.V2,
+        ],
+    ])('rejects a table property key that is a token resolving to %s', (resolved, value, formatVersion) => {
+        expect(() => synthInput({
+            formatVersion,
+            comment: 'first',
+            tableProperties: {
+                [Lazy.string({
+                    produce: () => resolved,
+                })]: value,
+            },
+        })).toThrow('tableProperties key must be a literal string, not a token');
+    });
+
+    const BAD_MEMBER = 'x), y(z';
+    const tokenString = (): string => Lazy.string({
+        produce: () => 'x',
+    });
+
+    const ENUM_STRINGS: Array<[string, (value: string) => unknown, RegExp, RegExp]> = [
+        [
+            'geographyAlgorithm',
+            (value) => IcebergType.geography('EPSG:4326', value as IcebergEdgeAlgorithm),
+            /geographyAlgorithm must be one of/,
+            /geographyAlgorithm must be a literal string/,
+        ],
+        [
+            'sort direction',
+            (value) => synthInput({
+                sortOrder: [
+                    {
+                        sourceColumn: 'id',
+                        direction: value as IcebergSortDirection,
+                    },
+                ],
+            }),
+            /sort direction must be one of/,
+            /sort direction must be a literal string/,
+        ],
+        [
+            'sort nullOrder',
+            (value) => synthInput({
+                sortOrder: [
+                    {
+                        sourceColumn: 'id',
+                        nullOrder: value as IcebergNullOrder,
+                    },
+                ],
+            }),
+            /sort nullOrder must be one of/,
+            /sort nullOrder must be a literal string/,
+        ],
+        [
+            'dataFormat',
+            (value) => synthInput({
+                dataFormat: value as IcebergDataFormat,
+            }),
+            /dataFormat must be one of/,
+            /dataFormat must be a literal string/,
+        ],
+        [
+            'formatVersion',
+            (value) => synthInput({
+                formatVersion: value as IcebergFormatVersion,
+            }),
+            /formatVersion must be one of/,
+            /formatVersion must be a literal string/,
+        ],
+        [
+            'type kind',
+            (value) => new IcebergType({
+                kind: value as IcebergTypeKind,
+            }),
+            /unknown IcebergTypeKind/,
+            /unknown IcebergTypeKind/,
+        ],
+        [
+            'transform kind',
+            (value) => new IcebergPartitionTransform({
+                kind: value as IcebergPartitionTransformKind,
+            }),
+            /unknown IcebergPartitionTransformKind/,
+            /unknown IcebergPartitionTransformKind/,
+        ],
+    ];
+
+    describe.each(ENUM_STRINGS)('%s', (_label, build, memberMessage, tokenMessage) => {
+        it('rejects a string that is not a member', () => {
+            expect(() => build(BAD_MEMBER)).toThrow(memberMessage);
+        });
+
+        it('rejects a token', () => {
+            expect(() => build(tokenString())).toThrow(tokenMessage);
+        });
+    });
+
+    it('rejects a formatVersion that is undefined', () => {
+        expect(() => synthInput({
+            formatVersion: undefined,
+        } as unknown as Partial<IcebergTableProps>)).toThrow(/formatVersion must be a string/);
+    });
+});
+
+describe('IcebergTable.fromIcebergTableAttributes — boundary checks', () => {
+    const imported = (overrides: { tableName?: unknown; location?: unknown }): unknown => {
+        const {
+            stack, database,
+        } = makeStack();
+        return IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+            database,
+            tableName: 'pre_existing',
+            location: 's3://other-bucket/pre_existing/',
+            ...overrides,
+        } as IcebergTableAttributes);
+    };
+
+    it.each([
+        '*',
+        'Bad Name',
+        'a/b',
+    ])('rejects the literal table name %j', (tableName) => {
+        expect(() => imported({
+            tableName,
+        })).toThrow(/must contain only lowercase letters, digits, and underscores/);
+    });
+
+    it.each([
+        [
+            'tableName',
+            'a String object',
+            new String('pre_existing'),
+            /tableName must be a string, got object/,
+        ],
+        [
+            'tableName',
+            'an object with toString only',
+            {
+                toString: (): string => '*',
+            },
+            /tableName must be a string, got object/,
+        ],
+        [
+            'location',
+            'a String object',
+            new String('s3://b/p/'),
+            /location must be a string, got object/,
+        ],
+        [
+            'location',
+            'an object with startsWith, endsWith and toString',
+            {
+                startsWith: () => true,
+                endsWith: () => true,
+                toString: (): string => 's3://b/p/',
+            },
+            /location must be a string, got object/,
+        ],
+    ])('rejects a %s that is %s', (key, _kind, value, message) => {
+        expect(() => imported({
+            [key]: value,
+        })).toThrow(message);
+    });
+
+    it('rejects a location that does not start with s3://', () => {
+        expect(() => imported({
+            location: 'https://other-bucket/p/',
+        })).toThrow(/location must start with 's3:\/\//);
+    });
+
+    it('accepts a token table name and a token location', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const table = IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+            database,
+            tableName: Lazy.string({
+                produce: () => 'resolved_name',
+            }),
+            location: `s3://${Lazy.string({
+                produce: () => 'resolved-bucket',
+            })}/p/`,
+        });
+        expect(stack.resolve(table.tableArn)).toBeDefined();
     });
 });

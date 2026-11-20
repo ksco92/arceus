@@ -7,7 +7,11 @@ import {
 import {
     IcebergType,
     IcebergTypeKind,
+    oneOf,
+    ownArray,
     pathSegment,
+    primitive,
+    snapshotField,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
@@ -33,13 +37,122 @@ import {
 /** Doc prefix that marks identifier columns, so an identifier change is a field change. */
 const IDENTIFIER_DOC_PREFIX = '(PK) ';
 
+function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionField {
+    const {
+        sourceColumn,
+        transform,
+        name,
+        fieldId,
+    } = field;
+    return {
+        sourceColumn: primitive('partition sourceColumn', sourceColumn, 'string'),
+        transform: new IcebergPartitionTransform(transform),
+        name: primitive('partition field name', name, 'string', {
+            optional: true,
+        }),
+        fieldId,
+    };
+}
+
+function snapshotSortField(field: IcebergSortField): IcebergSortField {
+    const {
+        sourceColumn,
+        transform,
+        direction,
+        nullOrder,
+    } = field;
+    return {
+        sourceColumn: primitive('sort sourceColumn', sourceColumn, 'string'),
+        transform: transform === undefined ? undefined : new IcebergPartitionTransform(transform),
+        direction: oneOf('sort direction', direction, IcebergSortDirection, {
+            optional: true,
+        }),
+        nullOrder: oneOf('sort nullOrder', nullOrder, IcebergNullOrder, {
+            optional: true,
+        }),
+    };
+}
+
+/**
+ * A copy of `props` built from one read of each prop: strings and enums checked, arrays and
+ * objects rebuilt, so the construct validates and renders values the caller cannot change.
+ * `database` and `removalPolicy` are passed to CDK as given.
+ *
+ * @internal
+ */
+export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
+    const {
+        database,
+        tableName,
+        columns,
+        location,
+        partitionSpec,
+        sortOrder,
+        identifierFieldNames,
+        dataFormat,
+        formatVersion,
+        tableProperties,
+        comment,
+        removalPolicy,
+    } = props;
+    return {
+        database,
+        removalPolicy,
+        tableName: primitive('tableName', tableName, 'string'),
+        location: primitive('location', location, 'string', {
+            tokens: true,
+        }),
+        dataFormat: oneOf('dataFormat', dataFormat, IcebergDataFormat, {
+            optional: true,
+        }),
+        formatVersion: oneOf('formatVersion', formatVersion, IcebergFormatVersion),
+        comment: primitive('comment', comment, 'string', {
+            optional: true,
+            tokens: true,
+        }),
+        columns: ownArray('columns', columns).map(snapshotField),
+        partitionSpec: partitionSpec === undefined
+            ? undefined
+            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
+        sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map(snapshotSortField),
+        identifierFieldNames: identifierFieldNames === undefined
+            ? undefined
+            : ownArray('identifierFieldNames', identifierFieldNames).map(
+                (name) => primitive('identifier field name', name, 'string'),
+            ),
+        tableProperties: tableProperties === undefined
+            ? undefined
+            : Object.fromEntries(Object.entries(tableProperties).map(([
+                key,
+                value,
+            ]) => [
+                primitive('tableProperties key', key, 'string'),
+                primitive(`tableProperties['${key}']`, value, 'string', {
+                    tokens: true,
+                }),
+            ])),
+    };
+}
+
 /** @internal */
-export function validateProps(props: IcebergTableProps): void {
-    if (!props.tableName.match(/^[a-z0-9_]+$/)) {
+export function validateTableName(tableName: string): void {
+    if (!tableName.match(/^[a-z0-9_]+$/)) {
         throw new Error(
-            `tableName '${props.tableName}' must contain only lowercase letters, digits, and underscores`,
+            `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
     }
+}
+
+/** @internal */
+export function validateLocation(location: string): void {
+    if (!location.startsWith('s3://')) {
+        throw new Error(`location must start with 's3://', got '${location}'`);
+    }
+}
+
+/** @internal */
+export function validateProps(props: IcebergTableProps): void {
+    validateTableName(props.tableName);
     if (props.columns.length === 0) {
         throw new Error('IcebergTable requires at least one column');
     }
@@ -56,9 +169,7 @@ export function validateProps(props: IcebergTableProps): void {
             );
         }
     }
-    if (!props.location.startsWith('s3://')) {
-        throw new Error(`location must start with 's3://', got '${props.location}'`);
-    }
+    validateLocation(props.location);
     for (const column of props.columns) {
         validateFieldType(column.name, column.type, column.required ?? false, props.formatVersion);
     }

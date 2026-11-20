@@ -9,6 +9,10 @@
  * shape the same in every jsii binding.
  */
 
+import {
+    Token,
+} from 'aws-cdk-lib';
+
 /** Discriminator for `IcebergType`. */
 export enum IcebergTypeKind {
     BOOLEAN = 'boolean',
@@ -370,7 +374,8 @@ export class IcebergType {
     /** Edge-interpolation algorithm (set when one was given). */
     public readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 
-    public constructor(options: IcebergTypeOptions) {
+    public constructor(input: IcebergTypeOptions) {
+        const options = readOptions(input);
         this.kind = options.kind;
         switch (options.kind) {
             case IcebergTypeKind.DECIMAL:
@@ -425,7 +430,6 @@ export class IcebergType {
                 if (options.structFields === undefined || options.structFields.length === 0) {
                     throw new Error('struct requires at least one structField');
                 }
-                /// Field names must be unique.
                 const seenNames = new Set<string>();
                 for (const field of options.structFields) {
                     if (seenNames.has(field.name)) {
@@ -464,7 +468,6 @@ export class IcebergType {
             case IcebergTypeKind.VARIANT:
                 /// Primitives carry no extra data.
                 break;
-            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
             default: {
                 const exhaustive: never = options.kind;
                 throw new Error(`unknown IcebergTypeKind: ${exhaustive}`);
@@ -580,6 +583,141 @@ export class IcebergType {
     public isFixed(): boolean {
         return this.kind === IcebergTypeKind.FIXED;
     }
+}
+
+/**
+ * The options of one `IcebergType`, read once from `input`: booleans, `geoCrs` and
+ * `geographyAlgorithm` checked, struct fields and nested types rebuilt, so the constructor works on values the caller cannot change.
+ */
+function readOptions(input: IcebergTypeOptions): IcebergTypeOptions {
+    const {
+        kind,
+        decimalPrecision,
+        decimalScale,
+        fixedLength,
+        listElement,
+        listElementId,
+        listElementRequired,
+        mapKey,
+        mapKeyId,
+        mapValue,
+        mapValueId,
+        mapValueRequired,
+        structFields,
+        geoCrs,
+        geographyAlgorithm,
+    } = input;
+    return {
+        kind,
+        decimalPrecision,
+        decimalScale,
+        fixedLength,
+        listElement: listElement === undefined ? undefined : new IcebergType(listElement),
+        listElementId,
+        listElementRequired: primitive('listElementRequired', listElementRequired, 'boolean', {
+            optional: true,
+        }),
+        mapKey: mapKey === undefined ? undefined : new IcebergType(mapKey),
+        mapKeyId,
+        mapValue: mapValue === undefined ? undefined : new IcebergType(mapValue),
+        mapValueId,
+        mapValueRequired: primitive('mapValueRequired', mapValueRequired, 'boolean', {
+            optional: true,
+        }),
+        structFields: structFields === undefined ? undefined : ownArray('structFields', structFields).map(snapshotField),
+        geoCrs: primitive('geoCrs', geoCrs, 'string', {
+            optional: true,
+        }),
+        geographyAlgorithm: oneOf('geographyAlgorithm', geographyAlgorithm, IcebergEdgeAlgorithm, {
+            optional: true,
+        }),
+    };
+}
+
+/**
+ * Returns `value` when it is a primitive of type `type`. An unresolved token is rejected
+ * unless `tokens` is set; `undefined` passes when `optional` is set.
+ *
+ * @internal
+ */
+export function primitive<T>(
+    what: string,
+    value: T,
+    type: 'string' | 'boolean',
+    {
+        optional = false, tokens = false,
+    }: { optional?: boolean; tokens?: boolean } = {},
+): T {
+    if (value === undefined && optional) {
+        return value;
+    }
+    if (typeof value !== type) {
+        throw new Error(`${what} must be a ${type}, got ${typeof value}`);
+    }
+    if (!tokens && Token.isUnresolved(value)) {
+        throw new Error(`${what} must be a literal string, not a token`);
+    }
+    return value;
+}
+
+/**
+ * Returns `value` when it is a literal string holding one of the values of `members`.
+ *
+ * @internal
+ */
+export function oneOf<T>(
+    what: string,
+    value: T,
+    members: { [name: string]: string },
+    {
+        optional = false,
+    }: { optional?: boolean } = {},
+): T {
+    if (value === undefined && optional) {
+        return value;
+    }
+    if (!Object.values(members).includes(primitive(what, value, 'string') as string)) {
+        throw new Error(`${what} must be one of ${Object.values(members).join(', ')}, got '${value}'`);
+    }
+    return value;
+}
+
+/**
+ * A new array holding the elements of the caller's array, taken in one iteration.
+ *
+ * @internal
+ */
+export function ownArray<T>(what: string, value: T[]): T[] {
+    if (!Array.isArray(value)) {
+        throw new Error(`${what} must be an array, got ${typeof value}`);
+    }
+    return Array.from(value);
+}
+
+/**
+ * A copy of a column or struct field built from one read of each of its fields.
+ *
+ * @internal
+ */
+export function snapshotField(field: IcebergStructFieldDefinition): IcebergStructFieldDefinition {
+    const {
+        id,
+        name,
+        type,
+        required,
+        doc,
+    } = field;
+    return {
+        id,
+        name: primitive('field name', name, 'string'),
+        type: new IcebergType(type),
+        required: primitive('field required', required, 'boolean', {
+            optional: true,
+        }),
+        doc: primitive('field doc', doc, 'string', {
+            optional: true,
+        }),
+    };
 }
 
 /**

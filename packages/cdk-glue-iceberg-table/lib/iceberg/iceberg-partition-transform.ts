@@ -108,8 +108,13 @@ export class IcebergPartitionTransform {
     public readonly truncateWidth?: number;
 
     public constructor(options: IcebergPartitionTransformOptions) {
-        this.kind = options.kind;
-        switch (options.kind) {
+        const {
+            kind,
+            bucketCount,
+            truncateWidth,
+        } = options;
+        this.kind = kind;
+        switch (kind) {
             case IcebergPartitionTransformKind.IDENTITY:
             case IcebergPartitionTransformKind.YEAR:
             case IcebergPartitionTransformKind.MONTH:
@@ -119,26 +124,25 @@ export class IcebergPartitionTransform {
                 /// These transforms carry no extra data.
                 break;
             case IcebergPartitionTransformKind.BUCKET:
-                if (options.bucketCount === undefined) {
+                if (bucketCount === undefined) {
                     throw new Error('bucket transform requires bucketCount');
                 }
-                if (!Number.isInteger(options.bucketCount) || options.bucketCount < 1) {
-                    throw new Error(`bucket() numBuckets must be a positive integer, got ${options.bucketCount}`);
+                if (!Number.isInteger(bucketCount) || bucketCount < 1) {
+                    throw new Error(`bucket() numBuckets must be a positive integer, got ${bucketCount}`);
                 }
-                this.bucketCount = options.bucketCount;
+                this.bucketCount = bucketCount;
                 break;
             case IcebergPartitionTransformKind.TRUNCATE:
-                if (options.truncateWidth === undefined) {
+                if (truncateWidth === undefined) {
                     throw new Error('truncate transform requires truncateWidth');
                 }
-                if (!Number.isInteger(options.truncateWidth) || options.truncateWidth < 1) {
-                    throw new Error(`truncate() width must be a positive integer, got ${options.truncateWidth}`);
+                if (!Number.isInteger(truncateWidth) || truncateWidth < 1) {
+                    throw new Error(`truncate() width must be a positive integer, got ${truncateWidth}`);
                 }
-                this.truncateWidth = options.truncateWidth;
+                this.truncateWidth = truncateWidth;
                 break;
-            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
             default: {
-                const exhaustive: never = options.kind;
+                const exhaustive: never = kind;
                 throw new Error(`unknown IcebergPartitionTransformKind: ${exhaustive}`);
             }
         }

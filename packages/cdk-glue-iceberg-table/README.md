@@ -444,6 +444,11 @@ identifier column's `doc` with `(PK) `, so a `doc` you write must not
 start with `(PK) `; see [Evolving schema and
 partitions](#evolving-schema-and-partitions).
 
+Every string you pass is a literal string, not a token, and an
+enum-typed one must be a member of its enum; the exceptions are
+`location`, `comment`, table property values, and the `tableName` of
+an imported table.
+
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:
 

@@ -2,7 +2,11 @@ import {
     IcebergEdgeAlgorithm,
     IcebergType,
     IcebergTypeKind,
+    IcebergTypeOptions,
 } from '../../lib/iceberg/iceberg-type';
+import {
+    withGetter,
+} from './read-once';
 
 function render(type: IcebergType): string {
     return type._render('c', (_path, id) => id as number);
@@ -434,5 +438,240 @@ describe('IcebergType — geospatial', () => {
         'projjson:my_crs_property',
     ])('accepts CRS %s', (crs) => {
         expect(IcebergType.geometry(crs).geoCrs).toBe(crs);
+    });
+});
+
+describe('IcebergType — inputs are copied at construction', () => {
+    it('rejects a kind that is not an IcebergTypeKind', () => {
+        expect(() => new IcebergType({
+            kind: 'bogus' as IcebergTypeKind,
+        })).toThrow('unknown IcebergTypeKind: bogus');
+    });
+
+    it('reads each construction option once', () => {
+        let reads = 0;
+        const options = {
+            get kind() {
+                reads += 1;
+                return IcebergTypeKind.STRING;
+            },
+        };
+        expect(new IcebergType(options).kind).toBe(IcebergTypeKind.STRING);
+        expect(reads).toBe(1);
+    });
+
+    it('keeps neither the caller array nor its field objects', () => {
+        const field = {
+            id: 2,
+            name: 'a',
+            type: IcebergType.STRING,
+        };
+        const fields = [
+            field,
+        ];
+        const struct = IcebergType.struct(fields);
+        fields.push({
+            ...field,
+            id: 3,
+        });
+        field.name = 'b';
+        expect(struct.structFields).toEqual([
+            {
+                id: 2,
+                name: 'a',
+                type: IcebergType.STRING,
+            },
+        ]);
+    });
+
+    it('keeps no reference to the element, key and value types it was given', () => {
+        const inner = IcebergType.struct([
+            {
+                id: 3,
+                name: 'a',
+                type: IcebergType.STRING,
+            },
+        ]);
+        const list = IcebergType.list({
+            element: inner,
+            elementId: 2,
+        });
+        const map = IcebergType.map({
+            key: inner,
+            keyId: 4,
+            value: inner,
+            valueId: 5,
+        });
+        expect(list.listElement).not.toBe(inner);
+        expect(map.mapKey).not.toBe(inner);
+        expect(map.mapValue).not.toBe(inner);
+    });
+
+    const STRUCT_A = [
+        {
+            id: 3,
+            name: 'a',
+            type: IcebergType.STRING,
+        },
+    ];
+
+    const STRUCT_B = [
+        {
+            id: 3,
+            name: 'b',
+            type: IcebergType.INT,
+        },
+    ];
+
+    it.each([
+        [
+            'kind',
+            {},
+            IcebergTypeKind.LONG,
+            IcebergTypeKind.FLOAT,
+            'long',
+        ],
+        [
+            'decimalPrecision',
+            {
+                kind: IcebergTypeKind.DECIMAL,
+                decimalScale: 2,
+            },
+            10,
+            20,
+            'decimal(10, 2)',
+        ],
+        [
+            'decimalScale',
+            {
+                kind: IcebergTypeKind.DECIMAL,
+                decimalPrecision: 10,
+            },
+            2,
+            3,
+            'decimal(10, 2)',
+        ],
+        [
+            'fixedLength',
+            {
+                kind: IcebergTypeKind.FIXED,
+            },
+            4,
+            8,
+            'fixed[4]',
+        ],
+        [
+            'geoCrs',
+            {
+                kind: IcebergTypeKind.GEOMETRY,
+            },
+            'EPSG:4326',
+            'EPSG:3857',
+            'geometry(EPSG:4326)',
+        ],
+        [
+            'geographyAlgorithm',
+            {
+                kind: IcebergTypeKind.GEOGRAPHY,
+                geoCrs: 'EPSG:4326',
+            },
+            IcebergEdgeAlgorithm.SPHERICAL,
+            IcebergEdgeAlgorithm.KARNEY,
+            'geography(EPSG:4326, spherical)',
+        ],
+    ])('renders the %s that was read once', (key, base, first, rest, expected) => {
+        const options = withGetter({
+            kind: IcebergTypeKind.LONG,
+            ...base,
+        }, key, first, rest);
+        expect(render(new IcebergType(options))).toBe(expected);
+    });
+
+    const LIST = {
+        kind: IcebergTypeKind.LIST,
+        listElement: IcebergType.STRING,
+        listElementId: 2,
+        listElementRequired: true,
+    };
+
+    const MAP = {
+        kind: IcebergTypeKind.MAP,
+        mapKey: IcebergType.STRING,
+        mapKeyId: 2,
+        mapValue: IcebergType.STRING,
+        mapValueId: 3,
+        mapValueRequired: true,
+    };
+
+    it.each([
+        [
+            'listElement',
+            LIST,
+            IcebergType.INT,
+            (r: Record<string, unknown>) => r.element,
+            'string',
+        ],
+        [
+            'listElementId',
+            LIST,
+            9,
+            (r: Record<string, unknown>) => r['element-id'],
+            2,
+        ],
+        [
+            'listElementRequired',
+            LIST,
+            false,
+            (r: Record<string, unknown>) => r['element-required'],
+            true,
+        ],
+        [
+            'mapKey',
+            MAP,
+            IcebergType.INT,
+            (r: Record<string, unknown>) => r.key,
+            'string',
+        ],
+        [
+            'mapKeyId',
+            MAP,
+            9,
+            (r: Record<string, unknown>) => r['key-id'],
+            2,
+        ],
+        [
+            'mapValue',
+            MAP,
+            IcebergType.INT,
+            (r: Record<string, unknown>) => r.value,
+            'string',
+        ],
+        [
+            'mapValueId',
+            MAP,
+            9,
+            (r: Record<string, unknown>) => r['value-id'],
+            3,
+        ],
+        [
+            'mapValueRequired',
+            MAP,
+            false,
+            (r: Record<string, unknown>) => r['value-required'],
+            true,
+        ],
+        [
+            'structFields',
+            {
+                kind: IcebergTypeKind.STRUCT,
+            },
+            STRUCT_B,
+            (r: Record<string, unknown>) => (r.fields as Array<{ name: string }>)[0].name,
+            'a',
+        ],
+    ])('renders the %s that was read once', (key, base, rest, pick, expected) => {
+        const first = key === 'structFields' ? STRUCT_A : (base as Record<string, unknown>)[key];
+        const type = new IcebergType(withGetter(base, key, first, rest) as IcebergTypeOptions);
+        expect(pick(JSON.parse(render(type)))).toBe(expected);
     });
 });

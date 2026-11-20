@@ -2,6 +2,7 @@ import {
     Resource,
     Stack,
     RemovalPolicy,
+    Token,
 } from 'aws-cdk-lib';
 import {
     CfnTable,
@@ -16,6 +17,7 @@ import {
 } from 'constructs';
 import {
     IcebergType,
+    primitive,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
@@ -44,9 +46,12 @@ import {
     renderSchema,
     renderSortOrder,
     resolveIdentifierFieldIds,
+    snapshotProps,
     validatePartitionSpec,
     validateProps,
+    validateLocation,
     validateSortOrder,
+    validateTableName,
 } from './iceberg-table-render';
 
 /// /////////////////////////////////////////////////
@@ -280,6 +285,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
     private readonly s3PrefixGlob: string;
 
     constructor(scope: Construct, id: string, props: IcebergTableProps) {
+        props = snapshotProps(props);
         super(scope, id, {
             physicalName: props.tableName,
         });
@@ -369,11 +375,22 @@ export class IcebergTable extends Resource implements IIcebergTable {
         id: string,
         attrs: IcebergTableAttributes,
     ): IIcebergTable {
-        if (!attrs.location.startsWith('s3://')) {
-            throw new Error(`location must start with 's3://', got '${attrs.location}'`);
+        const {
+            database,
+            tableName: importedName,
+        } = attrs;
+        const importedLocation = primitive('location', attrs.location, 'string', {
+            tokens: true,
+        });
+        const tableName = primitive('tableName', importedName, 'string', {
+            tokens: true,
+        });
+        if (!Token.isUnresolved(tableName)) {
+            validateTableName(tableName);
         }
+        validateLocation(importedLocation);
         const stack = Stack.of(scope);
-        const location = normalizeLocation(attrs.location);
+        const location = normalizeLocation(importedLocation);
         const parsed = parseS3Uri(location);
         const bucketArn = `arn:${stack.partition}:s3:::${parsed.bucket}`;
         const objectArn = `${bucketArn}/${parsed.key}*`;
@@ -381,13 +398,13 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const tableArn = stack.formatArn({
             service: 'glue',
             resource: 'table',
-            resourceName: `${attrs.database.databaseName}/${attrs.tableName}`,
+            resourceName: `${database.databaseName}/${tableName}`,
         });
 
         class Imported extends Resource implements IIcebergTable {
             public readonly tableArn = tableArn;
-            public readonly tableName = attrs.tableName;
-            public readonly database = attrs.database;
+            public readonly tableName = tableName;
+            public readonly database = database;
             public readonly location = location;
 
             public grantRead(grantee: IGrantable): Grant {
