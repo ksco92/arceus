@@ -76,6 +76,33 @@ jobs:
           CDK_DEFAULT_ACCOUNT: '123456789012'
           CDK_DEFAULT_REGION: us-east-1
 
+  packed-consumer:
+    # Installs this PR's own `npm pack` tarball into a fixture that lives
+    # with the package, outside the workspace so resolution cannot fall
+    # back to the source tree, then compiles and synthesizes it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Pack the package and install the tarball into the fixture
+        run: |
+          tarball="$RUNNER_TEMP/$(cd packages/cdk-glue-iceberg-table && npm pack --pack-destination "$RUNNER_TEMP" --silent)"
+          if tar -tzf "$tarball" | grep -q packed-consumer; then exit 1; fi
+          cp -R packages/cdk-glue-iceberg-table/test/packed-consumer "$RUNNER_TEMP/packed-consumer"
+          cd "$RUNNER_TEMP/packed-consumer"
+          npm install "$tarball"
+          test ! -L node_modules/cdk-glue-iceberg-table
+          [ "$(node -p "require('cdk-glue-iceberg-table/package.json').version")" = "$(node -p "require('$GITHUB_WORKSPACE/packages/cdk-glue-iceberg-table/package.json').version")" ]
+      - name: Compile and synthesize the fixture
+        working-directory: ${{ runner.temp }}/packed-consumer
+        run: npx tsc && node out/app.js
+
   peer-floor:
     runs-on: ubuntu-latest
     timeout-minutes: 15

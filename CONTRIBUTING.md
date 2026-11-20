@@ -38,6 +38,7 @@ arceus/
 │       │   ├── iceberg-table-render.ts
 │       │   └── index.ts                # Re-exports (the package's entry point)
 │       ├── test/iceberg/               # Unit tests for the construct
+│       ├── test/packed-consumer/       # Fixture installed from the PR's npm pack tarball (not shipped)
 │       ├── package.json                # The published manifest (jsii config + version)
 │       ├── tsconfig.dev.json           # tsconfig for ESLint + ts-jest (jsii owns tsconfig.json)
 │       ├── jest.config.js
@@ -88,7 +89,7 @@ arceus/
 ├── jest.config.js                      # Demo stack tests
 ├── eslint.config.js
 └── .github/workflows/
-    ├── ci.yml                          # Lint + test + jsii build + Python package + pack + e2e-consumer + peer-floor
+    ├── ci.yml                          # Lint + test + jsii build + Python package + pack + e2e-consumer + packed-consumer + peer-floor
     ├── publish.yml                     # Trusted-publish the package to npm + PyPI on version bump
     └── integ-test.yml                  # Real-AWS Spark smoke + evolution/DML/surface tests (gated)
 ```
@@ -128,7 +129,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 ## How the CI / publish / integ-test gates fit together
 
-- **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, synths the `e2e-consumer` app against the pinned published npm version, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
+- **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, synths the `e2e-consumer` app against the pinned published npm version, installs the PR's own `npm pack` tarball into the `packed-consumer` fixture and synthesizes it, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
 - **`publish.yml`** runs on push to `main` and on manual dispatch. A `check` job compares the package version with npm and PyPI; when either differs, a `build` job with read-only permissions lints, tests, builds the npm tarball and the Python distribution, and uploads both as artifacts. `publish-npm` (npm OIDC trusted publishing, `--provenance`) and `publish-pypi` (PyPI OIDC trusted publishing) each run only when their own registry's version differs; only these two jobs hold `id-token: write`. A PR that forgets to bump runs `check` alone and publishes nothing, and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
 - **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (eight `cdk deploy`s exercising schema, partition, identifier and nested-field evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, the field ids Glue stores at creation, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
@@ -344,3 +345,15 @@ every exported symbol so that a rename in the published surface breaks
 CI. The pin in `e2e-consumer/package-lock.json` tracks the version
 most recently published to npm; [CLAUDE.md](CLAUDE.md) asks for it to
 be bumped after each release.
+
+## The packed-consumer fixture
+
+`packages/cdk-glue-iceberg-table/test/packed-consumer/` is a small CDK
+app that imports the package through its public entry point. The
+`packed-consumer` job in `.github/workflows/ci.yml` builds the package,
+runs `npm pack`, copies the fixture outside the workspace, installs the
+tarball there, checks that the installed copy is not a symlink and
+carries the package's version, then compiles the fixture with `tsc` and
+synthesizes it. The fixture changes with the API in the same PR, so it
+always compiles against the PR; `e2e-consumer/` stays the check against
+the published version.

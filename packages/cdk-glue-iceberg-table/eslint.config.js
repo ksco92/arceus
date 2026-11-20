@@ -25,6 +25,7 @@ module.exports = [
             'coverage/**',
             'dist/**',
             'build/**',
+            'test/packed-consumer/**',
         ],
     },
     {
