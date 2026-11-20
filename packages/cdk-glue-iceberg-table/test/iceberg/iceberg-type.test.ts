@@ -436,3 +436,71 @@ describe('IcebergType — geospatial', () => {
         expect(IcebergType.geometry(crs).geoCrs).toBe(crs);
     });
 });
+
+describe('IcebergType — inputs are copied at construction', () => {
+    it('rejects a kind that is not an IcebergTypeKind', () => {
+        expect(() => new IcebergType({
+            kind: 'bogus' as IcebergTypeKind,
+        })).toThrow('unknown IcebergTypeKind: bogus');
+    });
+
+    it('reads each construction option once', () => {
+        let reads = 0;
+        const options = {
+            get kind() {
+                reads += 1;
+                return IcebergTypeKind.STRING;
+            },
+        };
+        expect(new IcebergType(options).kind).toBe(IcebergTypeKind.STRING);
+        expect(reads).toBe(1);
+    });
+
+    it('keeps neither the caller array nor its field objects', () => {
+        const field = {
+            id: 2,
+            name: 'a',
+            type: IcebergType.STRING,
+        };
+        const fields = [
+            field,
+        ];
+        const struct = IcebergType.struct(fields);
+        fields.push({
+            ...field,
+            id: 3,
+        });
+        field.name = 'b';
+        expect(struct.structFields).toEqual([
+            {
+                id: 2,
+                name: 'a',
+                type: IcebergType.STRING,
+                required: false,
+            },
+        ]);
+    });
+
+    it('keeps no reference to the element, key and value types it was given', () => {
+        const inner = IcebergType.struct([
+            {
+                id: 3,
+                name: 'a',
+                type: IcebergType.STRING,
+            },
+        ]);
+        const list = IcebergType.list({
+            element: inner,
+            elementId: 2,
+        });
+        const map = IcebergType.map({
+            key: inner,
+            keyId: 4,
+            value: inner,
+            valueId: 5,
+        });
+        expect(list.listElement).not.toBe(inner);
+        expect(map.mapKey).not.toBe(inner);
+        expect(map.mapValue).not.toBe(inner);
+    });
+});
