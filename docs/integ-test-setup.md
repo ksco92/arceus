@@ -218,9 +218,10 @@ The workflow reads it via `${{ vars.AWS_INTEG_ROLE_ARN }}`.
 
 A run started from a PR comments back on that PR with success / failure
 plus a link to the run logs. A failed weekly run opens or comments on a
-GitHub issue with a link to the run. A weekly run that is cancelled while
-it waits for a running one opens no issue. Each script's teardown step (`DESTROY=1`) deletes
-its stack at the end so the account is left clean.
+GitHub issue with a link to the run.
+
+Each script's teardown step (`DESTROY=1`) deletes its stack at the end so
+the account is left clean.
 
 Before the other integration scripts run, the workflow installs Java 17 and the Spark toolchain (`scripts/spark/install-spark.sh`), then runs `scripts/integration-test-spark-smoke.sh`: CDK deploys `IcebergSparkSmokeStack` and grants the role, and `scripts/spark/smoke.py` inserts into and counts its table through the Glue catalog and the lake bucket.
 
