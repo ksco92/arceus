@@ -4,6 +4,10 @@ import {
     IcebergTypeKind,
 } from '../../lib/iceberg/iceberg-type';
 
+function render(type: IcebergType): string {
+    return type._render('c', (_path, id) => id as number);
+}
+
 describe('IcebergType — direct constructor', () => {
     it('rejects decimal without precision + scale', () => {
         expect(() => new IcebergType({
@@ -171,7 +175,7 @@ describe('IcebergType — primitive', () => {
             'variant',
         ],
     ])('%s renders to %s', (_label, type, expected) => {
-        expect(type._render()).toBe(expected);
+        expect(render(type)).toBe(expected);
         expect(type.isPrimitive(expected)).toBe(true);
     });
 
@@ -187,7 +191,7 @@ describe('IcebergType — decimal', () => {
         /// so a spaceless render makes schema-identical updates fail with
         /// `Cannot set last added schema`. Regression guard for issue #40.
         const type = IcebergType.decimal(10, 2);
-        expect(type._render()).toBe('decimal(10, 2)');
+        expect(render(type)).toBe('decimal(10, 2)');
         expect(type.isDecimal()).toBe(true);
     });
 
@@ -200,7 +204,7 @@ describe('IcebergType — decimal', () => {
                 required: true,
             },
         ]);
-        const repr = JSON.parse(type._render());
+        const repr = JSON.parse(render(type));
         expect(repr.fields[0].type).toBe('decimal(12, 4)');
     });
 
@@ -225,7 +229,7 @@ describe('IcebergType — decimal', () => {
 describe('IcebergType — fixed', () => {
     it('renders fixed[L]', () => {
         const type = IcebergType.fixed(16);
-        expect(type._render()).toBe('fixed[16]');
+        expect(render(type)).toBe('fixed[16]');
         expect(type.isFixed()).toBe(true);
     });
 
@@ -244,7 +248,7 @@ describe('IcebergType — list', () => {
             element: IcebergType.STRING,
             elementId: 100,
         });
-        expect(JSON.parse(type._render())).toEqual({
+        expect(JSON.parse(render(type))).toEqual({
             type: 'list',
             'element-id': 100,
             'element-required': false,
@@ -258,7 +262,7 @@ describe('IcebergType — list', () => {
             elementId: 2,
             elementRequired: true,
         });
-        expect(JSON.parse(type._render())['element-required']).toBe(true);
+        expect(JSON.parse(render(type))['element-required']).toBe(true);
     });
 
     it('nests complex types as JSON objects (no double encoding)', () => {
@@ -274,7 +278,7 @@ describe('IcebergType — list', () => {
             element: inner,
             elementId: 2,
         });
-        const repr = JSON.parse(type._render());
+        const repr = JSON.parse(render(type));
         expect(typeof repr.element).toBe('object');
         expect(repr.element.type).toBe('struct');
     });
@@ -288,7 +292,7 @@ describe('IcebergType — map', () => {
             value: IcebergType.INT,
             valueId: 77,
         });
-        expect(JSON.parse(type._render())).toEqual({
+        expect(JSON.parse(render(type))).toEqual({
             type: 'map',
             'key-id': 50,
             key: 'string',
@@ -306,7 +310,7 @@ describe('IcebergType — map', () => {
             valueId: 3,
             valueRequired: true,
         });
-        expect(JSON.parse(type._render())['value-required']).toBe(true);
+        expect(JSON.parse(render(type))['value-required']).toBe(true);
     });
 });
 
@@ -326,7 +330,7 @@ describe('IcebergType — struct', () => {
                 doc: 'optional b',
             },
         ]);
-        expect(JSON.parse(type._render())).toEqual({
+        expect(JSON.parse(render(type))).toEqual({
             type: 'struct',
             fields: [
                 {
@@ -405,7 +409,7 @@ describe('IcebergType — geospatial', () => {
             'geography(EPSG:4326, andoyer)',
         ],
     ])('renders %#: %s', (type, expected) => {
-        expect(type._render()).toBe(expected);
+        expect(render(type)).toBe(expected);
     });
 
     it.each([

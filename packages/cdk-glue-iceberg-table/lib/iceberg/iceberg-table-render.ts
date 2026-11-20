@@ -1,9 +1,13 @@
 import {
+    Token,
+} from 'aws-cdk-lib';
+import {
     CfnTable,
 } from 'aws-cdk-lib/aws-glue';
 import {
     IcebergType,
     IcebergTypeKind,
+    pathSegment,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
@@ -163,22 +167,22 @@ export function renderSchema(
     identifierFieldNames: string[] | undefined,
 ): RenderedSchema {
     const pathById = new Map<number, string>();
-    for (const column of columns) {
-        claimFieldIds(column.name, column.id, column.type, pathById);
-    }
+    const claimId = (path: string, id: unknown): number => claimFieldId(path, id, pathById);
     const identifierNames = new Set(identifierFieldNames);
     const columnByName = new Map<string, RenderedColumn>();
     const fields: CfnTable.IcebergStructFieldProperty[] = columns.map((column) => {
+        const path = pathSegment(column.name);
+        const id = claimId(path, column.id);
         const required = column.required ?? false;
         columnByName.set(column.name, {
-            id: column.id,
+            id,
             type: column.type,
             required,
         });
         return {
-            id: column.id,
+            id,
             name: column.name,
-            type: column.type._render(),
+            type: column.type._render(path, claimId),
             required,
             doc: identifierNames.has(column.name) ? `${IDENTIFIER_DOC_PREFIX}${column.doc ?? ''}` : column.doc,
         };
@@ -189,37 +193,29 @@ export function renderSchema(
     };
 }
 
-/**
- * Record the id of the field at `path` and of every field nested in it
- * in `pathById`. Throws on a missing, non-positive-integer, or repeated id.
- */
-function claimFieldIds(
-    path: string,
-    id: number | undefined,
-    type: IcebergType,
-    pathById: Map<number, string>,
-): void {
+/** Largest field id the Iceberg spec allows (`Integer.MAX_VALUE - 200`). */
+const MAX_FIELD_ID = 2147483447;
+
+/** Check the id of the field at `path`, record it in `pathById`, and return it. */
+function claimFieldId(path: string, id: unknown, pathById: Map<number, string>): number {
     if (id === undefined || id === null) {
         throw new Error(`column '${path}' is missing a required id`);
     }
-    if (!Number.isInteger(id) || id < 1) {
-        throw new Error(`column '${path}' has invalid id ${id}; ids must be positive integers`);
+    if (typeof id !== 'number') {
+        throw new Error(`column '${path}' has invalid id ${String(id)} of type ${typeof id}; ids must be numbers`);
+    }
+    if (Token.isUnresolved(id)) {
+        throw new Error(`column '${path}' has an unresolved token as its id; ids must be concrete numbers, not tokens`);
+    }
+    if (!Number.isInteger(id) || id < 1 || id > MAX_FIELD_ID) {
+        throw new Error(`column '${path}' has invalid id ${id}; ids must be integers from 1 to ${MAX_FIELD_ID}`);
     }
     const owner = pathById.get(id);
     if (owner !== undefined) {
         throw new Error(`duplicate field id ${id} on column '${path}', already used by '${owner}'`);
     }
     pathById.set(id, path);
-    if (type.listElement !== undefined) {
-        claimFieldIds(`${path}.element`, type.listElementId, type.listElement, pathById);
-    }
-    if (type.mapKey !== undefined) {
-        claimFieldIds(`${path}.key`, type.mapKeyId, type.mapKey, pathById);
-        claimFieldIds(`${path}.value`, type.mapValueId, type.mapValue!, pathById);
-    }
-    for (const field of type.structFields ?? []) {
-        claimFieldIds(`${path}.${field.name}`, field.id, field.type, pathById);
-    }
+    return id;
 }
 
 /** @internal */

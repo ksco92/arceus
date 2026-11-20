@@ -50,7 +50,7 @@ const DEFAULT_GEO_CRS = 'OGC:CRS84';
 
 /** Definition of a single struct field. */
 export interface IcebergStructFieldDefinition {
-    /** Iceberg field id: a positive integer unique across the table schema, kept for the life of the field. */
+    /** Iceberg field id of the field. */
     readonly id: number;
 
     /** Field name (unique within the struct). */
@@ -71,7 +71,7 @@ export interface IcebergListDefinition {
     /** Element type. */
     readonly element: IcebergType;
 
-    /** Iceberg field id of the element: a positive integer unique across the table schema. */
+    /** Iceberg field id of the element. */
     readonly elementId: number;
 
     /** Whether elements are non-nullable. Defaults to `false`. */
@@ -83,13 +83,13 @@ export interface IcebergMapDefinition {
     /** Key type. */
     readonly key: IcebergType;
 
-    /** Iceberg field id of the key: a positive integer unique across the table schema. */
+    /** Iceberg field id of the key. */
     readonly keyId: number;
 
     /** Value type. */
     readonly value: IcebergType;
 
-    /** Iceberg field id of the value: a positive integer unique across the table schema. */
+    /** Iceberg field id of the value. */
     readonly valueId: number;
 
     /** Whether values are non-nullable. Defaults to `false`. */
@@ -120,7 +120,7 @@ export interface IcebergTypeOptions {
     /** Element type. Required when `kind === LIST`. */
     readonly listElement?: IcebergType;
 
-    /** Element field id. Required when `kind === LIST`. */
+    /** Element field id. Checked by `IcebergTable`. */
     readonly listElementId?: number;
 
     /** Whether list elements are non-nullable. Defaults to `false`. */
@@ -129,13 +129,13 @@ export interface IcebergTypeOptions {
     /** Map key type. Required when `kind === MAP`. */
     readonly mapKey?: IcebergType;
 
-    /** Map key field id. Required when `kind === MAP`. */
+    /** Map key field id. Checked by `IcebergTable`. */
     readonly mapKeyId?: number;
 
     /** Map value type. Required when `kind === MAP`. */
     readonly mapValue?: IcebergType;
 
-    /** Map value field id. Required when `kind === MAP`. */
+    /** Map value field id. Checked by `IcebergTable`. */
     readonly mapValueId?: number;
 
     /** Whether map values are non-nullable. Defaults to `false`. */
@@ -473,13 +473,12 @@ export class IcebergType {
     }
 
     /**
-     * Render the type as the string Glue's `IcebergStructField.type`
-     * expects. Primitives return their canonical name; nested types
-     * return a JSON-encoded object.
+     * Render the type at `path` as the string Glue's `IcebergStructField.type`
+     * expects. Nested ids are passed through `claimId` once each, and its result is rendered.
      *
      * @internal
      */
-    public _render(): string {
+    public _render(path: string, claimId: (path: string, id: unknown) => number): string {
         switch (this.kind) {
             case IcebergTypeKind.DECIMAL:
                 /// The space after the comma is load-bearing: Iceberg's
@@ -507,26 +506,29 @@ export class IcebergType {
             case IcebergTypeKind.LIST:
                 return JSON.stringify({
                     type: 'list',
-                    'element-id': this.listElementId,
+                    'element-id': claimId(`${path}.element`, this.listElementId),
                     'element-required': this.listElementRequired,
-                    element: tryParseObject(this.listElement!._render()),
+                    element: tryParseObject(this.listElement!._render(`${path}.element`, claimId)),
                 });
             case IcebergTypeKind.MAP:
                 return JSON.stringify({
                     type: 'map',
-                    'key-id': this.mapKeyId,
-                    key: tryParseObject(this.mapKey!._render()),
-                    'value-id': this.mapValueId,
+                    'key-id': claimId(`${path}.key`, this.mapKeyId),
+                    key: tryParseObject(this.mapKey!._render(`${path}.key`, claimId)),
+                    'value-id': claimId(`${path}.value`, this.mapValueId),
                     'value-required': this.mapValueRequired,
-                    value: tryParseObject(this.mapValue!._render()),
+                    value: tryParseObject(this.mapValue!._render(`${path}.value`, claimId)),
                 });
             case IcebergTypeKind.STRUCT: {
                 const rendered = this.structFields!.map((field) => {
+                    const name = field.name;
+                    const fieldPath = `${path}.${pathSegment(name)}`;
+                    const id = claimId(fieldPath, field.id);
                     const required = field.required ?? false;
-                    const typeRepr = field.type._render();
+                    const typeRepr = field.type._render(fieldPath, claimId);
                     const out: Record<string, unknown> = {
-                        id: field.id,
-                        name: field.name,
+                        id,
+                        name,
                         required,
                         type: tryParseObject(typeRepr),
                     };
@@ -579,6 +581,15 @@ export class IcebergType {
     public isFixed(): boolean {
         return this.kind === IcebergTypeKind.FIXED;
     }
+}
+
+/**
+ * Field name as a path segment, in backquotes when it contains a dot.
+ *
+ * @internal
+ */
+export function pathSegment(name: string): string {
+    return name.includes('.') ? `\`${name}\`` : name;
 }
 
 /**
