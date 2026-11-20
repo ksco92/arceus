@@ -249,25 +249,26 @@ a table it does not keep the declared ids: it numbers the fields from
 1, every field of a struct level in declaration order and then the
 nested fields of each in turn (a list's element; a map's key and
 value; a struct's fields), and points the partition spec, sort order
-and identifier fields at the new ids. Every later deploy, even one
-that only changes a table property, stores the declared ids as they
-are. A table created with other ids therefore runs on the
+and identifier fields at the new ids. Every later update of the
+table, even one that only changes a table property, stores the
+declared ids as they are. A table created with other ids therefore runs on the
 creation-order ids until its first update, which then renumbers fields
 that may already hold data. `IcebergTable.creationOrderFieldIds`
 returns the creation-order ids by field path (the ids in its input are
-ignored), so you can set them before the first deploy:
+ignored), so you can set them before the first deploy. For columns
+declared depth first:
 
 ```typescript
 IcebergTable.creationOrderFieldIds([
-    { name: 'id', type: IcebergType.LONG, id: 0 },
-    { name: 'tags', type: IcebergType.list({ element: IcebergType.STRING, elementId: 0 }), id: 0 },
+    { name: 'id', type: IcebergType.LONG, id: 1 },
+    { name: 'tags', type: IcebergType.list({ element: IcebergType.STRING, elementId: 3 }), id: 2 },
     {
         name: 'addr',
         type: IcebergType.struct([
-            { id: 0, name: 'line1', type: IcebergType.STRING },
-            { id: 0, name: 'city', type: IcebergType.STRING },
+            { id: 5, name: 'line1', type: IcebergType.STRING },
+            { id: 6, name: 'city', type: IcebergType.STRING },
         ]),
-        id: 0,
+        id: 4,
     },
 ]);
 // { id: 1, tags: 2, addr: 3, 'tags.element': 4, 'addr.line1': 5, 'addr.city': 6 }
