@@ -156,7 +156,7 @@ export interface IcebergTypeOptions {
 }
 
 /**
- * Iceberg type. Use the static factories on this class to construct
+ * Iceberg type. Use the static factories on this class to construc
  * primitives, decimals, fixed, geospatial types, lists, maps, and structs.
  */
 export class IcebergType {
@@ -488,7 +488,7 @@ export class IcebergType {
                 /// canonical decimal form is `decimal(P, S)`, and that is
                 /// exactly what Glue writes into the stored table metadata.
                 /// Emitting `decimal(P,S)` (no space) makes every later
-                /// schema-identical UpdateTable submit a type string that
+                /// schema-identical UpdateTable submit a type string tha
                 /// differs textually from the stored one; Glue reads that as
                 /// a phantom column change that adds no schema, then its
                 /// set-current-schema step dereferences a "last added schema"
@@ -615,20 +615,22 @@ function readOptions(input: IcebergTypeOptions): IcebergTypeOptions {
         listElement: listElement === undefined ? undefined : new IcebergType(listElement),
         listElementId,
         listElementRequired: primitive('listElementRequired', listElementRequired, 'boolean', {
-            optional: true, 
+            optional: true,
         }),
         mapKey: mapKey === undefined ? undefined : new IcebergType(mapKey),
         mapKeyId,
         mapValue: mapValue === undefined ? undefined : new IcebergType(mapValue),
         mapValueId,
         mapValueRequired: primitive('mapValueRequired', mapValueRequired, 'boolean', {
-            optional: true, 
+            optional: true,
         }),
         structFields: structFields === undefined ? undefined : ownArray('structFields', structFields).map(snapshotField),
         geoCrs: primitive('geoCrs', geoCrs, 'string', {
-            optional: true, 
+            optional: true,
         }),
-        geographyAlgorithm: oneOf('geographyAlgorithm', geographyAlgorithm, IcebergEdgeAlgorithm, true),
+        geographyAlgorithm: oneOf('geographyAlgorithm', geographyAlgorithm, IcebergEdgeAlgorithm, {
+            optional: true,
+        }),
     };
 }
 
@@ -643,7 +645,7 @@ export function primitive<T>(
     value: T,
     type: 'string' | 'boolean',
     {
-        optional = false, tokens = false, 
+        optional = false, tokens = false,
     }: { optional?: boolean; tokens?: boolean } = {},
 ): T {
     if (value === undefined && optional) {
@@ -663,7 +665,14 @@ export function primitive<T>(
  *
  * @internal
  */
-export function oneOf<T>(what: string, value: T, members: { [name: string]: string }, optional = false): T {
+export function oneOf<T>(
+    what: string,
+    value: T,
+    members: { [name: string]: string },
+    {
+        optional = false,
+    }: { optional?: boolean } = {},
+): T {
     if (value === undefined && optional) {
         return value;
     }
@@ -703,10 +712,10 @@ export function snapshotField(field: IcebergStructFieldDefinition): IcebergStruc
         name: primitive('field name', name, 'string'),
         type: new IcebergType(type),
         required: primitive('field required', required, 'boolean', {
-            optional: true, 
+            optional: true,
         }),
         doc: primitive('field doc', doc, 'string', {
-            optional: true, 
+            optional: true,
         }),
     };
 }

@@ -48,7 +48,7 @@ function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionF
         sourceColumn: primitive('partition sourceColumn', sourceColumn, 'string'),
         transform: new IcebergPartitionTransform(transform),
         name: primitive('partition field name', name, 'string', {
-            optional: true, 
+            optional: true,
         }),
         fieldId,
     };
@@ -64,8 +64,12 @@ function snapshotSortField(field: IcebergSortField): IcebergSortField {
     return {
         sourceColumn: primitive('sort sourceColumn', sourceColumn, 'string'),
         transform: transform === undefined ? undefined : new IcebergPartitionTransform(transform),
-        direction: oneOf('sort direction', direction, IcebergSortDirection, true),
-        nullOrder: oneOf('sort nullOrder', nullOrder, IcebergNullOrder, true),
+        direction: oneOf('sort direction', direction, IcebergSortDirection, {
+            optional: true,
+        }),
+        nullOrder: oneOf('sort nullOrder', nullOrder, IcebergNullOrder, {
+            optional: true,
+        }),
     };
 }
 
@@ -96,13 +100,15 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         removalPolicy,
         tableName: primitive('tableName', tableName, 'string'),
         location: primitive('location', location, 'string', {
-            tokens: true, 
+            tokens: true,
         }),
-        dataFormat: oneOf('dataFormat', dataFormat, IcebergDataFormat, true),
+        dataFormat: oneOf('dataFormat', dataFormat, IcebergDataFormat, {
+            optional: true,
+        }),
         formatVersion: oneOf('formatVersion', formatVersion, IcebergFormatVersion),
         comment: primitive('comment', comment, 'string', {
             optional: true,
-            tokens: true, 
+            tokens: true,
         }),
         columns: ownArray('columns', columns).map(snapshotField),
         partitionSpec: partitionSpec === undefined
@@ -122,19 +128,24 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
             ]) => [
                 primitive('tableProperties key', key, 'string'),
                 primitive(`tableProperties['${key}']`, value, 'string', {
-                    tokens: true, 
+                    tokens: true,
                 }),
             ])),
     };
 }
 
 /** @internal */
-export function validateProps(props: IcebergTableProps): void {
-    if (!props.tableName.match(/^[a-z0-9_]+$/)) {
+export function validateTableName(tableName: string): void {
+    if (!tableName.match(/^[a-z0-9_]+$/)) {
         throw new Error(
-            `tableName '${props.tableName}' must contain only lowercase letters, digits, and underscores`,
+            `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
     }
+}
+
+/** @internal */
+export function validateProps(props: IcebergTableProps): void {
+    validateTableName(props.tableName);
     if (props.columns.length === 0) {
         throw new Error('IcebergTable requires at least one column');
     }

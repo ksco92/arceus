@@ -2,6 +2,7 @@ import {
     Resource,
     Stack,
     RemovalPolicy,
+    Token,
 } from 'aws-cdk-lib';
 import {
     CfnTable,
@@ -16,6 +17,7 @@ import {
 } from 'constructs';
 import {
     IcebergType,
+    primitive,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
@@ -48,6 +50,7 @@ import {
     validatePartitionSpec,
     validateProps,
     validateSortOrder,
+    validateTableName,
 } from './iceberg-table-render';
 
 /// /////////////////////////////////////////////////
@@ -117,10 +120,10 @@ export interface IcebergPartitionField {
     readonly name?: string;
 
     /**
-     * Iceberg partition field id. Required: every partition field must
+     * Iceberg partition field id. Required: every partition field mus
      * be pinned to a stable integer >= 1000 (the Iceberg spec reserves
      * ids below 1000 for schema columns) that is unique across the
-     * table's entire partition-spec history — not just the current
+     * table's entire partition-spec history — not just the curren
      * spec. Iceberg's strict engines (Spark, Trino) reject a table
      * whose spec history carries two different partition fields with
      * the same id.
@@ -130,7 +133,7 @@ export interface IcebergPartitionField {
      * different transform, a different source column — makes it a NEW
      * field that needs a fresh, never-before-used id. Only an
      * untouched field keeps its id across deploys. Once a field is
-     * changed or dropped, its id is retired for good; the construct
+     * changed or dropped, its id is retired for good; the construc
      * cannot see prior deploys, so honoring retirement is on you.
      */
     readonly fieldId: number;
@@ -248,7 +251,7 @@ export interface IIcebergTable {
  * A Glue table created in the Apache Iceberg open table format.
  *
  * The construct emits the
- * `OpenTableFormatInput.IcebergInput.IcebergTableInput` shape that
+ * `OpenTableFormatInput.IcebergInput.IcebergTableInput` shape tha
  * survives CloudFormation `Update` (the alternative — placing columns
  * under `tableInput.storageDescriptor.columns` — silently strips
  * `table_type=ICEBERG` from Glue parameters on the first update and
@@ -371,11 +374,24 @@ export class IcebergTable extends Resource implements IIcebergTable {
         id: string,
         attrs: IcebergTableAttributes,
     ): IIcebergTable {
-        if (!attrs.location.startsWith('s3://')) {
-            throw new Error(`location must start with 's3://', got '${attrs.location}'`);
+        const {
+            database,
+            tableName: importedName,
+        } = attrs;
+        const importedLocation = primitive('location', attrs.location, 'string', {
+            tokens: true,
+        });
+        const tableName = primitive('tableName', importedName, 'string', {
+            tokens: true,
+        });
+        if (!Token.isUnresolved(tableName)) {
+            validateTableName(tableName);
+        }
+        if (!importedLocation.startsWith('s3://')) {
+            throw new Error(`location must start with 's3://', got '${importedLocation}'`);
         }
         const stack = Stack.of(scope);
-        const location = normalizeLocation(attrs.location);
+        const location = normalizeLocation(importedLocation);
         const parsed = parseS3Uri(location);
         const bucketArn = `arn:${stack.partition}:s3:::${parsed.bucket}`;
         const objectArn = `${bucketArn}/${parsed.key}*`;
@@ -383,13 +399,13 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const tableArn = stack.formatArn({
             service: 'glue',
             resource: 'table',
-            resourceName: `${attrs.database.databaseName}/${attrs.tableName}`,
+            resourceName: `${database.databaseName}/${tableName}`,
         });
 
         class Imported extends Resource implements IIcebergTable {
             public readonly tableArn = tableArn;
-            public readonly tableName = attrs.tableName;
-            public readonly database = attrs.database;
+            public readonly tableName = tableName;
+            public readonly database = database;
             public readonly location = location;
 
             public grantRead(grantee: IGrantable): Grant {

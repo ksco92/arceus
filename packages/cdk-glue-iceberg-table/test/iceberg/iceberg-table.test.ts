@@ -27,6 +27,7 @@ import {
     IcebergSortDirection,
     IcebergStructFieldDefinition,
     IcebergTable,
+    IcebergTableAttributes,
     IcebergTableProps,
     IcebergType,
     IcebergTypeKind,
@@ -246,7 +247,7 @@ describe('IcebergTable — happy path', () => {
             ],
             location: 's3://my-bucket/events/',
             /// Non-contiguous, non-sorted ids: the first declared field
-            /// carries the higher id. A positional allocator would emit
+            /// carries the higher id. A positional allocator would emi
             /// 1000/1001 here instead.
             partitionSpec: [
                 {
@@ -2646,7 +2647,7 @@ describe('IcebergTable — grants', () => {
         expect(glueStatements).toHaveLength(1);
 
         /// `s3:ListBucketMultipartUploads` must NOT carry an
-        /// `s3:prefix` condition (the action does not support that
+        /// `s3:prefix` condition (the action does not support tha
         /// condition key).
         const mpuStatements = statementsByAction(statements, 's3:ListBucketMultipartUploads');
         expect(mpuStatements).toHaveLength(1);
@@ -3380,7 +3381,7 @@ describe('IcebergTable — rendered values are the validated values', () => {
             },
         });
         const {
-            input, 
+            input,
         } = synthInput({
             columns: [
                 {
@@ -3474,7 +3475,7 @@ describe('IcebergTable — rendered values are the validated values', () => {
             },
         });
         const {
-            input, 
+            input,
         } = synthInput({
             partitionSpec: [
                 {
@@ -3538,7 +3539,7 @@ describe('IcebergTable — rendered values are the validated values', () => {
             get: (target, key, receiver) => (key === '0' ? read() : Reflect.get(target, key, receiver)),
         });
         const {
-            input, 
+            input,
         } = synthInput({
             columns: [
                 MINIMAL_COLUMNS[0],
@@ -3598,7 +3599,7 @@ describe('IcebergTable — rendered values are the validated values', () => {
         ],
     ])('renders the %s that was read once', (key, first, rest, pick) => {
         const {
-            resource, 
+            resource,
         } = synthInput(withGetter({}, key, first, rest) as Partial<IcebergTableProps>);
         expect(pick(resource)).toBe(first === RemovalPolicy.DESTROY ? 'Delete' : first);
     });
@@ -4273,5 +4274,88 @@ describe('IcebergTable — rendered values are the validated values', () => {
         it('rejects a token', () => {
             expect(() => build(tokenString())).toThrow(tokenMessage);
         });
+    });
+});
+
+describe('IcebergTable.fromIcebergTableAttributes — boundary checks', () => {
+    const imported = (overrides: { tableName?: unknown; location?: unknown }): unknown => {
+        const {
+            stack, database,
+        } = makeStack();
+        return IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+            database,
+            tableName: 'pre_existing',
+            location: 's3://other-bucket/pre_existing/',
+            ...overrides,
+        } as IcebergTableAttributes);
+    };
+
+    it.each([
+        '*',
+        'Bad Name',
+        'a/b',
+    ])('rejects the literal table name %j', (tableName) => {
+        expect(() => imported({
+            tableName,
+        })).toThrow(/must contain only lowercase letters, digits, and underscores/);
+    });
+
+    it.each([
+        [
+            'tableName',
+            'a String object',
+            new String('pre_existing'),
+            /tableName must be a string, got object/,
+        ],
+        [
+            'tableName',
+            'an object with toString only',
+            {
+                toString: (): string => '*',
+            },
+            /tableName must be a string, got object/,
+        ],
+        [
+            'location',
+            'a String object',
+            new String('s3://b/p/'),
+            /location must be a string, got object/,
+        ],
+        [
+            'location',
+            'an object with startsWith, endsWith and toString',
+            {
+                startsWith: () => true,
+                endsWith: () => true,
+                toString: (): string => 's3://b/p/',
+            },
+            /location must be a string, got object/,
+        ],
+    ])('rejects a %s that is %s', (key, _kind, value, message) => {
+        expect(() => imported({
+            [key]: value,
+        })).toThrow(message);
+    });
+
+    it('rejects a location that does not start with s3://', () => {
+        expect(() => imported({
+            location: 'https://other-bucket/p/',
+        })).toThrow(/location must start with 's3:\/\//);
+    });
+
+    it('accepts a token table name and a token location', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const table = IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+            database,
+            tableName: Lazy.string({
+                produce: () => 'resolved_name',
+            }),
+            location: `s3://${Lazy.string({
+                produce: () => 'resolved-bucket',
+            })}/p/`,
+        });
+        expect(stack.resolve(table.tableArn)).toBeDefined();
     });
 });
