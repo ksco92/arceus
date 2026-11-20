@@ -2,7 +2,8 @@ name: Integration test
 
 # Runs the Spark smoke check and the evolution, DML, surface, v3-evolution,
 # and v3 DML scripts against real AWS: real `cdk deploy`s plus Spark
-# queries through the IcebergTable construct.
+# queries through the IcebergTable construct, and Athena queries against
+# the v2 tables of the evolution, DML, and surface scripts.
 #
 # Triggers:
 #   - Label `run-integ-test` applied to an open PR.
@@ -10,7 +11,7 @@ name: Integration test
 #   - Manual dispatch from the Actions tab.
 #   - Weekly schedule, against `main`.
 #
-# Not on every push: real AWS resources, ~15 min runtime, real cost.
+# Not on every push: real AWS resources, 25 to 40 min runtime, real cost.
 #
 # Requires the `AWS_INTEG_ROLE_ARN` repo variable and an IAM role
 # trust-policied for this repo's GitHub Actions OIDC. See
@@ -127,6 +128,7 @@ jobs:
       AWS_REGION: us-east-1
       PRINCIPAL_ARN: ${{ vars.AWS_INTEG_ROLE_ARN }}
       DESTROY: '1'
+      ATHENA_WORKGROUP: primary
     steps:
       - uses: actions/checkout@v4
         with:
@@ -158,15 +160,15 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/integration-test-spark-smoke.sh 2>&1 | tee /tmp/integ-test.log
-      - name: Run integration test — evolution (deploys + Spark verify)
+      - name: Run integration test — evolution (deploys + Spark and Athena verify)
         run: |
           set -o pipefail
           bash scripts/integration-test-evolution.sh 2>&1 | tee -a /tmp/integ-test.log
-      - name: Run integration test — DML via Spark (1 deploy + UPDATE/DELETE/MERGE/time-travel/compaction/expiry)
+      - name: Run integration test — DML via Spark and Athena (1 deploy + UPDATE/DELETE/MERGE/time-travel/compaction/expiry)
         run: |
           set -o pipefail
           bash scripts/integration-test-dml.sh 2>&1 | tee -a /tmp/integ-test.log
-      - name: Run integration test — surface (transforms / sort / nested types / grantRead via native + imported)
+      - name: Run integration test — surface (transforms / sort / nested types via Spark and Athena / grantRead via native + imported)
         run: |
           set -o pipefail
           bash scripts/integration-test-surface.sh 2>&1 | tee -a /tmp/integ-test.log

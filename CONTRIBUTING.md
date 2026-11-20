@@ -70,11 +70,12 @@ arceus/
 │   ├── integration-test-v3-evolution.sh # v3 catalog-level evolution harness
 │   ├── integration-test-v3-dml.sh      # End-to-end v3 DML harness
 │   ├── field_ids.py                    # Prints a metadata.json schema's field ids as path:id
+│   ├── athena.sh                       # Sourced Athena helpers (run_athena, athena_expect)
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper
 │       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
-│       ├── verify_dml.py               # PySpark engine steps for the DML harness
+│       ├── verify_dml.py               # PySpark engine steps for the DML harness, and the read of its Athena rows
 │       ├── verify_evolution.py         # PySpark engine steps for the evolution harness
 │       ├── verify_surface.py           # PySpark engine steps for the surface harness
 │       └── verify_v3_dml.py            # PySpark engine steps for the v3 DML harness
@@ -131,7 +132,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, runs `npm pack` on the package, synths the `e2e-consumer` app against the pinned published npm version, installs the PR's own `npm pack` tarball into the `packed-consumer` fixture and synthesizes it, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
 - **`publish.yml`** runs on push to `main` and on manual dispatch. A `check` job compares the package version with npm and PyPI; when either differs, a `build` job with read-only permissions lints, tests, builds the npm tarball and the Python distribution, and uploads both as artifacts. `publish-npm` (npm OIDC trusted publishing, `--provenance`) and `publish-pypi` (PyPI OIDC trusted publishing) each run only when their own registry's version differs; only these two jobs hold `id-token: write`. A PR that forgets to bump runs `check` alone and publishes nothing, and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (eight `cdk deploy`s exercising schema, partition, identifier and nested-field evolution), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark against a v2 merge-on-read table), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip, the field ids Glue stores at creation, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (eight `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and `grantRead` at runtime via assume-role + direct Glue/S3 calls), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. PRs that touch the construct, `bin/arceus.ts`, `cdk.json`, or any of the scripts must show a green run before merging (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs"). Doc-only PRs are exempt.
 
 ## Demo app: prerequisites
 
@@ -149,7 +150,7 @@ Before running the quickstart you need:
    it per-table `SELECT/INSERT/DELETE/ALTER/DESCRIBE` on the demo
    Iceberg tables. Without it the deploy fails when LF can't resolve
    the principal. The same ARN must also be the identity running
-   `cdk deploy` and the Spark queries the integration scripts run. Local devs
+   `cdk deploy` and the Spark and Athena queries the integration scripts run. Local devs
    typically set this to their IAM user ARN; CI (`integ-test.yml`)
    sets it to the OIDC role ARN.
    - **Only one principal is privileged at a time.** `ArceusStack`
@@ -170,6 +171,14 @@ Before running the quickstart you need:
    if you haven't already.
 5. `cdk bootstrap aws://<account>/<region>` if the account hasn't
    been bootstrapped for CDK.
+6. For the evolution, DML and surface scripts, an Athena workgroup on
+   engine version 3 and a query result location, both read by
+   `scripts/athena.sh`: `ATHENA_WORKGROUP` (default `primary`) and
+   `ATHENA_OUTPUT_LOCATION` (default
+   `s3://data-lake-bucket-<account>/athena-results/`, in the bucket
+   `ArceusStack` creates). The principal needs `athena:*` and S3 and
+   KMS write access to the result location; a workgroup that enforces
+   its own settings uses its own result location.
 
 ## Demo app: quickstart
 
@@ -177,7 +186,7 @@ Before running the quickstart you need:
 # PRINCIPAL_ARN is the ARN of the IAM principal (user, role, or
 # federated identity) that the stack should make a Lake Formation
 # admin and per-table grantee. It must equal the identity running
-# `cdk deploy` and the Spark queries the integration scripts run —
+# `cdk deploy` and the Spark and Athena queries the integration scripts run —
 # otherwise the integration script's INSERT/SELECT calls fail with
 # `Principal does not have any privilege on specified resource`.
 #
@@ -239,7 +248,11 @@ without `DESTROY=1` it leaves the stack deployed.
 `scripts/integration-test-evolution.sh` drives the
 `IcebergEvolutionStack` through eight `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
-checks (`scripts/spark/verify_evolution.py`) between deploys.
+checks (`scripts/spark/verify_evolution.py`) between deploys. After each
+step's Spark phase, Athena reads the table the step changed: every row
+loaded so far, under the step's column names, with the values Spark
+inserted, and after steps 1 and 6 the `(PK) ` column comments from
+`information_schema.columns`.
 
 The stack owns two tables. `evolution_test` changes in steps 1 to 6 and
 is unchanged afterwards. `nested_evolution_test` is created in step 1
@@ -249,7 +262,7 @@ value id 7) and `addr(4)` (struct: `line1(8)`, `city(9)`). The table
 below describes `evolution_test` except where a row names the nested
 table.
 
-Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
+Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
 | Step | Change | Columns | Partitions | Spark phase after the deploy |
 | ---: | --- | --- | --- | --- |
@@ -276,9 +289,11 @@ change across deploys.
 evolution test doesn't. The harness deploys `IcebergDmlStack` once,
 then runs a sequence of Spark SQL statements (one PySpark program,
 `scripts/spark/verify_dml.py`) against a v2 merge-on-read
-table with `identifierFieldNames: ['account_id']`.
+table with `identifierFieldNames: ['account_id']`, then the Athena
+sequence below on account ids above 10, and finally a second
+`verify_dml.py` phase that reads the Athena rows through Spark.
 
-Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN` and a deployed `ArceusStack`, and leaves `IcebergDmlStack` deployed unless `DESTROY=1` is set.
+Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergDmlStack` deployed unless `DESTROY=1` is set.
 
 | Step | Statement | Verify |
 | ---: | --- | --- |
@@ -292,6 +307,17 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 8 | `CALL glue.system.expire_snapshots(...)` with a future `older_than` | snapshots reduced to the current one; 6 rows unchanged |
 | 9 | final `SELECT` | 6 rows with the expected balances |
 
+| Athena step | Statement | Verify |
+| ---: | --- | --- |
+| 1 | `SELECT` the rows Spark wrote, and `information_schema.columns` | the 6 rows with emails, balances and timestamps; `account_id` comment is `(PK) ` |
+| 2 | `INSERT` ids 11 to 15, `UPDATE` id 12, `DELETE` id 14 | the ids above 10 after each statement |
+| 3 | capture the latest snapshot id and commit time from `"dml_test$snapshots"` | — |
+| 4 | `MERGE INTO` (update id 13, insert ids 16 and 17) | the ids above 10 |
+| 5 | `FOR VERSION AS OF` and `FOR TIMESTAMP AS OF` the pre-MERGE snapshot | the pre-MERGE rows |
+| 6 | `OPTIMIZE ... REWRITE DATA USING BIN_PACK` | latest snapshot operation is `replace`; rows unchanged |
+| 7 | `VACUUM` (the table sets `history.expire.max-snapshot-age-ms` to 1000) | one snapshot left; rows unchanged |
+| 8 | Spark reads ids above 10 | the rows Athena wrote; 12 rows in total |
+
 The smoke check and the five scripts run sequentially in the same `integ-test.yml` job.
 
 ## Demo: partition transforms, sort order, nested types, and grants
@@ -301,13 +327,13 @@ construct surface the evolution and DML stacks don't reach.
 `IcebergSurfaceStack` defines four small tables that each isolate
 one concern:
 
-The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above).
+The script runs its engine steps through the Spark toolchain, so install it first with `scripts/spark/install-spark.sh` (see "Spark toolchain" above), and reads `transforms_test` and `nested_test` back through Athena (see the Athena prerequisites above).
 
 | Concern | Table | What the script checks |
 | --- | --- | --- |
-| **Every partition transform** | `transforms_test` (separate `year_source` / `month_source` / `day_source` / `hour_source` timestamps to avoid Iceberg's redundant-temporal-transform rejection, plus `user_id` / `email` / `value`) | `metadata.json` contains all seven transforms (`year`, `month`, `day`, `hour`, `bucket[8]`, `truncate[4]`, `identity`); INSERT one row and verify the resulting S3 prefix contains the expected multi-transform layout (`year_source_year=...`, `month_source_month=...`, etc.) |
+| **Every partition transform** | `transforms_test` (separate `year_source` / `month_source` / `day_source` / `hour_source` timestamps to avoid Iceberg's redundant-temporal-transform rejection, plus `user_id` / `email` / `value`) | `metadata.json` contains all seven transforms (`year`, `month`, `day`, `hour`, `bucket[8]`, `truncate[4]`, `identity`); INSERT one row, verify the resulting S3 prefix contains the expected multi-transform layout (`year_source_year=...`, `month_source_month=...`, etc.), and read the row back through Athena |
 | **Sort order** | `sorted_test` (`tenant`, `created_at`, `amount`) | `metadata.json`'s `sort-orders` block has three fields with the expected direction + null-order pairs: `asc/nulls-first`, `desc/nulls-last`, `desc/nulls-last` |
-| **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | Spark INSERTs two rows using `array(...)`, `named_struct(...)`, and `map(...)`. SELECT verifies `tags[0]`, `profile.first_name`, and `attrs['tier']` all roundtrip correctly |
+| **Nested types** | `nested_test` (`tags` list, `profile` struct, `attrs` map) | Spark INSERTs two rows using `array(...)`, `named_struct(...)`, and `map(...)`. SELECT verifies `tags[0]`, `profile.first_name`, and `attrs['tier']` all roundtrip correctly; Athena reads both rows' list lengths and first elements, struct fields, and map values |
 | **Field ids at creation** | `transforms_test`, `sorted_test`, `nested_test`, and `creation_order_test` (nested columns declared with ids out of creation order) | The first three store the ids their template declares; `creation_order_test` stores the creation-order ids instead |
 | **`grantRead` S3 statements at runtime** | `transforms_test` + a `GranteeRole` trusted by the deployer | Assume the role and call S3 directly (Lake Formation doesn't gate S3 calls when the bucket is registered with `hybridAccessEnabled: true`, so the IAM grants the construct produces are what's being tested). `s3:ListBucket` on the table's own prefix succeeds. `s3:ListBucket` on a foreign table's prefix is denied — the `s3:prefix` condition kicks in. The Glue action grants are validated by the unit tests, not at runtime, because LF gates `glue:*` against tables in LF-registered locations regardless of the principal's IAM policy |
 | **`fromIcebergTableAttributes(...)` + `grantRead`** | imported handle on `transforms_test` + a second `ImportedGranteeRole` | Same S3 checks under the import-factory grantee. Verifies the import path produces a symmetric IAM split |

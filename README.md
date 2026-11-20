@@ -589,7 +589,7 @@ Which engines read a v3 table created by the construct:
 | Spark 4.1 + Iceberg 1.12 (the integration-test runner) | Yes | Reads and writes tables the construct creates, including deletion vectors, row lineage, `variant`, `unknown`, and `geometry` / `geography`, except tables with nanosecond-timestamp columns or a geometry CRS other than `OGC:CRS84` (checked by `scripts/spark/verify_v3_dml.py`; details in [Known limitations](#known-limitations)). |
 | AWS Glue 6.0 | Documented | The [AWS Glue versions](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) page lists "Iceberg format version 3 with VARIANT data type, deletion vectors, row lineage tracking, nanosecond timestamps, and geo types". The integration suites do not run on Glue 6.0. |
 | Amazon EMR Spark 8.1.0 (Spark 4.1.1, Iceberg 1.11.0-amzn-0) | Documented | The [emr-spark-8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) state "Amazon EMR Spark 8.1.0 extends Iceberg v3 spec support for Spark workloads". The integration suites do not run on EMR 8.1. |
-| Athena SQL | No | The [Athena Iceberg page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states "Athena only creates and operates on Iceberg v2 tables." |
+| Athena SQL | No | The [Athena Iceberg page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states "Athena only creates and operates on Iceberg v2 tables." The v2 integration suites run reads, DML, time travel, `OPTIMIZE` and `VACUUM` through Athena; no v3 table is queried through Athena. |
 
 ### Granting access
 
@@ -835,14 +835,25 @@ validated against their source column's type at synth time. See
 ### Does it work with Athena and Lake Formation?
 
 Yes for v2 tables, no for v3 (see the engine matrix in [Format
-version 3](#format-version-3)). On v2, Athena reads and writes,
-including merge-on-read `INSERT` / `UPDATE` / `DELETE` / `MERGE`, time
-travel, `OPTIMIZE`, and `VACUUM`. The demo app in the
+version 3](#format-version-3)). The demo app in the
 [`arceus`](https://github.com/ksco92/arceus) repo registers its tables
-with Lake Formation and exercises the same operations through Spark in
-its integration suite. The construct's `grant*` helpers issue IAM
-grants; under Lake Formation you still add the matching `SELECT` /
-`INSERT` LF grants. See [Granting access](#granting-access).
+with Lake Formation, and its v2 integration suites query them through
+Athena engine version 3 as well as Spark, on the same tables:
+
+- merge-on-read `INSERT`, `UPDATE`, `DELETE` and `MERGE INTO`, time
+  travel (`FOR VERSION AS OF` / `FOR TIMESTAMP AS OF`), `OPTIMIZE ...
+  REWRITE DATA USING BIN_PACK`, and `VACUUM`;
+- a read after every schema, partition, identifier and nested-field
+  evolution step;
+- the `(PK) ` comment on identifier columns, read from
+  `information_schema.columns`;
+- rows written by Spark read through Athena, and rows written by Athena
+  read through Spark.
+
+The suites grant the querying principal `SELECT`, `INSERT`, `DELETE`,
+`ALTER` and `DESCRIBE` through Lake Formation. The construct's `grant*`
+helpers issue IAM grants only; under Lake Formation you add the
+matching LF grants. See [Granting access](#granting-access).
 
 ### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
 
