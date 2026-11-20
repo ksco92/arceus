@@ -70,7 +70,8 @@ merging. The trigger set is:
 - the integration scripts under `scripts/`
   (`integration-test-evolution.sh`, `integration-test-dml.sh`,
   `integration-test-surface.sh`, `integration-test-spark-smoke.sh`,
-  `integration-test-v3-evolution.sh`, `integration-test-v3-dml.sh`),
+  `integration-test-v3-evolution.sh`, `integration-test-v3-dml.sh`,
+  `field_ids.py`),
 - the Spark toolchain under `scripts/spark/` (`install-spark.sh`,
   `spark-env.sh`, `smoke.py`, `verify_v3_dml.py`).
 

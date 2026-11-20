@@ -4,6 +4,9 @@
 #   - every IcebergPartitionTransform exercised on one table.
 #   - multi-field sortOrder rendered in metadata.json.
 #   - nested types (list, struct, map) inserted and queried via Spark.
+#   - the field ids Glue stores at CREATE: each table declared in
+#     creation order keeps its declared ids, and a table declared out of
+#     creation order gets the creation-order ids.
 #   - grantRead's four-statement IAM split exercised at runtime by
 #     assuming the grantee role and calling Glue / S3 directly (this
 #     bypasses Lake Formation, which is exactly what isolates the
@@ -62,6 +65,21 @@ read_metadata_json() {
     aws s3 cp "$meta_loc" - --region "$AWS_REGION" 2>/dev/null
 }
 
+FIELD_IDS="$(dirname "${BASH_SOURCE[0]}")/field_ids.py"
+
+assert_stored_ids() {
+    local table="$1" expected="$2" stored
+    stored=$(read_metadata_json "$table" | python3 "$FIELD_IDS")
+    if [ "$stored" = "$expected" ]; then
+        green "  ${table} ids ✓ ($stored)"
+    else
+        red   "  ${table} ids ✗"
+        red   "    expected: $expected"
+        red   "    stored:   $stored"
+        exit 1
+    fi
+}
+
 ################################################
 # Teardown leftover stack from a prior run.
 
@@ -70,6 +88,7 @@ npx cdk destroy "$STACK" --force 2>&1 | tail -5 || true
 cleanup_table_prefix "transforms_test"
 cleanup_table_prefix "sorted_test"
 cleanup_table_prefix "nested_test"
+cleanup_table_prefix "creation_order_test"
 
 ################################################
 # Deploy.
@@ -131,6 +150,18 @@ assert fields[2]['direction'] == 'desc' and fields[2]['null-order'] == 'nulls-la
 print('sort fields:', [f\"{f['direction']}/{f['null-order']}\" for f in fields])
 "
 green "  sort fields match (asc/nulls-first, desc/nulls-last, desc/nulls-last) ✓"
+
+################################################
+header "VERIFY 2a — tables declared in creation order store their declared field ids"
+assert_stored_ids transforms_test "year_source:1,month_source:2,day_source:3,hour_source:4,user_id:5,email:6,value:7"
+assert_stored_ids sorted_test "tenant:1,created_at:2,amount:3"
+assert_stored_ids nested_test \
+    "id:1,tags:2,tags.element:5,profile:3,profile.first_name:6,profile.last_name:7,profile.age:8,attrs:4,attrs.key:9,attrs.value:10"
+
+################################################
+header "VERIFY 2b — creation_order_test, declared out of creation order, stores the creation-order ids"
+assert_stored_ids creation_order_test \
+    "b:1,a:2,s:3,s.lst:5,s.lst.element:6,s.lst.element.p:7,m:4,m.key:8,m.value:9,m.key.k:10,m.value.v:11"
 
 ################################################
 header "TEST 3 — Spark: transforms_test INSERT + count, nested_test INSERT + SELECTs"
@@ -254,6 +285,7 @@ if [ "${DESTROY:-0}" = "1" ]; then
     cleanup_table_prefix "transforms_test"
     cleanup_table_prefix "sorted_test"
     cleanup_table_prefix "nested_test"
+    cleanup_table_prefix "creation_order_test"
 fi
 
 green ""

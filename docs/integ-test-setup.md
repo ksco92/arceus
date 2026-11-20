@@ -18,7 +18,17 @@ The workflow checks out PR-supplied code and runs it (`npm ci`, `npm test`, `scr
 
 The integ-test workflow assumes two things already exist in the target AWS account:
 
-1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`. From a clean checkout of this repo:
+1. **`ArceusStack` is deployed.** The stacks the workflow deploys (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`) import the data lake bucket (`data-lake-bucket-<account>`) and the Glue database (`sample_database`) — both owned by `ArceusStack`.
+
+   In an account where the `customers` table does not exist yet,
+   declare its four columns in `lib/arceus-stack.ts` with ids 1 to 4
+   before the first deploy below, and keep that edit for every later
+   deploy of `ArceusStack` into that account. The stack declares 1, 2,
+   4, 5, the ids of an evolved table, but Glue creates a new table with
+   ids in creation order (1 to 4), and the table's next update would
+   then renumber `signed_up_at` and `loyalty_tier`.
+
+   From a clean checkout of this repo:
 
    ```bash
    export PRINCIPAL_ARN="$(aws sts get-caller-identity --query Arn --output text)"
