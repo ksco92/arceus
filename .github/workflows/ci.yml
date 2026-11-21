@@ -49,6 +49,14 @@ jobs:
       # a packaging break surfaces on the PR, not at release time.
       - name: Build Python distribution with jsii-pacmak
         run: npm run package:python --workspace cdk-glue-iceberg-table
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install the built wheel and synthesize a table with it
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke/bin/pip" install packages/cdk-glue-iceberg-table/dist/jsii/python/*.whl
+          "$RUNNER_TEMP/smoke/bin/python" packages/cdk-glue-iceberg-table/test/python-smoke/smoke.py
       - name: npm pack dry-run on the published package
         run: npm pack --dry-run
         working-directory: packages/cdk-glue-iceberg-table
