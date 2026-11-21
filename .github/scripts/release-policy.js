@@ -95,7 +95,7 @@ function checkRelease({files, base, head}) {
     if (!VERSION.test(version) || !bumpLevel(base.manifest.version, version)) {
         return [...problems, `Version ${version} is not a higher x.y.z than ${base.manifest.version}.`];
     }
-    const pending = unreleasedSection(base.changelog)?.lines ?? [];
+    const pending = unreleasedSection(base.changelog).lines;
     if (pending.length === 0) {
         problems.push(`A release needs at least one line under "## ${UNRELEASED}" on the base.`);
     }

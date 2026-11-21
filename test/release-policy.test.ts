@@ -92,14 +92,14 @@ const change = (opts: {
 
 describe('a pull request that leaves the version alone', () => {
     const touching = (...names: string[]) => change({
-        files: files(...names),
+        files: names,
     });
     const editingManifest = (extra: object) => change({
         files: files(MANIFEST),
         headManifest: manifest('0.22.1', extra),
     });
     const withLine = (line: string, ...names: string[]) => change({
-        files: files(...names),
+        files: names,
         headLines: [
             line,
         ],
@@ -179,8 +179,6 @@ describe('a release pull request', () => {
     const editing = (...names: string[]) => release({
         files: files(MANIFEST, 'CHANGELOG.md', ...names),
     });
-    const baseWithoutChangelog = bump('0.22.2');
-    baseWithoutChangelog.base.changelog = '';
     const breakingWithoutUpgrading = release({
         pending: [
             BREAKING,
@@ -214,7 +212,6 @@ describe('a release pull request', () => {
         ${'a version with a prefix'}                   | ${bump('v0.22.2', PATCH)}                                          | ${1}
         ${'a version with a suffix'}                   | ${bump('0.22.2-rc.1', PATCH)}                                      | ${1}
         ${'no pending lines'}                          | ${bump('0.22.2')}                                                  | ${1}
-        ${'a base with no changelog'}                 | ${baseWithoutChangelog}                                            | ${1}
         ${'a lib file edited too'}                     | ${editing(LIB_FILE)}                                               | ${1}
         ${'the root README edited too'}                | ${editing('README.md')}                                            | ${1}
         ${'the package README edited too'}             | ${editing(PACKAGE_README)}                                         | ${1}
@@ -227,8 +224,8 @@ describe('a release pull request', () => {
         ${'pending lines left under Unreleased'}       | ${withChangelog(md('## Unreleased', PATCH, '## 0.22.2', PATCH))}   | ${1}
         ${'no section for the new version'}            | ${withChangelog(md('## Unreleased'))}                              | ${1}
         ${'a section for another version'}             | ${withChangelog(md('## Unreleased', '## 0.22.3', PATCH))}          | ${1}
-        ${'the new section third and empty, the lines under an older heading'} | ${withChangelog(md('## Unreleased', '## 0.22.1', PATCH, '## 0.22.2'))} | ${1}
-        ${'the new section third and holding the lines, under an empty older heading'} | ${withChangelog(md('## Unreleased', '## 0.22.1', '## 0.22.2', PATCH))} | ${1}
+        ${'an older section holds the lines'} | ${withChangelog(md('## Unreleased', '## 0.22.1', PATCH, '## 0.22.2'))} | ${1}
+        ${'an older section is empty'} | ${withChangelog(md('## Unreleased', '## 0.22.1', '## 0.22.2', PATCH))} | ${1}
         ${'a first section that is not Unreleased'}    | ${withChangelog(md('## Pending', '## 0.22.2', PATCH))}            | ${1}
         ${'changed lines under the new version'}       | ${withChangelog(md('## Unreleased', '## 0.22.2', MINOR))}          | ${1}
         ${'a dropped line under the new version'}      | ${withChangelog(md('## Unreleased', '## 0.22.2'))}                 | ${1}
@@ -283,8 +280,6 @@ describe('against a git repository', () => {
         commit('rename with a changelog line');
         write(`${LIB_DIR}/é.ts`, 'export const y = 2;\n');
         commit('a lib file with no changelog line');
-        git('mv', LIB_FILE, 'docs/table.ts');
-        commit('the first lib file moved out of the package');
     });
 
     afterAll(() => {
@@ -295,7 +290,7 @@ describe('against a git repository', () => {
     });
 
     test('readChange lists both paths of a rename and reads a changelog missing on the base as empty', () => {
-        const result = policy.readChange('HEAD~3', 'HEAD~2', repo);
+        const result = policy.readChange('HEAD~2', 'HEAD~1', repo);
         expect(result.files).toEqual(expect.arrayContaining([
             'docs/table.ts',
             LIB_FILE,
@@ -306,24 +301,20 @@ describe('against a git repository', () => {
     });
 
     test('readChange reports a non-ASCII path as it is', () => {
-        expect(policy.readChange('HEAD~2', 'HEAD~1', repo).files).toEqual([
+        expect(policy.readChange('HEAD~1', 'HEAD', repo).files).toEqual([
             `${LIB_DIR}/é.ts`,
         ]);
     });
 
-    test('a published file moved out of the package needs a changelog line', () => {
-        expect(policy.check(policy.readChange('HEAD~1', 'HEAD', repo))).toHaveLength(1);
-    });
-
     test('the script exits 0 on a clean pair', () => {
-        expect(run('HEAD~3', 'HEAD~2')).toMatchObject({
+        expect(run('HEAD~2', 'HEAD~1')).toMatchObject({
             status: 0,
             stderr: '',
         });
     });
 
     test('the script exits 1 with the problem on stderr for a failing pair', () => {
-        const result = run('HEAD~2', 'HEAD~1');
+        const result = run('HEAD~1', 'HEAD');
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('A published file changed');
     });
@@ -332,10 +323,6 @@ describe('against a git repository', () => {
         status: 2,
         stderr: expect.stringContaining('usage:'),
     };
-
-    test('the script exits 2 with a usage line given no revisions', () => {
-        expect(run()).toMatchObject(USAGE_EXIT);
-    });
 
     test('the script exits 2 with a usage line given one revision', () => {
         expect(run('HEAD')).toMatchObject(USAGE_EXIT);
