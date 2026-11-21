@@ -35,8 +35,11 @@ A release pull request is opened when the owner asks, and at once for a
 fix to a wrong-data read, a failing deploy or a security defect. It
 edits only `version` in the package manifest, the files the previous
 version bump touched for the version alone (`package-lock.json`), and
-the two `## Unreleased` headings, in `CHANGELOG.md` and `UPGRADING.md`,
-which become `## <version>` with a new empty `## Unreleased` above them.
+the `## Unreleased` heading of `CHANGELOG.md`, which becomes
+`## <version>` with a new empty `## Unreleased` above it. The
+`## Unreleased` heading of `UPGRADING.md` changes the same way only when
+notes sit under it; a release with no breaking change leaves
+`UPGRADING.md` untouched.
 
 The version is a minor bump when any pending line is `(minor)` or
 `(breaking)` and a patch bump otherwise. While the package is pre-1.0

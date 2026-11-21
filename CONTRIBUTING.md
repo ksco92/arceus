@@ -163,8 +163,9 @@ which fits. A `(breaking)` line also needs its upgrade note under
 `## Unreleased` in [UPGRADING.md](UPGRADING.md). The `release-policy`
 job in `ci.yml` fails a pull request that changes a published file with
 no line, or whose lines are not of that form. The maintainer opens
-release pull requests; they turn the `## Unreleased` sections into the
-new version's.
+release pull requests; they turn `## Unreleased` in `CHANGELOG.md` into
+the new version's section, and do the same in `UPGRADING.md` when notes
+sit under it.
 
 ## Conditions for merging a pull request
 

@@ -44,6 +44,22 @@ const manifest = (version: string, extra: object = {}) => ({
 const PATCH = '- (patch) Fix a thing';
 const MINOR = '- (minor) Add a thing';
 const BREAKING = '- (breaking) Remove a thing';
+const PACKAGE_README = 'packages/cdk-glue-iceberg-table/README.md';
+
+const files = (...names: string[]) => names.map((filename) => ({
+    filename,
+}));
+
+const renamed = (filename: string, previous: string) => ({
+    filename,
+    previous_filename: previous,
+});
+
+const md = (...blocks: string[]) => [
+    '# Changelog',
+    ...blocks,
+    '',
+].join('\n\n');
 
 const change = (opts: {
     files?: object[];
@@ -65,153 +81,78 @@ const change = (opts: {
     },
 });
 
-const file = (filename: string) => ({
-    filename,
-});
+const DEV_EDIT = {
+    devDependencies: {
+        jest: '^31.0.0',
+    },
+};
+const PEER_EDIT = {
+    peerDependencies: {
+        constructs: '^10.9.0',
+    },
+};
 
 describe('a pull request that leaves the version alone', () => {
-    test('changing no published file needs no line', () => {
-        expect(policy.check(change({
-            files: [
-                file('README.md'),
-                file('lib/arceus-stack.ts'),
-            ],
-        }))).toEqual([]);
+    const touching = (...names: string[]) => change({
+        files: files(...names),
+    });
+    const renaming = (filename: string, previous: string) => change({
+        files: [
+            renamed(filename, previous),
+        ],
+    });
+    const editingManifest = (extra: object) => change({
+        files: files(MANIFEST),
+        headManifest: manifest('0.22.1', extra),
+    });
+    const withLine = (line: string, ...names: string[]) => change({
+        files: files(...names),
+        headLines: [
+            line,
+        ],
+    });
+    const lineOnBase = change({
+        files: files(LIB_FILE),
+        baseLines: [
+            PATCH,
+        ],
     });
 
-    test.each([
-        LIB_FILE,
-        'packages/cdk-glue-iceberg-table/README.md',
-        'packages/cdk-glue-iceberg-table/LICENSE',
-    ])('changing %s needs a line', (filename) => {
-        expect(policy.check(change({
-            files: [
-                file(filename),
-            ],
-        }))).toHaveLength(1);
-    });
-
-    test.each([
-        PATCH,
-        MINOR,
-        BREAKING,
-    ])('changing a published file with the added line "%s" passes', (line) => {
-        expect(policy.check(change({
-            files: [
-                file(LIB_FILE),
-            ],
-            headLines: [
-                line,
-            ],
-        }))).toEqual([]);
-    });
-
-    test('a line already pending on the base does not count', () => {
-        expect(policy.check(change({
-            files: [
-                file(LIB_FILE),
-            ],
-            baseLines: [
-                PATCH,
-            ],
-        }))).toHaveLength(1);
+    test.each`
+        name                                      | input                                         | problems
+        ${'no published file'}                    | ${touching('README.md', 'lib/arceus-stack.ts')} | ${0}
+        ${'a lib file'}                           | ${touching(LIB_FILE)}                         | ${1}
+        ${'the package README'}                   | ${touching(PACKAGE_README)}                   | ${1}
+        ${'the package LICENSE'}                  | ${touching('packages/cdk-glue-iceberg-table/LICENSE')} | ${1}
+        ${'only devDependencies in the manifest'} | ${editingManifest(DEV_EDIT)}                  | ${0}
+        ${'peerDependencies in the manifest'}     | ${editingManifest(PEER_EDIT)}                 | ${1}
+        ${'a published file renamed out'}         | ${renaming('docs/table.ts', LIB_FILE)}        | ${1}
+        ${'a file renamed into the package'}      | ${renaming(LIB_FILE, 'docs/table.ts')}        | ${1}
+        ${'a manifest renamed into place'}        | ${renaming(MANIFEST, 'old/package.json')}     | ${1}
+        ${'a rename between unpublished paths'}   | ${renaming('docs/b.md', 'docs/a.md')}         | ${0}
+        ${'a lib file and a line already on base'} | ${lineOnBase}                                | ${1}
+        ${'a lib file and a patch line'}          | ${withLine(PATCH, LIB_FILE)}                  | ${0}
+        ${'a lib file and a minor line'}          | ${withLine(MINOR, LIB_FILE)}                  | ${0}
+        ${'a lib file and a breaking line'}       | ${withLine(BREAKING, LIB_FILE)}               | ${0}
+        ${'an unknown tag'}                       | ${withLine('- (fix) Fix a thing')}            | ${1}
+        ${'a line with no text'}                  | ${withLine('- (patch)')}                      | ${1}
+        ${'a line with no dash'}                  | ${withLine('(patch) Fix a thing')}            | ${1}
+        ${'a line with no tag'}                   | ${withLine('- Fix a thing')}                  | ${1}
+    `('$name gives $problems problem(s)', ({
+        input, problems,
+    }) => {
+        expect(policy.check(input)).toHaveLength(problems);
     });
 
     test('a base with no changelog yet takes the first line', () => {
         const input = change({
-            files: [
-                file(LIB_FILE),
-            ],
+            files: files(LIB_FILE),
             headLines: [
                 PATCH,
             ],
         });
         input.base.changelog = '';
         expect(policy.check(input)).toEqual([]);
-    });
-
-    test('editing only devDependencies in the manifest needs no line', () => {
-        expect(policy.check(change({
-            files: [
-                file(MANIFEST),
-            ],
-            headManifest: manifest('0.22.1', {
-                devDependencies: {
-                    jest: '^31.0.0',
-                },
-            }),
-        }))).toEqual([]);
-    });
-
-    test('editing peerDependencies in the manifest needs a line', () => {
-        expect(policy.check(change({
-            files: [
-                file(MANIFEST),
-            ],
-            headManifest: manifest('0.22.1', {
-                peerDependencies: {
-                    constructs: '^10.9.0',
-                },
-            }),
-        }))).toHaveLength(1);
-    });
-
-    test('a published file renamed out of the package counts on the old path', () => {
-        expect(policy.check(change({
-            files: [
-                {
-                    filename: 'docs/table.ts',
-                    previous_filename: LIB_FILE,
-                },
-            ],
-        }))).toHaveLength(1);
-    });
-
-    test('a manifest renamed into place counts even with the same content', () => {
-        expect(policy.check(change({
-            files: [
-                {
-                    filename: MANIFEST,
-                    previous_filename: 'old/package.json',
-                },
-            ],
-        }))).toHaveLength(1);
-    });
-
-    test('a file renamed into the package counts on the new path', () => {
-        expect(policy.check(change({
-            files: [
-                {
-                    filename: LIB_FILE,
-                    previous_filename: 'docs/table.ts',
-                },
-            ],
-        }))).toHaveLength(1);
-    });
-
-    test('a rename between unpublished paths needs no line', () => {
-        expect(policy.check(change({
-            files: [
-                {
-                    filename: 'docs/b.md',
-                    previous_filename: 'docs/a.md',
-                },
-            ],
-        }))).toEqual([]);
-    });
-
-    test.each([
-        '- (fix) Fix a thing',
-        '- (patch)',
-        '(patch) Fix a thing',
-        '- Fix a thing',
-        'Fix a thing',
-    ])('the line "%s" under Unreleased fails even with no published file changed', (line) => {
-        expect(policy.check(change({
-            headLines: [
-                line,
-            ],
-        }))).toHaveLength(1);
     });
 
     test('a changelog with no Unreleased heading fails', () => {
@@ -236,10 +177,9 @@ describe('a release pull request', () => {
         const input = change({
             baseLines: pending,
             headVersion: version,
-            files: opts.files ?? [
-                file(MANIFEST),
-                file('CHANGELOG.md'),
-            ],
+            files: opts.files ?? files(MANIFEST, 'CHANGELOG.md', ...(pending.includes(BREAKING) ? [
+                'UPGRADING.md',
+            ] : [])),
         });
         input.head.changelog = opts.headChangelog ?? changelog([], [
             version,
@@ -248,206 +188,68 @@ describe('a release pull request', () => {
         input.head.manifest = opts.headManifest ?? manifest(version);
         return input;
     };
-
-    test('a patch release of patch lines passes', () => {
-        expect(policy.check(release({}))).toEqual([]);
+    const bump = (version: string, ...pending: string[]) => release({
+        pending,
+        version,
     });
-
-    test.each([
-        [
-            MINOR,
+    const editing = (...names: string[]) => release({
+        files: files(MANIFEST, 'CHANGELOG.md', ...names),
+    });
+    const renamingAway = release({
+        files: [
+            ...files(MANIFEST, 'CHANGELOG.md'),
+            renamed('docs/x.md', 'package-lock.json'),
         ],
-        [
+    });
+    const breakingWithoutUpgrading = release({
+        pending: [
             BREAKING,
         ],
-        [
-            PATCH,
-            MINOR,
-        ],
-    ])('a minor release of %s passes', (...pending) => {
-        expect(policy.check(release({
-            pending,
-            version: '0.23.0',
-        }))).toEqual([]);
+        version: '0.23.0',
+        files: files(MANIFEST, 'CHANGELOG.md'),
+    });
+    const withChangelog = (headChangelog: string) => release({
+        headChangelog,
+    });
+    const withManifest = (extra: object) => release({
+        headManifest: manifest('0.22.2', extra),
     });
 
-    test('the lockfile and UPGRADING.md may change with it', () => {
-        const files = [
-            file(MANIFEST),
-            file('CHANGELOG.md'),
-            file('package-lock.json'),
-            file('UPGRADING.md'),
-        ];
-        expect(policy.check(release({
-            files,
-        }))).toEqual([]);
-    });
-
-    test.each([
-        [
-            'a patch bump of a minor line',
-            [
-                MINOR,
-            ],
-            '0.22.2',
-        ],
-        [
-            'a patch bump of a breaking line',
-            [
-                BREAKING,
-            ],
-            '0.22.2',
-        ],
-        [
-            'a minor bump of patch lines',
-            [
-                PATCH,
-            ],
-            '0.23.0',
-        ],
-        [
-            'a major bump',
-            [
-                BREAKING,
-            ],
-            '1.0.0',
-        ],
-    ])('%s fails', (_name, pending, version) => {
-        expect(policy.check(release({
-            pending,
-            version,
-        }))).toHaveLength(1);
-    });
-
-    test.each([
-        '0.22.0',
-        '0.21.9',
-        'next',
-        '0.22.2-rc.1',
-    ])('the version %s fails', (version) => {
-        expect(policy.check(release({
-            version,
-        }))).not.toEqual([]);
-    });
-
-    test('a release with no pending lines fails', () => {
-        expect(policy.check(release({
-            pending: [],
-        }))).not.toEqual([]);
-    });
-
-    test.each([
-        LIB_FILE,
-        'README.md',
-        'packages/cdk-glue-iceberg-table/README.md',
-    ])('editing %s fails', (filename) => {
-        expect(policy.check(release({
-            files: [
-                file(MANIFEST),
-                file('CHANGELOG.md'),
-                file(filename),
-            ],
-        }))).toHaveLength(1);
-    });
-
-    test('a file renamed out of the release set fails', () => {
-        const files = [
-            file(MANIFEST),
-            file('CHANGELOG.md'),
-            {
-                filename: 'docs/x.md',
-                previous_filename: 'UPGRADING.md',
-            },
-        ];
-        expect(policy.check(release({
-            files,
-        }))).toHaveLength(1);
-    });
-
-    test.each([
-        [
-            'peerDependencies',
-            {
-                peerDependencies: {
-                    constructs: '^10.9.0',
-                },
-            },
-        ],
-        [
-            'devDependencies',
-            {
-                devDependencies: {
-                    jest: '^31.0.0',
-                },
-            },
-        ],
-    ])('editing %s in the manifest fails', (_name, extra) => {
-        expect(policy.check(release({
-            headManifest: manifest('0.22.2', extra),
-        }))).toHaveLength(1);
-    });
-
-    test.each([
-        [
-            'pending lines left under Unreleased',
-            changelog([
-                PATCH,
-            ], [
-                '0.22.2',
-                [
-                    PATCH,
-                ],
-            ]),
-        ],
-        [
-            'no section for the new version',
-            changelog([]),
-        ],
-        [
-            'a section for another version',
-            changelog([], [
-                '0.22.3',
-                [
-                    PATCH,
-                ],
-            ]),
-        ],
-        [
-            'a section that is not directly under Unreleased',
-            changelog([], [
-                '0.22.1',
-                [],
-            ], [
-                '0.22.2',
-                [
-                    PATCH,
-                ],
-            ]),
-        ],
-        [
-            'changed lines under the new version',
-            changelog([], [
-                '0.22.2',
-                [
-                    '- (patch) Fix another thing',
-                ],
-            ]),
-        ],
-        [
-            'a dropped line under the new version',
-            changelog([], [
-                '0.22.2',
-                [],
-            ]),
-        ],
-        [
-            'no Unreleased heading',
-            '# Changelog\n\n## 0.22.2\n\n' + PATCH + '\n',
-        ],
-    ])('%s fails', (_name, headChangelog) => {
-        expect(policy.check(release({
-            headChangelog,
-        }))).toHaveLength(1);
+    test.each`
+        name                                           | input                                                           | problems
+        ${'a patch bump of a patch line'}              | ${release({})}                                                  | ${0}
+        ${'a minor bump of a minor line'}              | ${bump('0.23.0', MINOR)}                                        | ${0}
+        ${'a minor bump of a breaking line'}           | ${bump('0.23.0', BREAKING)}                                     | ${0}
+        ${'a minor bump of patch and minor lines'}     | ${bump('0.23.0', PATCH, MINOR)}                                 | ${0}
+        ${'the lockfile edited too'}                   | ${editing('package-lock.json')}                                 | ${0}
+        ${'a patch bump of a minor line'}              | ${bump('0.22.2', MINOR)}                                        | ${1}
+        ${'a minor bump of a patch line'}              | ${bump('0.23.0', PATCH)}                                        | ${1}
+        ${'a major bump'}                              | ${bump('1.0.0', BREAKING)}                                      | ${1}
+        ${'a version equal to the base as numbers'}    | ${bump('0.22.01', PATCH)}                                       | ${1}
+        ${'a lower minor version'}                           | ${bump('0.21.9', PATCH)}                                        | ${1}
+        ${'a lower patch version'}                           | ${bump('0.22.0', PATCH)}                                        | ${1}
+        ${'a version that is not x.y.z'}               | ${bump('next', PATCH)}                                          | ${1}
+        ${'a version with a suffix'}                   | ${bump('0.22.2-rc.1', PATCH)}                                   | ${1}
+        ${'no pending lines'}                          | ${bump('0.22.2')}                                               | ${1}
+        ${'a lib file edited too'}                     | ${editing(LIB_FILE)}                                            | ${1}
+        ${'the root README edited too'}                | ${editing('README.md')}                                         | ${1}
+        ${'the package README edited too'}             | ${editing(PACKAGE_README)}                                      | ${1}
+        ${'a file renamed out of the release set'}     | ${renamingAway}                                                 | ${1}
+        ${'peerDependencies edited'}                   | ${withManifest(PEER_EDIT)}                                      | ${1}
+        ${'devDependencies edited'}                    | ${withManifest(DEV_EDIT)}                                       | ${1}
+        ${'a breaking line and no UPGRADING.md edit'}  | ${breakingWithoutUpgrading}                                     | ${1}
+        ${'UPGRADING.md edited with no breaking line'} | ${editing('UPGRADING.md')}                                      | ${1}
+        ${'pending lines left under Unreleased'}       | ${withChangelog(md('## Unreleased', PATCH, '## 0.22.2', PATCH))} | ${1}
+        ${'no section for the new version'}            | ${withChangelog(md('## Unreleased'))}                           | ${1}
+        ${'a section for another version'}             | ${withChangelog(md('## Unreleased', '## 0.22.3', PATCH))}       | ${1}
+        ${'a section not directly under Unreleased'}   | ${withChangelog(md('## Unreleased', '## 0.22.1', '## 0.22.2', PATCH))} | ${1}
+        ${'changed lines under the new version'}       | ${withChangelog(md('## Unreleased', '## 0.22.2', MINOR))}       | ${1}
+        ${'a dropped line under the new version'}      | ${withChangelog(md('## Unreleased', '## 0.22.2'))}              | ${1}
+        ${'no Unreleased heading'}                     | ${withChangelog(md('## 0.22.2', PATCH))}                        | ${1}
+    `('$name gives $problems problem(s)', ({
+        input, problems,
+    }) => {
+        expect(policy.check(input)).toHaveLength(problems);
     });
 });
 

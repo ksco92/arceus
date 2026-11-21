@@ -4,8 +4,9 @@ const PACKAGE_DIR = 'packages/cdk-glue-iceberg-table/';
 const MANIFEST = `${PACKAGE_DIR}package.json`;
 const PUBLISHED_DIR = `${PACKAGE_DIR}lib/`;
 const PUBLISHED_FILES = [MANIFEST, `${PACKAGE_DIR}README.md`, `${PACKAGE_DIR}LICENSE`];
-const RELEASE_FILES = [MANIFEST, 'package-lock.json', 'CHANGELOG.md', 'UPGRADING.md'];
 const CHANGELOG = 'CHANGELOG.md';
+const UPGRADING = 'UPGRADING.md';
+const RELEASE_FILES = [MANIFEST, 'package-lock.json', CHANGELOG, UPGRADING];
 const UNRELEASED = 'Unreleased';
 const LINE = /^- \((patch|minor|breaking)\) \S/;
 const VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -102,6 +103,11 @@ function checkRelease({files, base, head}) {
     const actual = bumpLevel(base.manifest.version, version);
     if (actual !== expected) {
         problems.push(`The pending lines call for a ${expected} bump, not ${actual}.`);
+    }
+    const hasBreaking = pending.some((line) => line.startsWith('- (breaking)'));
+    const editsUpgrading = files.some((file) => file.filename === UPGRADING);
+    if (hasBreaking !== editsUpgrading) {
+        problems.push(`${UPGRADING} must change in a release with a (breaking) line, and only then.`);
     }
     return problems;
 }
