@@ -45,7 +45,10 @@ request's own `npm pack` tarball. Integration suites deploy v2 and v3
 tables to a real AWS account and read them back through Spark, and
 the v2 tables through Athena, weekly against `main` and on every pull
 request that changes the construct, the demo stacks or the suites,
-before it merges. API reference: [Construct
+before it merges. The README on GitHub describes `main`, which can be
+ahead of the latest release; [CHANGELOG.md](https://github.com/ksco92/arceus/blob/main/CHANGELOG.md)
+lists what is unreleased, and the npm page shows the README of the
+released version. API reference: [Construct
 Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
 
 ## Install

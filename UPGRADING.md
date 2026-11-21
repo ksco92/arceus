@@ -1,6 +1,9 @@
 # Upgrading
 
-Upgrade notes by version, from 0.12.0 on, newest first.
+Upgrade notes by version, from 0.12.0 on, newest first. Notes for changes not
+yet released are under Unreleased.
+
+## Unreleased
 
 ## 0.22.0
 
