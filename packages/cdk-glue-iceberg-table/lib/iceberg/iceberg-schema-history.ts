@@ -15,8 +15,10 @@ import {
 } from 'constructs';
 import {
     IcebergColumn,
+} from './iceberg-column';
+import {
     IcebergPartitionField,
-} from './iceberg-table';
+} from './iceberg-partition-field';
 import {
     creationOrderFieldIds,
     renderPartitionSpec,

@@ -34,6 +34,10 @@ arceus/
 │       │   ├── iceberg-type.ts         # IcebergType + struct/list/map/decimal/fixed
 │       │   ├── iceberg-partition-transform.ts
 │       │   ├── iceberg-table-properties.ts
+│       │   ├── iceberg-column.ts
+│       │   ├── iceberg-partition-field.ts
+│       │   ├── iceberg-sort-order.ts
+│       │   ├── iceberg-sort-field.ts
 │       │   ├── iceberg-table-grants.ts
 │       │   ├── iceberg-table-render.ts
 │       │   ├── iceberg-schema-history.ts
