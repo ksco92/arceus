@@ -38,7 +38,8 @@ const manifest = (version: string, extra: object = {}) => ({
     ...extra,
 });
 
-const lock = (version: string, extra: object = {}) => ({
+const lock = (version: string, extra: object = {}, lockfileVersion = 3) => ({
+    lockfileVersion,
     packages: {
         '': {
             name: 'arceus',
@@ -66,17 +67,10 @@ const DEPENDENCY_SWAP = {
     },
 };
 
-const files = (...names: string[]) => names.map((filename) => ({
-    filename,
-}));
-
-const renamed = (filename: string, previous: string) => ({
-    filename,
-    previous_filename: previous,
-});
+const files = (...names: string[]) => names;
 
 const change = (opts: {
-    files?: object[];
+    files?: string[];
     baseLines?: string[];
     headLines?: string[];
     baseVersion?: string;
@@ -99,11 +93,6 @@ const change = (opts: {
 describe('a pull request that leaves the version alone', () => {
     const touching = (...names: string[]) => change({
         files: files(...names),
-    });
-    const renaming = (filename: string, previous: string) => change({
-        files: [
-            renamed(filename, previous),
-        ],
     });
     const editingManifest = (extra: object) => change({
         files: files(MANIFEST),
@@ -130,9 +119,6 @@ describe('a pull request that leaves the version alone', () => {
         ${'the package LICENSE'}                   | ${touching(`${PACKAGE}/LICENSE`)}                        | ${1}
         ${'only devDependencies in the manifest'}  | ${editingManifest(DEV_EDIT)}                             | ${0}
         ${'peerDependencies in the manifest'}      | ${editingManifest(PEER_EDIT)}                            | ${1}
-        ${'a published file renamed out'}          | ${renaming('docs/table.ts', LIB_FILE)}                   | ${1}
-        ${'a file renamed into the package'}       | ${renaming(LIB_FILE, 'docs/table.ts')}                   | ${1}
-        ${'a rename between unpublished paths'}    | ${renaming('docs/b.md', 'docs/a.md')}                    | ${0}
         ${'a lib file and a line already on base'} | ${lineOnBase}                                            | ${1}
         ${'a lib file and a patch line'}           | ${withLine(PATCH, LIB_FILE)}                             | ${0}
         ${'a lib file and a minor line'}           | ${withLine(MINOR, LIB_FILE)}                             | ${0}
@@ -165,7 +151,7 @@ describe('a release pull request', () => {
     const release = (opts: {
         pending?: string[];
         version?: string;
-        files?: object[];
+        files?: string[];
         headChangelog?: string;
         headManifest?: object;
         headLock?: ReturnType<typeof lock>;
@@ -193,12 +179,8 @@ describe('a release pull request', () => {
     const editing = (...names: string[]) => release({
         files: files(MANIFEST, 'CHANGELOG.md', ...names),
     });
-    const renamingAway = release({
-        files: [
-            ...files(MANIFEST, 'CHANGELOG.md'),
-            renamed('docs/x.md', 'package-lock.json'),
-        ],
-    });
+    const baseWithoutChangelog = bump('0.22.2');
+    baseWithoutChangelog.base.changelog = '';
     const breakingWithoutUpgrading = release({
         pending: [
             BREAKING,
@@ -212,8 +194,8 @@ describe('a release pull request', () => {
     const withManifest = (extra: object) => release({
         headManifest: manifest('0.22.2', extra),
     });
-    const withLock = (extra: object) => release({
-        headLock: lock('0.22.2', extra),
+    const withLock = (extra: object, lockfileVersion = 3) => release({
+        headLock: lock('0.22.2', extra, lockfileVersion),
     });
 
     test.each`
@@ -232,19 +214,21 @@ describe('a release pull request', () => {
         ${'a version with a prefix'}                   | ${bump('v0.22.2', PATCH)}                                          | ${1}
         ${'a version with a suffix'}                   | ${bump('0.22.2-rc.1', PATCH)}                                      | ${1}
         ${'no pending lines'}                          | ${bump('0.22.2')}                                                  | ${1}
+        ${'a base with no changelog'}                 | ${baseWithoutChangelog}                                            | ${1}
         ${'a lib file edited too'}                     | ${editing(LIB_FILE)}                                               | ${1}
         ${'the root README edited too'}                | ${editing('README.md')}                                            | ${1}
         ${'the package README edited too'}             | ${editing(PACKAGE_README)}                                         | ${1}
-        ${'a file renamed out of the release set'}     | ${renamingAway}                                                    | ${1}
         ${'peerDependencies edited'}                   | ${withManifest(PEER_EDIT)}                                         | ${1}
         ${'devDependencies edited'}                    | ${withManifest(DEV_EDIT)}                                          | ${1}
         ${'a dependency changed in the lockfile'}      | ${withLock(DEPENDENCY_SWAP)}                                       | ${1}
+        ${'a top-level lockfile key changed'}          | ${withLock({}, 2)}                                                 | ${1}
         ${'a breaking line and no UPGRADING.md edit'}  | ${breakingWithoutUpgrading}                                        | ${1}
         ${'UPGRADING.md edited with no breaking line'} | ${editing('UPGRADING.md')}                                         | ${1}
         ${'pending lines left under Unreleased'}       | ${withChangelog(md('## Unreleased', PATCH, '## 0.22.2', PATCH))}   | ${1}
         ${'no section for the new version'}            | ${withChangelog(md('## Unreleased'))}                              | ${1}
         ${'a section for another version'}             | ${withChangelog(md('## Unreleased', '## 0.22.3', PATCH))}          | ${1}
-        ${'a section not directly under Unreleased'}   | ${withChangelog(md('## Unreleased', '## 0.22.1', PATCH, '## 0.22.2'))} | ${1}
+        ${'the new section third and empty, the lines under an older heading'} | ${withChangelog(md('## Unreleased', '## 0.22.1', PATCH, '## 0.22.2'))} | ${1}
+        ${'the new section third and holding the lines, under an empty older heading'} | ${withChangelog(md('## Unreleased', '## 0.22.1', '## 0.22.2', PATCH))} | ${1}
         ${'a first section that is not Unreleased'}    | ${withChangelog(md('## Pending', '## 0.22.2', PATCH))}            | ${1}
         ${'changed lines under the new version'}       | ${withChangelog(md('## Unreleased', '## 0.22.2', MINOR))}          | ${1}
         ${'a dropped line under the new version'}      | ${withChangelog(md('## Unreleased', '## 0.22.2'))}                 | ${1}
@@ -299,6 +283,8 @@ describe('against a git repository', () => {
         commit('rename with a changelog line');
         write(`${LIB_DIR}/é.ts`, 'export const y = 2;\n');
         commit('a lib file with no changelog line');
+        git('mv', LIB_FILE, 'docs/table.ts');
+        commit('the first lib file moved out of the package');
     });
 
     afterAll(() => {
@@ -308,45 +294,54 @@ describe('against a git repository', () => {
         });
     });
 
-    test('readChange reports renames and reads a changelog missing on the base as empty', () => {
-        const result = policy.readChange('HEAD~2', 'HEAD~1', repo);
+    test('readChange lists both paths of a rename and reads a changelog missing on the base as empty', () => {
+        const result = policy.readChange('HEAD~3', 'HEAD~2', repo);
         expect(result.files).toEqual(expect.arrayContaining([
-            {
-                filename: LIB_FILE,
-                previous_filename: 'docs/table.ts',
-            },
-            {
-                filename: 'CHANGELOG.md',
-            },
+            'docs/table.ts',
+            LIB_FILE,
+            'CHANGELOG.md',
         ]));
         expect(result.base.changelog).toBe('');
         expect(result.head.changelog).toContain(PATCH);
     });
 
     test('readChange reports a non-ASCII path as it is', () => {
-        expect(policy.readChange('HEAD~1', 'HEAD', repo).files).toEqual([
-            {
-                filename: `${LIB_DIR}/é.ts`,
-            },
+        expect(policy.readChange('HEAD~2', 'HEAD~1', repo).files).toEqual([
+            `${LIB_DIR}/é.ts`,
         ]);
     });
 
+    test('a published file moved out of the package needs a changelog line', () => {
+        expect(policy.check(policy.readChange('HEAD~1', 'HEAD', repo))).toHaveLength(1);
+    });
+
     test('the script exits 0 on a clean pair', () => {
-        expect(run('HEAD~2', 'HEAD~1')).toMatchObject({
+        expect(run('HEAD~3', 'HEAD~2')).toMatchObject({
             status: 0,
             stderr: '',
         });
     });
 
     test('the script exits 1 with the problem on stderr for a failing pair', () => {
-        const result = run('HEAD~1', 'HEAD');
+        const result = run('HEAD~2', 'HEAD~1');
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('A published file changed');
     });
 
-    test('the script exits 2 with a usage line when given no revisions', () => {
-        const result = run();
-        expect(result.status).toBe(2);
-        expect(result.stderr).toContain('usage:');
+    const USAGE_EXIT = {
+        status: 2,
+        stderr: expect.stringContaining('usage:'),
+    };
+
+    test('the script exits 2 with a usage line given no revisions', () => {
+        expect(run()).toMatchObject(USAGE_EXIT);
+    });
+
+    test('the script exits 2 with a usage line given one revision', () => {
+        expect(run('HEAD')).toMatchObject(USAGE_EXIT);
+    });
+
+    test('the script exits 2 with a usage line given an empty first revision', () => {
+        expect(run('', 'HEAD')).toMatchObject(USAGE_EXIT);
     });
 });

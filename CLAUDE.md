@@ -48,7 +48,7 @@ to bump *minor*; the `0.x` → `1.0.0` jump is the "graduate to stable"
 milestone and never happens without the owner's say.
 
 `.github/workflows/publish.yml` only publishes when the version on
-`main` is newer than the version on the npm registry. After it succeeds
+`main` differs from the version on the npm registry. After it succeeds
 on both registries, the release's merge commit is tagged `v<version>`
 and a GitHub release is created from that changelog section. Then
 `e2e-consumer/`, which consumes the **published** npm package, moves to

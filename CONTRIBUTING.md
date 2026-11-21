@@ -182,7 +182,6 @@ A change goes to `main` through a pull request. The maintainer applies these con
 - The `ci.yml` jobs pass: `release-policy`, `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
 - A PR other than a release that changes the published package adds a changelog line under `## Unreleased` and leaves `version` alone.
 - A breaking change in such a PR also adds a note to `UPGRADING.md` under `## Unreleased`.
-- A release PR passes the same `release-policy` job; [CLAUDE.md](CLAUDE.md) says what it edits.
 - The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.
 - `README.md` and `packages/cdk-glue-iceberg-table/README.md` stay byte-identical.
 

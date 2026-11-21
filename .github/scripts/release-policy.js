@@ -49,14 +49,11 @@ function isPublishedPath(path) {
     return path.startsWith(PUBLISHED_DIR) || PUBLISHED_FILES.includes(path);
 }
 
-/** A rename counts on both its old and new path; a manifest edit counts unless it is confined to devDependencies. */
+/** A manifest edit counts unless it is confined to devDependencies. */
 function changesPublishedFile(files, baseManifest, headManifest) {
-    return files.some((file) => {
-        if (file.filename === MANIFEST) {
-            return !same(without(baseManifest, 'devDependencies'), without(headManifest, 'devDependencies'));
-        }
-        return [file.filename, file.previous_filename].some((path) => path && isPublishedPath(path));
-    });
+    return files.some((file) => (file === MANIFEST
+        ? !same(without(baseManifest, 'devDependencies'), without(headManifest, 'devDependencies'))
+        : isPublishedPath(file)));
 }
 
 /** The semver level of the first component that differs, or a falsy value when `head` is not higher than `base`. */
@@ -86,8 +83,8 @@ function checkPullRequest({files, base, head}) {
 function checkRelease({files, base, head}) {
     const problems = [];
     const version = head.manifest.version;
-    for (const file of files.filter((f) => !RELEASE_FILES.includes(f.filename))) {
-        problems.push(`A release pull request may not edit ${file.filename}.`);
+    for (const file of files.filter((f) => !RELEASE_FILES.includes(f))) {
+        problems.push(`A release pull request may not edit ${file}.`);
     }
     if (!same(without(base.manifest, 'version'), without(head.manifest, 'version'))) {
         problems.push(`A release pull request may edit only "version" in ${MANIFEST}.`);
@@ -114,7 +111,7 @@ function checkRelease({files, base, head}) {
         problems.push(`The pending lines call for a ${expected} bump, not ${actual}.`);
     }
     const hasBreaking = pending.some((line) => line.startsWith('- (breaking)'));
-    const editsUpgrading = files.some((file) => file.filename === UPGRADING);
+    const editsUpgrading = files.includes(UPGRADING);
     if (hasBreaking !== editsUpgrading) {
         problems.push(`${UPGRADING} must change in a release with a (breaking) line, and only then.`);
     }
@@ -122,8 +119,8 @@ function checkRelease({files, base, head}) {
 }
 
 /**
- * The problems found in a pull request, given its changed files
- * ({filename, previous_filename}) and the base and head contents of
+ * The problems found in a pull request, given its changed file paths (a
+ * rename lists both) and the base and head contents of
  * CHANGELOG.md, the package manifest and the lockfile. A changed `version`
  * makes it a release pull request.
  */
@@ -143,16 +140,7 @@ function readChange(base, head, cwd) {
             return '';
         }
     };
-    const fields = git('diff', '--name-status', '-M', '-z', base, head).split('\0');
-    const files = [];
-    while (fields.length > 1) {
-        if (fields.shift().startsWith('R')) {
-            const [previous, filename] = fields.splice(0, 2);
-            files.push({filename, previous_filename: previous});
-        } else {
-            files.push({filename: fields.shift()});
-        }
-    }
+    const files = git('diff', '--name-only', '--no-renames', '-z', base, head).split('\0').filter(Boolean);
     const side = (revision) => ({
         changelog: show(revision, CHANGELOG),
         manifest: JSON.parse(show(revision, MANIFEST)),
@@ -162,11 +150,12 @@ function readChange(base, head, cwd) {
 }
 
 if (require.main === module) {
-    if (process.argv.length < 4) {
+    const [base, head] = process.argv.slice(2);
+    if (!base || !head) {
         console.error('usage: release-policy.js <base> <head>');
         process.exitCode = 2;
     } else {
-        const problems = check(readChange(process.argv[2], process.argv[3]));
+        const problems = check(readChange(base, head));
         problems.forEach((problem) => console.error(problem));
         process.exitCode = problems.length > 0 ? 1 : 0;
     }
