@@ -7,12 +7,17 @@
  * options interface, a missing re-export. The realistic consumer
  * stack at `./consumer-stack.ts` only touches a slice of the surface
  * (whatever a typical user would need). This file touches the rest.
+ * It also names every instance member and interface field, so a
+ * renamed, removed or added key fails the type check.
  *
  * The rule for adding new exports to `cdk-glue-iceberg-table`: add a
  * reference here too, or the next release can rename it without CI
  * complaining. Every static factory, enum value, and re-exported
  * type lives below.
  */
+import type {
+    Resource,
+} from 'aws-cdk-lib';
 import type {
     IcebergColumn,
     IcebergListDefinition,
@@ -148,23 +153,146 @@ const fromAttributes = IcebergTable.fromIcebergTableAttributes;
 
 const creationOrderFieldIds = IcebergTable.creationOrderFieldIds;
 
-// Type-only imports must be referenced via a value position to
-// survive `tsc` tree-shaking. A throwaway `null as unknown as T`
-// anchors each one.
-const typeAnchors: Array<unknown> = [
-    null as unknown as IcebergColumn,
-    null as unknown as IcebergListDefinition,
-    null as unknown as IcebergMapDefinition,
-    null as unknown as IcebergPartitionField,
-    null as unknown as IcebergPartitionTransformOptions,
-    null as unknown as IcebergSortField,
-    null as unknown as IcebergStructFieldDefinition,
-    null as unknown as IcebergTableAttributes,
-    null as unknown as IcebergTableGrantOptions,
-    null as unknown as IcebergTableProps,
-    null as unknown as IcebergTypeOptions,
-    null as unknown as IIcebergTable,
-];
+const iIcebergTableKeys: Record<keyof IIcebergTable, true> = {
+    tableArn: true,
+    tableName: true,
+    database: true,
+    location: true,
+    encryptionKey: true,
+    grantRead: true,
+    grantWrite: true,
+    grantReadWrite: true,
+};
+
+const icebergTableKeys: Record<Exclude<keyof IcebergTable, keyof Resource>, true> = {
+    ...iIcebergTableKeys,
+    dataFormat: true,
+    formatVersion: true,
+    resource: true,
+};
+
+const icebergTablePropsKeys: Record<keyof IcebergTableProps, true> = {
+    database: true,
+    tableName: true,
+    catalogId: true,
+    columns: true,
+    location: true,
+    encryptionKey: true,
+    partitionSpec: true,
+    sortOrder: true,
+    identifierFieldNames: true,
+    dataFormat: true,
+    formatVersion: true,
+    tableProperties: true,
+    comment: true,
+    removalPolicy: true,
+};
+
+const icebergTableAttributesKeys: Record<keyof IcebergTableAttributes, true> = {
+    database: true,
+    tableName: true,
+    location: true,
+    catalogId: true,
+    encryptionKey: true,
+};
+
+const icebergTableGrantOptionsKeys: Record<keyof IcebergTableGrantOptions, true> = {
+    lakeFormationDataAccess: true,
+    catalogEncryptionKey: true,
+};
+
+const icebergColumnKeys: Record<keyof IcebergColumn, true> = {
+    name: true,
+    type: true,
+    required: true,
+    doc: true,
+    id: true,
+};
+
+const icebergPartitionFieldKeys: Record<keyof IcebergPartitionField, true> = {
+    sourceColumn: true,
+    transform: true,
+    name: true,
+    fieldId: true,
+};
+
+const icebergPartitionTransformOptionsKeys: Record<keyof IcebergPartitionTransformOptions, true> = {
+    kind: true,
+    bucketCount: true,
+    truncateWidth: true,
+};
+
+const icebergSortFieldKeys: Record<keyof IcebergSortField, true> = {
+    sourceColumn: true,
+    transform: true,
+    direction: true,
+    nullOrder: true,
+};
+
+const icebergStructFieldDefinitionKeys: Record<keyof IcebergStructFieldDefinition, true> = {
+    id: true,
+    name: true,
+    type: true,
+    required: true,
+    doc: true,
+};
+
+const icebergListDefinitionKeys: Record<keyof IcebergListDefinition, true> = {
+    element: true,
+    elementId: true,
+    elementRequired: true,
+};
+
+const icebergMapDefinitionKeys: Record<keyof IcebergMapDefinition, true> = {
+    key: true,
+    keyId: true,
+    value: true,
+    valueId: true,
+    valueRequired: true,
+};
+
+const icebergTypeOptionsKeys: Record<keyof IcebergTypeOptions, true> = {
+    kind: true,
+    decimalPrecision: true,
+    decimalScale: true,
+    fixedLength: true,
+    listElement: true,
+    listElementId: true,
+    listElementRequired: true,
+    mapKey: true,
+    mapKeyId: true,
+    mapValue: true,
+    mapValueId: true,
+    mapValueRequired: true,
+    structFields: true,
+    geoCrs: true,
+    geographyAlgorithm: true,
+};
+
+const icebergTypeInstanceKeys: Record<Exclude<keyof IcebergType, `_${string}`>, true> = {
+    kind: true,
+    decimalPrecision: true,
+    decimalScale: true,
+    fixedLength: true,
+    listElement: true,
+    listElementId: true,
+    listElementRequired: true,
+    mapKey: true,
+    mapKeyId: true,
+    mapValue: true,
+    mapValueId: true,
+    mapValueRequired: true,
+    structFields: true,
+    geoCrs: true,
+    geographyAlgorithm: true,
+};
+
+const icebergPartitionTransformInstanceKeys: Record<Exclude<keyof IcebergPartitionTransform, `_${string}`>, true> = {
+    kind: true,
+    bucketCount: true,
+    truncateWidth: true,
+    toTransformString: true,
+};
 
 export const SURFACE_ANCHORS = {
     types,
@@ -173,5 +301,19 @@ export const SURFACE_ANCHORS = {
     enums,
     fromAttributes,
     creationOrderFieldIds,
-    typeAnchors,
+    iIcebergTableKeys,
+    icebergTableKeys,
+    icebergTablePropsKeys,
+    icebergTableAttributesKeys,
+    icebergTableGrantOptionsKeys,
+    icebergColumnKeys,
+    icebergPartitionFieldKeys,
+    icebergPartitionTransformOptionsKeys,
+    icebergSortFieldKeys,
+    icebergStructFieldDefinitionKeys,
+    icebergListDefinitionKeys,
+    icebergMapDefinitionKeys,
+    icebergTypeOptionsKeys,
+    icebergTypeInstanceKeys,
+    icebergPartitionTransformInstanceKeys,
 };
