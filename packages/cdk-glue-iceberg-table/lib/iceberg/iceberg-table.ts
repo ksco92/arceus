@@ -18,9 +18,6 @@ import {
     Construct,
 } from 'constructs';
 import {
-    primitive,
-} from './iceberg-type';
-import {
     IcebergDataFormat,
     IcebergFormatVersion,
     validateIcebergProperties,
@@ -32,7 +29,7 @@ import {
     READ_WRITE_PROFILE,
     WRITE_PROFILE,
     grantContext,
-    grantSplit,
+    grantProfile,
 } from './iceberg-table-grants';
 import {
     creationOrderFieldIds,
@@ -43,11 +40,8 @@ import {
     renderSchema,
     renderSortOrder,
     resolveIdentifierFieldIds,
-    snapshotProps,
-    validatePartitionSpec,
     validateProps,
     validateLocation,
-    validateSortOrder,
     validateCatalogId,
     validateTableName,
 } from './iceberg-table-render';
@@ -61,24 +55,21 @@ import {
     IcebergSortField,
 } from './iceberg-sort-field';
 
-/// /////////////////////////////////////////////////
-/// /////////////////////////////////////////////////
-// Public construct types
-
 /** Construction properties for an `IcebergTable`. */
 export interface IcebergTableProps {
     /** Glue database that will hold the table. */
     readonly database: IDatabase;
 
     /**
-     * Table name (lower-case, no spaces — Glue and Athena will fold it). A literal is
-     * checked, and so is the literal text of a string that mixes text with a token (a
-     * `CfnParameter`, a cross-stack reference); a token itself is used as given.
+     * Table name (lower-case, no spaces — Glue and Athena will fold it). A literal may
+     * contain only lowercase letters, digits and underscores; a string that contains a token
+     * (a `CfnParameter`, a cross-stack reference) is used as given.
      */
     readonly tableName: string;
 
     /**
-     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a single token.
+     * Account id of the Glue Data Catalog that holds the table: a literal of 12 digits;
+     * a string that contains a token is used as given.
      * @default - the stack's account
      */
     readonly catalogId?: string;
@@ -174,10 +165,6 @@ export interface IIcebergTable {
     grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant;
 }
 
-/// /////////////////////////////////////////////////
-/// /////////////////////////////////////////////////
-// IcebergTable
-
 /**
  * A Glue table created in the Apache Iceberg open table format.
  *
@@ -216,7 +203,6 @@ export class IcebergTable extends Resource implements IIcebergTable {
     private readonly grantContext: GrantContext;
 
     constructor(scope: Construct, id: string, props: IcebergTableProps) {
-        props = snapshotProps(props);
         super(scope, id, {
             physicalName: props.tableName,
         });
@@ -249,10 +235,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
         validateIcebergProperties(this.dataFormat, this.formatVersion, mergedProperties);
 
         const rendered = renderSchema(props.columns, props.identifierFieldNames);
-        validatePartitionSpec(props.partitionSpec, rendered.columnByName);
-        validateSortOrder(props.sortOrder, rendered.columnByName);
-        const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
         const partitionSpec = renderPartitionSpec(props.partitionSpec, rendered.columnByName);
+        const writeOrder = renderSortOrder(props.sortOrder, rendered.columnByName);
+        const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
 
         this.resource = new CfnTable(this, 'Resource', {
             catalogId: props.catalogId ?? Stack.of(this).account,
@@ -271,7 +256,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                             identifierFieldIds: identifierFieldIds,
                         },
                         partitionSpec,
-                        writeOrder: renderSortOrder(props.sortOrder, rendered.columnByName),
+                        writeOrder,
                         properties: mergedProperties,
                     },
                 },
@@ -310,23 +295,13 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const {
             database,
             encryptionKey,
-            tableName: importedName,
-            catalogId: importedCatalogId,
+            tableName,
+            catalogId,
         } = attrs;
-        const importedLocation = primitive('location', attrs.location, 'string', {
-            tokens: true,
-        });
-        const tableName = primitive('tableName', importedName, 'string', {
-            tokens: true,
-        });
-        const catalogId = primitive('catalogId', importedCatalogId, 'string', {
-            optional: true,
-            tokens: true,
-        });
         validateTableName(tableName);
         validateCatalogId(catalogId);
-        validateLocation(importedLocation);
-        const location = normalizeLocation(importedLocation);
+        validateLocation(attrs.location);
+        const location = normalizeLocation(attrs.location);
         const context = grantContext(Stack.of(scope), database, tableName, catalogId, parseS3Uri(location), encryptionKey);
 
         class Imported extends Resource implements IIcebergTable {
@@ -337,15 +312,15 @@ export class IcebergTable extends Resource implements IIcebergTable {
             public readonly encryptionKey = encryptionKey;
 
             public grantRead(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
-                return grantSplit(grantee, READ_PROFILE, context, options);
+                return grantProfile(grantee, READ_PROFILE, context, options);
             }
 
             public grantWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
-                return grantSplit(grantee, WRITE_PROFILE, context, options);
+                return grantProfile(grantee, WRITE_PROFILE, context, options);
             }
 
             public grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
-                return grantSplit(grantee, READ_WRITE_PROFILE, context, options);
+                return grantProfile(grantee, READ_WRITE_PROFILE, context, options);
             }
         }
 
@@ -354,17 +329,17 @@ export class IcebergTable extends Resource implements IIcebergTable {
 
     /** Grant Glue + S3 read on this table. */
     public grantRead(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
-        return grantSplit(grantee, READ_PROFILE, this.grantContext, options);
+        return grantProfile(grantee, READ_PROFILE, this.grantContext, options);
     }
 
     /** Grant Glue + S3 write on this table. */
     public grantWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
-        return grantSplit(grantee, WRITE_PROFILE, this.grantContext, options);
+        return grantProfile(grantee, WRITE_PROFILE, this.grantContext, options);
     }
 
     /** Grant Glue + S3 read + write on this table. */
     public grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
-        return grantSplit(grantee, READ_WRITE_PROFILE, this.grantContext, options);
+        return grantProfile(grantee, READ_WRITE_PROFILE, this.grantContext, options);
     }
 }
 
@@ -380,7 +355,8 @@ export interface IcebergTableAttributes {
     readonly location: string;
 
     /**
-     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a single token.
+     * Account id of the Glue Data Catalog that holds the table; as `IcebergTableProps.catalogId`.
+     *
      * @default - the stack's account
      */
     readonly catalogId?: string;

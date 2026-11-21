@@ -11,90 +11,13 @@ import {
 import {
     IKey,
 } from 'aws-cdk-lib/aws-kms';
-import {
-    primitive,
-} from './iceberg-type';
-
-/// /////////////////////////////////////////////////
-/// /////////////////////////////////////////////////
-// Grant action sets
-
-const READ_TABLE_ACTIONS = [
-    'glue:BatchGetPartition',
-    'glue:GetDatabase',
-    'glue:GetPartition',
-    'glue:GetPartitions',
-    'glue:GetTable',
-    'glue:GetTables',
-    'glue:GetTableVersion',
-    'glue:GetTableVersions',
-];
-
-const WRITE_TABLE_ACTIONS = [
-    'glue:BatchCreatePartition',
-    'glue:BatchDeletePartition',
-    'glue:CreatePartition',
-    'glue:DeletePartition',
-    'glue:UpdatePartition',
-    'glue:UpdateTable',
-];
-
-/// S3 actions that operate at the bucket level AND support the
-/// `s3:prefix` request condition key (per the S3 docs). Granted on
-/// the bucket ARN with a `StringLike s3:prefix = [<prefix>*, <prefix>]`
-/// condition so the grantee can only list the table's own prefix.
-const READ_S3_LIST_ACTIONS = [
-    's3:ListBucket',
-];
-
-/// S3 actions that operate at the bucket level but DO NOT support
-/// `s3:prefix`. Granted on the bucket ARN with no condition — adding
-/// one would silently deny these actions at runtime even though they
-/// appear in the policy document.
-const READ_S3_BUCKET_ACTIONS = [
-    's3:GetBucketLocation',
-];
-
-const WRITE_S3_BUCKET_ACTIONS = [
-    's3:ListBucketMultipartUploads',
-];
-
-/// S3 actions that operate at the object level. Must be granted on
-/// the `bucket/prefix*` ARN.
-const READ_S3_OBJECT_ACTIONS = [
-    's3:GetObject',
-];
-
-const WRITE_S3_OBJECT_ACTIONS = [
-    's3:PutObject',
-    's3:DeleteObject',
-    's3:AbortMultipartUpload',
-    's3:ListMultipartUploadParts',
-];
-
-/// KMS actions S3 needs on the table key: decrypt to read, a data key to write.
-const READ_KEY_ACTIONS = [
-    'kms:Decrypt',
-];
-
-const WRITE_KEY_ACTIONS = [
-    'kms:Decrypt',
-    'kms:GenerateDataKey',
-];
-
-/// KMS actions on the Data Catalog key, as the Glue encryption guide lists them for a caller.
-const READ_CATALOG_KEY_ACTIONS = [
-    'kms:Decrypt',
-];
-
-const WRITE_CATALOG_KEY_ACTIONS = [
-    'kms:Decrypt',
-    'kms:Encrypt',
-    'kms:GenerateDataKey',
-];
 
 /**
  * The action lists one grant method issues.
+ *
+ * `listActions` support the `s3:prefix` condition key and are granted on the bucket ARN
+ * limited to the table's prefix; `bucketActions` do not support it and get no condition;
+ * `objectActions` are granted on `bucket/prefix*`.
  *
  * @internal
  */
@@ -108,39 +31,88 @@ export interface GrantProfile {
 }
 
 export const READ_PROFILE: GrantProfile = {
-    tableActions: READ_TABLE_ACTIONS,
-    listActions: READ_S3_LIST_ACTIONS,
-    bucketActions: READ_S3_BUCKET_ACTIONS,
-    objectActions: READ_S3_OBJECT_ACTIONS,
-    keyActions: READ_KEY_ACTIONS,
-    catalogKeyActions: READ_CATALOG_KEY_ACTIONS,
+    tableActions: [
+        'glue:BatchGetPartition',
+        'glue:GetDatabase',
+        'glue:GetPartition',
+        'glue:GetPartitions',
+        'glue:GetTable',
+        'glue:GetTables',
+        'glue:GetTableVersion',
+        'glue:GetTableVersions',
+    ],
+    listActions: [
+        's3:ListBucket',
+    ],
+    bucketActions: [
+        's3:GetBucketLocation',
+    ],
+    objectActions: [
+        's3:GetObject',
+    ],
+    keyActions: [
+        'kms:Decrypt',
+    ],
+    catalogKeyActions: [
+        'kms:Decrypt',
+    ],
 };
 
 export const WRITE_PROFILE: GrantProfile = {
-    tableActions: WRITE_TABLE_ACTIONS,
+    tableActions: [
+        'glue:BatchCreatePartition',
+        'glue:BatchDeletePartition',
+        'glue:CreatePartition',
+        'glue:DeletePartition',
+        'glue:UpdatePartition',
+        'glue:UpdateTable',
+    ],
     listActions: [],
-    bucketActions: WRITE_S3_BUCKET_ACTIONS,
-    objectActions: WRITE_S3_OBJECT_ACTIONS,
-    keyActions: WRITE_KEY_ACTIONS,
-    catalogKeyActions: WRITE_CATALOG_KEY_ACTIONS,
+    bucketActions: [
+        's3:ListBucketMultipartUploads',
+    ],
+    objectActions: [
+        's3:PutObject',
+        's3:DeleteObject',
+        's3:AbortMultipartUpload',
+        's3:ListMultipartUploadParts',
+    ],
+    keyActions: [
+        'kms:Decrypt',
+        'kms:GenerateDataKey',
+    ],
+    catalogKeyActions: [
+        'kms:Decrypt',
+        'kms:Encrypt',
+        'kms:GenerateDataKey',
+    ],
 };
 
 export const READ_WRITE_PROFILE: GrantProfile = {
     tableActions: [
-        ...READ_TABLE_ACTIONS,
-        ...WRITE_TABLE_ACTIONS,
+        ...READ_PROFILE.tableActions,
+        ...WRITE_PROFILE.tableActions,
     ],
-    listActions: READ_S3_LIST_ACTIONS,
+    listActions: [
+        ...READ_PROFILE.listActions,
+        ...WRITE_PROFILE.listActions,
+    ],
     bucketActions: [
-        ...READ_S3_BUCKET_ACTIONS,
-        ...WRITE_S3_BUCKET_ACTIONS,
+        ...READ_PROFILE.bucketActions,
+        ...WRITE_PROFILE.bucketActions,
     ],
     objectActions: [
-        ...READ_S3_OBJECT_ACTIONS,
-        ...WRITE_S3_OBJECT_ACTIONS,
+        ...READ_PROFILE.objectActions,
+        ...WRITE_PROFILE.objectActions,
     ],
-    keyActions: WRITE_KEY_ACTIONS,
-    catalogKeyActions: WRITE_CATALOG_KEY_ACTIONS,
+    keyActions: [
+        ...READ_PROFILE.keyActions,
+        ...WRITE_PROFILE.keyActions,
+    ],
+    catalogKeyActions: [
+        ...READ_PROFILE.catalogKeyActions,
+        ...WRITE_PROFILE.catalogKeyActions,
+    ],
 };
 
 /**
@@ -153,8 +125,7 @@ export interface GrantContext {
     readonly databaseArn: string;
     readonly tableArn: string;
     readonly bucketArn: string;
-    readonly objectArn: string;
-    readonly prefixGlob: string;
+    readonly prefix: string;
     readonly encryptionKey?: IKey;
 }
 
@@ -196,8 +167,7 @@ export function grantContext(
             resourceName: `${database.databaseName}/${tableName}`,
         }),
         bucketArn,
-        objectArn: `${bucketArn}/${location.key}*`,
-        prefixGlob: `${location.key}*`,
+        prefix: location.key,
         encryptionKey,
     };
 }
@@ -222,11 +192,11 @@ export interface IcebergTableGrantOptions {
 /**
  * Attach `profile`'s statements for the table in `context` to `grantee`, in order:
  * Glue, S3 list, S3 bucket, S3 object, table key, catalog key, Lake Formation.
- * Reads and checks every option before attaching anything. Returns the Glue grant.
+ * Returns the Glue grant.
  *
  * @internal
  */
-export function grantSplit(
+export function grantProfile(
     grantee: IGrantable,
     profile: GrantProfile,
     context: GrantContext,
@@ -235,9 +205,6 @@ export function grantSplit(
     const {
         lakeFormationDataAccess, catalogEncryptionKey,
     } = options ?? {};
-    const dataAccess = primitive('lakeFormationDataAccess', lakeFormationDataAccess, 'boolean', {
-        optional: true,
-    });
     const tableGrant = Grant.addToPrincipal({
         grantee,
         actions: profile.tableActions,
@@ -257,8 +224,8 @@ export function grantSplit(
             conditions: {
                 StringLike: {
                     's3:prefix': [
-                        context.prefixGlob,
-                        context.prefixGlob.replace(/\*$/, ''),
+                        `${context.prefix}*`,
+                        context.prefix,
                     ],
                 },
             },
@@ -275,12 +242,12 @@ export function grantSplit(
         grantee,
         actions: profile.objectActions,
         resourceArns: [
-            context.objectArn,
+            `${context.bucketArn}/${context.prefix}*`,
         ],
     });
     context.encryptionKey?.grant(grantee, ...profile.keyActions);
     catalogEncryptionKey?.grant(grantee, ...profile.catalogKeyActions);
-    if (dataAccess) {
+    if (lakeFormationDataAccess) {
         Grant.addToPrincipal({
             grantee,
             actions: [

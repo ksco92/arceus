@@ -9,10 +9,6 @@
  * shape the same in every jsii binding.
  */
 
-import {
-    Token,
-} from 'aws-cdk-lib';
-
 /** Discriminator for `IcebergType`. */
 export enum IcebergTypeKind {
     BOOLEAN = 'boolean',
@@ -163,84 +159,58 @@ export class IcebergType {
     /// Primitives — values from https://iceberg.apache.org/spec/#schemas-and-data-types
 
     /** Boolean. */
-    public static readonly BOOLEAN: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.BOOLEAN,
-    });
+    public static readonly BOOLEAN: IcebergType = IcebergType.primitive(IcebergTypeKind.BOOLEAN);
 
     /** 32-bit signed integer. */
-    public static readonly INT: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.INT,
-    });
+    public static readonly INT: IcebergType = IcebergType.primitive(IcebergTypeKind.INT);
 
     /** 64-bit signed integer. */
-    public static readonly LONG: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.LONG,
-    });
+    public static readonly LONG: IcebergType = IcebergType.primitive(IcebergTypeKind.LONG);
 
     /** 32-bit IEEE 754 floating point. */
-    public static readonly FLOAT: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.FLOAT,
-    });
+    public static readonly FLOAT: IcebergType = IcebergType.primitive(IcebergTypeKind.FLOAT);
 
     /** 64-bit IEEE 754 floating point. */
-    public static readonly DOUBLE: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.DOUBLE,
-    });
+    public static readonly DOUBLE: IcebergType = IcebergType.primitive(IcebergTypeKind.DOUBLE);
 
     /** Calendar date with no time of day. */
-    public static readonly DATE: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.DATE,
-    });
+    public static readonly DATE: IcebergType = IcebergType.primitive(IcebergTypeKind.DATE);
 
     /** Microsecond-precision time of day, no date, no zone. */
-    public static readonly TIME: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.TIME,
-    });
+    public static readonly TIME: IcebergType = IcebergType.primitive(IcebergTypeKind.TIME);
 
     /** Microsecond-precision timestamp without zone. */
-    public static readonly TIMESTAMP: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.TIMESTAMP,
-    });
+    public static readonly TIMESTAMP: IcebergType = IcebergType.primitive(IcebergTypeKind.TIMESTAMP);
 
     /** Microsecond-precision timestamp stored as UTC. */
-    public static readonly TIMESTAMPTZ: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.TIMESTAMPTZ,
-    });
+    public static readonly TIMESTAMPTZ: IcebergType = IcebergType.primitive(IcebergTypeKind.TIMESTAMPTZ);
 
     /** UTF-8 string of arbitrary length. */
-    public static readonly STRING: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.STRING,
-    });
+    public static readonly STRING: IcebergType = IcebergType.primitive(IcebergTypeKind.STRING);
 
     /** RFC-4122 UUID. */
-    public static readonly UUID: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.UUID,
-    });
+    public static readonly UUID: IcebergType = IcebergType.primitive(IcebergTypeKind.UUID);
 
     /** Variable-length byte sequence. */
-    public static readonly BINARY: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.BINARY,
-    });
+    public static readonly BINARY: IcebergType = IcebergType.primitive(IcebergTypeKind.BINARY);
 
     /** Type of a column whose values are always null. Format v3; never required. */
-    public static readonly UNKNOWN: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.UNKNOWN,
-    });
+    public static readonly UNKNOWN: IcebergType = IcebergType.primitive(IcebergTypeKind.UNKNOWN);
 
     /** Nanosecond-precision timestamp without zone. Format v3. */
-    public static readonly TIMESTAMP_NS: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.TIMESTAMP_NS,
-    });
+    public static readonly TIMESTAMP_NS: IcebergType = IcebergType.primitive(IcebergTypeKind.TIMESTAMP_NS);
 
     /** Nanosecond-precision timestamp stored as UTC. Format v3. */
-    public static readonly TIMESTAMPTZ_NS: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.TIMESTAMPTZ_NS,
-    });
+    public static readonly TIMESTAMPTZ_NS: IcebergType = IcebergType.primitive(IcebergTypeKind.TIMESTAMPTZ_NS);
 
     /** Semi-structured value: an object, an array, or a primitive. Format v3. */
-    public static readonly VARIANT: IcebergType = new IcebergType({
-        kind: IcebergTypeKind.VARIANT,
-    });
+    public static readonly VARIANT: IcebergType = IcebergType.primitive(IcebergTypeKind.VARIANT);
+
+    private static primitive(kind: IcebergTypeKind): IcebergType {
+        return new IcebergType({
+            kind,
+        });
+    }
 
     /**
      * Fixed-precision decimal.
@@ -374,8 +344,7 @@ export class IcebergType {
     /** Edge-interpolation algorithm (set when one was given). */
     public readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 
-    public constructor(input: IcebergTypeOptions) {
-        const options = readOptions(input);
+    public constructor(options: IcebergTypeOptions) {
         this.kind = options.kind;
         switch (options.kind) {
             case IcebergTypeKind.DECIMAL:
@@ -450,102 +419,58 @@ export class IcebergType {
                 this.geoCrs = options.geoCrs;
                 this.geographyAlgorithm = options.geographyAlgorithm;
                 break;
-            case IcebergTypeKind.BOOLEAN:
-            case IcebergTypeKind.INT:
-            case IcebergTypeKind.LONG:
-            case IcebergTypeKind.FLOAT:
-            case IcebergTypeKind.DOUBLE:
-            case IcebergTypeKind.DATE:
-            case IcebergTypeKind.TIME:
-            case IcebergTypeKind.TIMESTAMP:
-            case IcebergTypeKind.TIMESTAMPTZ:
-            case IcebergTypeKind.STRING:
-            case IcebergTypeKind.UUID:
-            case IcebergTypeKind.BINARY:
-            case IcebergTypeKind.UNKNOWN:
-            case IcebergTypeKind.TIMESTAMP_NS:
-            case IcebergTypeKind.TIMESTAMPTZ_NS:
-            case IcebergTypeKind.VARIANT:
-                /// Primitives carry no extra data.
-                break;
-            default: {
-                const exhaustive: never = options.kind;
-                throw new Error(`unknown IcebergTypeKind: ${exhaustive}`);
-            }
         }
     }
 
     /**
-     * Render the type at `path` as the string Glue's `IcebergStructField.type`
-     * expects. Nested ids are passed through `claimId` once each, and its result is rendered.
+     * Render the type as the string Glue's `IcebergStructField.type` expects.
      *
      * @internal
      */
-    public _render(path: string, claimId: (path: string, id: unknown) => number): string {
+    public _render(): string {
+        const json = this.toJson();
+        return typeof json === 'string' ? json : JSON.stringify(json);
+    }
+
+    private toJson(): unknown {
         switch (this.kind) {
             case IcebergTypeKind.LIST:
-                return JSON.stringify({
+                return {
                     type: 'list',
-                    'element-id': claimId(`${path}.element`, this.listElementId),
+                    'element-id': this.listElementId,
                     'element-required': this.listElementRequired,
-                    element: tryParseObject(this.listElement!._render(`${path}.element`, claimId)),
-                });
+                    element: this.listElement!.toJson(),
+                };
             case IcebergTypeKind.MAP:
-                return JSON.stringify({
+                return {
                     type: 'map',
-                    'key-id': claimId(`${path}.key`, this.mapKeyId),
-                    key: tryParseObject(this.mapKey!._render(`${path}.key`, claimId)),
-                    'value-id': claimId(`${path}.value`, this.mapValueId),
+                    'key-id': this.mapKeyId,
+                    key: this.mapKey!.toJson(),
+                    'value-id': this.mapValueId,
                     'value-required': this.mapValueRequired,
-                    value: tryParseObject(this.mapValue!._render(`${path}.value`, claimId)),
-                });
-            case IcebergTypeKind.STRUCT: {
-                const rendered = this.structFields!.map((field) => {
-                    const fieldPath = `${path}.${pathSegment(field.name)}`;
-                    const id = claimId(fieldPath, field.id);
-                    const required = field.required ?? false;
-                    const typeRepr = field.type._render(fieldPath, claimId);
-                    const out: Record<string, unknown> = {
-                        id,
-                        name: field.name,
-                        required,
-                        type: tryParseObject(typeRepr),
-                    };
-                    if (field.doc !== undefined) {
-                        out.doc = field.doc;
-                    }
-                    return out;
-                });
-                return JSON.stringify({
+                    value: this.mapValue!.toJson(),
+                };
+            case IcebergTypeKind.STRUCT:
+                return {
                     type: 'struct',
-                    fields: rendered,
-                });
-            }
+                    fields: this.structFields!.map((field) => ({
+                        id: field.id,
+                        name: field.name,
+                        required: field.required ?? false,
+                        type: field.type.toJson(),
+                        doc: field.doc,
+                    })),
+                };
             default:
-                return this._typeString();
+                return this.typeString();
         }
     }
 
-    /**
-     * The type string of a primitive type, or the kind of a list, map or struct.
-     *
-     * @internal
-     */
-    public _typeString(): string {
+    /** The type string of a type that is not a list, map or struct. */
+    private typeString(): string {
         switch (this.kind) {
             case IcebergTypeKind.DECIMAL:
-                /// The space after the comma is load-bearing: Iceberg's
-                /// canonical decimal form is `decimal(P, S)`, and that is
-                /// exactly what Glue writes into the stored table metadata.
-                /// Emitting `decimal(P,S)` (no space) makes every later
-                /// schema-identical UpdateTable submit a type string that
-                /// differs textually from the stored one; Glue reads that as
-                /// a phantom column change that adds no schema, then its
-                /// set-current-schema step dereferences a "last added schema"
-                /// that never got added and fails the deploy with
-                /// `Cannot set last added schema: no schema has been added`.
-                /// Matching the canonical spacing keeps the submitted schema
-                /// byte-identical to the live one. See issue #40.
+                /// The space after the comma matches the decimal form Glue stores. See issue #40.
                 return `decimal(${this.decimalPrecision}, ${this.decimalScale})`;
             case IcebergTypeKind.FIXED:
                 return `fixed[${this.fixedLength}]`;
@@ -556,206 +481,8 @@ export class IcebergType {
                     return `geography(${this.geoCrs ?? DEFAULT_GEO_CRS}, ${this.geographyAlgorithm})`;
                 }
                 return this.geoCrs === undefined ? 'geography' : `geography(${this.geoCrs})`;
-            case IcebergTypeKind.BOOLEAN:
-            case IcebergTypeKind.INT:
-            case IcebergTypeKind.LONG:
-            case IcebergTypeKind.FLOAT:
-            case IcebergTypeKind.DOUBLE:
-            case IcebergTypeKind.DATE:
-            case IcebergTypeKind.TIME:
-            case IcebergTypeKind.TIMESTAMP:
-            case IcebergTypeKind.TIMESTAMPTZ:
-            case IcebergTypeKind.STRING:
-            case IcebergTypeKind.UUID:
-            case IcebergTypeKind.BINARY:
-            case IcebergTypeKind.UNKNOWN:
-            case IcebergTypeKind.TIMESTAMP_NS:
-            case IcebergTypeKind.TIMESTAMPTZ_NS:
-            case IcebergTypeKind.VARIANT:
-            case IcebergTypeKind.LIST:
-            case IcebergTypeKind.MAP:
-            case IcebergTypeKind.STRUCT:
+            default:
                 return this.kind;
-            /* istanbul ignore next: defensive — TS exhaustiveness covers this, only reachable from non-TS bindings */
-            default: {
-                const exhaustive: never = this.kind;
-                throw new Error(`unknown IcebergTypeKind in _typeString: ${exhaustive}`);
-            }
         }
     }
-
-    /** Whether this type is the Iceberg primitive of the given canonical name. */
-    public isPrimitive(canonical: string): boolean {
-        return this.kind === canonical;
-    }
-
-    /** Whether this type is `decimal(P, S)` for any `P, S`. */
-    public isDecimal(): boolean {
-        return this.kind === IcebergTypeKind.DECIMAL;
-    }
-
-    /** Whether this type is `fixed[L]` for any `L`. */
-    public isFixed(): boolean {
-        return this.kind === IcebergTypeKind.FIXED;
-    }
-}
-
-/**
- * The options of one `IcebergType`, read once from `input`: booleans, `geoCrs` and
- * `geographyAlgorithm` checked, struct fields and nested types rebuilt, so the constructor works on values the caller cannot change.
- */
-function readOptions(input: IcebergTypeOptions): IcebergTypeOptions {
-    const {
-        kind,
-        decimalPrecision,
-        decimalScale,
-        fixedLength,
-        listElement,
-        listElementId,
-        listElementRequired,
-        mapKey,
-        mapKeyId,
-        mapValue,
-        mapValueId,
-        mapValueRequired,
-        structFields,
-        geoCrs,
-        geographyAlgorithm,
-    } = input;
-    return {
-        kind,
-        decimalPrecision,
-        decimalScale,
-        fixedLength,
-        listElement: listElement === undefined ? undefined : new IcebergType(listElement),
-        listElementId,
-        listElementRequired: primitive('listElementRequired', listElementRequired, 'boolean', {
-            optional: true,
-        }),
-        mapKey: mapKey === undefined ? undefined : new IcebergType(mapKey),
-        mapKeyId,
-        mapValue: mapValue === undefined ? undefined : new IcebergType(mapValue),
-        mapValueId,
-        mapValueRequired: primitive('mapValueRequired', mapValueRequired, 'boolean', {
-            optional: true,
-        }),
-        structFields: structFields === undefined ? undefined : ownArray('structFields', structFields).map(snapshotField),
-        geoCrs: primitive('geoCrs', geoCrs, 'string', {
-            optional: true,
-        }),
-        geographyAlgorithm: oneOf('geographyAlgorithm', geographyAlgorithm, IcebergEdgeAlgorithm, {
-            optional: true,
-        }),
-    };
-}
-
-/**
- * Returns `value` when it is a primitive of type `type`. An unresolved token is rejected
- * unless `tokens` is set; `undefined` passes when `optional` is set.
- *
- * @internal
- */
-export function primitive<T>(
-    what: string,
-    value: T,
-    type: 'string' | 'boolean',
-    {
-        optional = false, tokens = false,
-    }: { optional?: boolean; tokens?: boolean } = {},
-): T {
-    if (value === undefined && optional) {
-        return value;
-    }
-    if (typeof value !== type) {
-        throw new Error(`${what} must be a ${type}, got ${typeof value}`);
-    }
-    if (!tokens && Token.isUnresolved(value)) {
-        throw new Error(`${what} must be a literal string, not a token`);
-    }
-    return value;
-}
-
-/**
- * Returns `value` when it is a literal string holding one of the values of `members`.
- *
- * @internal
- */
-export function oneOf<T>(
-    what: string,
-    value: T,
-    members: { [name: string]: string },
-    {
-        optional = false,
-    }: { optional?: boolean } = {},
-): T {
-    if (value === undefined && optional) {
-        return value;
-    }
-    if (!Object.values(members).includes(primitive(what, value, 'string') as string)) {
-        throw new Error(`${what} must be one of ${Object.values(members).join(', ')}, got '${value}'`);
-    }
-    return value;
-}
-
-/**
- * A new array holding the elements of the caller's array, taken in one iteration.
- *
- * @internal
- */
-export function ownArray<T>(what: string, value: T[]): T[] {
-    if (!Array.isArray(value)) {
-        throw new Error(`${what} must be an array, got ${typeof value}`);
-    }
-    return Array.from(value);
-}
-
-/**
- * A copy of a column or struct field built from one read of each of its fields.
- *
- * @internal
- */
-export function snapshotField(field: IcebergStructFieldDefinition): IcebergStructFieldDefinition {
-    const {
-        id,
-        name,
-        type,
-        required,
-        doc,
-    } = field;
-    return {
-        id,
-        name: primitive('field name', name, 'string'),
-        type: new IcebergType(type),
-        required: primitive('field required', required, 'boolean', {
-            optional: true,
-        }),
-        doc: primitive('field doc', doc, 'string', {
-            optional: true,
-        }),
-    };
-}
-
-/**
- * Field name as a path segment, backquoted with inner backquotes doubled when it contains a dot or backquote.
- *
- * @internal
- */
-export function pathSegment(name: string): string {
-    return /[.`]/.test(name) ? `\`${name.replace(/`/g, '``')}\`` : name;
-}
-
-/**
- * Parse a string as JSON if it looks like an object, otherwise return
- * the string unchanged. Used so that when we embed a nested type
- * representation back inside a parent JSON object the result is
- * structured JSON, not a doubly-encoded string.
- *
- * @internal
- */
-function tryParseObject(repr: string): unknown {
-    const first = repr.charAt(0);
-    if (first === '{' || first === '[') {
-        return JSON.parse(repr);
-    }
-    return repr;
 }
