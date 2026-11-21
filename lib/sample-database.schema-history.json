@@ -1,0 +1,17 @@
+{
+  "tables": [
+    {
+      "tableName": "spark_smoke",
+      "fields": [
+        {
+          "id": 1,
+          "path": "id",
+          "type": "long",
+          "required": true,
+          "dropped": false
+        }
+      ],
+      "partitionFields": []
+    }
+  ]
+}

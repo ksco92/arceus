@@ -5,6 +5,7 @@ import {
     CfnTable,
 } from 'aws-cdk-lib/aws-glue';
 import {
+    IcebergStructFieldDefinition,
     IcebergType,
     IcebergTypeKind,
     oneOf,
@@ -54,6 +55,19 @@ function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionF
     };
 }
 
+/** @internal */
+export function snapshotSchema(
+    columns: IcebergColumn[],
+    partitionSpec: IcebergPartitionField[] | undefined,
+): { columns: IcebergColumn[]; partitionSpec: IcebergPartitionField[] | undefined } {
+    return {
+        columns: ownArray('columns', columns).map(snapshotField),
+        partitionSpec: partitionSpec === undefined
+            ? undefined
+            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
+    };
+}
+
 function snapshotSortField(field: IcebergSortField): IcebergSortField {
     const {
         sourceColumn,
@@ -94,6 +108,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         tableProperties,
         comment,
         removalPolicy,
+        schemaHistoryFile,
     } = props;
     return {
         database,
@@ -110,10 +125,10 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
             optional: true,
             tokens: true,
         }),
-        columns: ownArray('columns', columns).map(snapshotField),
-        partitionSpec: partitionSpec === undefined
-            ? undefined
-            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
+        schemaHistoryFile: primitive('schemaHistoryFile', schemaHistoryFile, 'string', {
+            optional: true,
+        }),
+        ...snapshotSchema(columns, partitionSpec),
         sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map(snapshotSortField),
         identifierFieldNames: identifierFieldNames === undefined
             ? undefined
@@ -310,40 +325,47 @@ export function renderSchema(
 }
 
 /** @internal */
+export function walkFields(
+    columns: IcebergStructFieldDefinition[],
+    visit: (path: string, id: number, type: IcebergType, required: boolean) => void,
+): void {
+    const walkStruct = (prefix: string, fields: IcebergStructFieldDefinition[]): void => {
+        for (const field of fields) {
+            visit(`${prefix}${pathSegment(field.name)}`, field.id, field.type, field.required ?? false);
+        }
+        for (const field of fields) {
+            walkNested(`${prefix}${pathSegment(field.name)}`, field.type);
+        }
+    };
+    const walkNested = (path: string, type: IcebergType): void => {
+        if (type.listElement !== undefined) {
+            visit(`${path}.element`, type.listElementId!, type.listElement, type.listElementRequired!);
+            walkNested(`${path}.element`, type.listElement);
+        } else if (type.mapKey !== undefined) {
+            visit(`${path}.key`, type.mapKeyId!, type.mapKey, true);
+            visit(`${path}.value`, type.mapValueId!, type.mapValue!, type.mapValueRequired!);
+            walkNested(`${path}.key`, type.mapKey);
+            walkNested(`${path}.value`, type.mapValue!);
+        } else if (type.structFields !== undefined) {
+            walkStruct(`${path}.`, type.structFields);
+        }
+    };
+    walkStruct('', columns);
+}
+
+/** @internal */
 export function creationOrderFieldIds(columns: IcebergColumn[]): { [path: string]: number } {
     const ids: { [path: string]: number } = {};
     let lastId = 0;
     /// `defineProperty` keeps a field named `__proto__` as an own key.
-    const assign = (path: string): void => {
+    walkFields(columns, (path) => {
         Object.defineProperty(ids, path, {
             value: ++lastId,
             enumerable: true,
             writable: true,
             configurable: true,
         });
-    };
-    const assignStruct = (prefix: string, fields: Array<{ name: string; type: IcebergType }>): void => {
-        for (const field of fields) {
-            assign(`${prefix}${pathSegment(field.name)}`);
-        }
-        for (const field of fields) {
-            assignNested(`${prefix}${pathSegment(field.name)}`, field.type);
-        }
-    };
-    const assignNested = (path: string, type: IcebergType): void => {
-        if (type.listElement !== undefined) {
-            assign(`${path}.element`);
-            assignNested(`${path}.element`, type.listElement);
-        } else if (type.mapKey !== undefined) {
-            assign(`${path}.key`);
-            assign(`${path}.value`);
-            assignNested(`${path}.key`, type.mapKey);
-            assignNested(`${path}.value`, type.mapValue!);
-        } else if (type.structFields !== undefined) {
-            assignStruct(`${path}.`, type.structFields);
-        }
-    };
-    assignStruct('', columns);
+    });
     return ids;
 }
 

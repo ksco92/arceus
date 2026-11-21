@@ -53,6 +53,9 @@ import {
     validateSortOrder,
     validateTableName,
 } from './iceberg-table-render';
+import {
+    checkSchemaHistory,
+} from './iceberg-schema-history';
 
 /// /////////////////////////////////////////////////
 /// /////////////////////////////////////////////////
@@ -135,7 +138,7 @@ export interface IcebergPartitionField {
      * field that needs a fresh, never-before-used id. Only an
      * untouched field keeps its id across deploys. Once a field is
      * changed or dropped, its id is retired for good; the construct
-     * cannot see prior deploys, so honoring retirement is on you.
+     * checks retirement only against a `schemaHistoryFile`.
      */
     readonly fieldId: number;
 }
@@ -218,6 +221,15 @@ export interface IcebergTableProps {
      * avoid accidentally dropping production metadata.
      */
     readonly removalPolicy?: RemovalPolicy;
+
+    /**
+     * Path of the committed schema history file of the table's database, relative to
+     * the working directory. Synth fails if the file is missing or malformed, or if the
+     * definition is an unsafe change from the table's record in it. See the README
+     * section "Checking changes against a schema history".
+     * @default - no history check
+     */
+    readonly schemaHistoryFile?: string;
 }
 
 /** Public interface implemented by `IcebergTable` and by import shims. */
@@ -315,6 +327,10 @@ export class IcebergTable extends Resource implements IIcebergTable {
         validatePartitionSpec(props.partitionSpec, rendered.columnByName);
         validateSortOrder(props.sortOrder, rendered.columnByName);
         const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
+        const partitionSpec = renderPartitionSpec(props.partitionSpec, rendered.columnByName);
+        if (props.schemaHistoryFile !== undefined) {
+            checkSchemaHistory(this, props.schemaHistoryFile, this.tableName, props.columns, partitionSpec);
+        }
 
         this.resource = new CfnTable(this, 'Resource', {
             catalogId: Stack.of(this).account,
@@ -332,7 +348,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
                             fields: rendered.fields,
                             identifierFieldIds: identifierFieldIds,
                         },
-                        partitionSpec: renderPartitionSpec(props.partitionSpec, rendered.columnByName),
+                        partitionSpec,
                         writeOrder: renderSortOrder(props.sortOrder, rendered.columnByName),
                         properties: mergedProperties,
                     },
