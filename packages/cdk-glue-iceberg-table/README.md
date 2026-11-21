@@ -129,16 +129,19 @@ new IcebergTable(this, 'OrdersTable', {
 ### Python
 
 The same table in Python — the API mirrors TypeScript with
-`snake_case` props and `PascalCase` types:
+`snake_case` props and `PascalCase` types, and nested values such as a
+column or a partition field are the typed classes, not dicts:
 
 ```python
 from aws_cdk.aws_s3 import Bucket
 from aws_cdk.aws_glue import Database
 from cdk_glue_iceberg_table import (
+    IcebergColumn,
     IcebergFormatVersion,
+    IcebergPartitionField,
+    IcebergPartitionTransform,
     IcebergTable,
     IcebergType,
-    IcebergPartitionTransform,
 )
 
 bucket = Bucket(self, "Warehouse")
@@ -149,13 +152,13 @@ IcebergTable(self, "OrdersTable",
     table_name="orders",
     location=f"s3://{bucket.bucket_name}/analytics/orders/",
     columns=[
-        {"name": "order_id", "type": IcebergType.LONG, "required": True, "id": 1},
-        {"name": "customer_id", "type": IcebergType.LONG, "required": True, "id": 2},
-        {"name": "placed_at", "type": IcebergType.TIMESTAMPTZ, "required": True, "id": 3},
+        IcebergColumn(name="order_id", type=IcebergType.LONG, required=True, id=1),
+        IcebergColumn(name="customer_id", type=IcebergType.LONG, required=True, id=2),
+        IcebergColumn(name="placed_at", type=IcebergType.TIMESTAMPTZ, required=True, id=3),
     ],
     partition_spec=[
-        {"source_column": "placed_at", "transform": IcebergPartitionTransform.DAY, "field_id": 1000},
-        {"source_column": "customer_id", "transform": IcebergPartitionTransform.bucket(16), "field_id": 1001},
+        IcebergPartitionField(source_column="placed_at", transform=IcebergPartitionTransform.DAY, field_id=1000),
+        IcebergPartitionField(source_column="customer_id", transform=IcebergPartitionTransform.bucket(16), field_id=1001),
     ],
     identifier_field_names=["order_id"],
     format_version=IcebergFormatVersion.V2,
