@@ -73,6 +73,7 @@ arceus/
 │   ├── integration-test-v3-dml.sh      # End-to-end v3 DML harness
 │   ├── field_ids.py                    # Prints a metadata.json schema's field ids as path:id
 │   ├── athena.sh                       # Sourced Athena helpers (run_athena, athena_expect)
+│   ├── metadata.sh                     # Sourced metadata.json helpers (fetch_metadata, assert_partition_history)
 │   └── spark/
 │       ├── install-spark.sh            # Downloads and sha512-verifies Spark + Iceberg jars
 │       ├── spark-env.sh                # Pins, paths, and the spark_submit helper

@@ -39,14 +39,7 @@ cleanup_table_prefixes() {
 
 assert_metadata() {
     local table="$1" format_version="$2" min_next_row_id="${3:-0}" columns="${4:-}"
-    local meta_loc
-    meta_loc=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "$table" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
-    aws s3 cp "$meta_loc" - --region "$AWS_REGION" | python3 -c '
+    fetch_metadata "$table" | python3 -c '
 import ast, json, sys
 m = json.load(sys.stdin)
 table, format_version, min_next_row_id, columns = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
@@ -64,6 +57,8 @@ if columns:
 
 # shellcheck source=scripts/spark/spark-env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
+# shellcheck source=scripts/metadata.sh
+source "$(dirname "${BASH_SOURCE[0]}")/metadata.sh"
 
 header "TEARDOWN any existing ${STACK} from a prior run"
 npx cdk destroy "$STACK" --force 2>&1 | tail -5 || true

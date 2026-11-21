@@ -25,21 +25,13 @@ STACK="IcebergV3EvolutionStack"
 META_FILE=$(mktemp)
 trap 'rm -f "$META_FILE"' EXIT
 
+# shellcheck source=scripts/metadata.sh
+source "$(dirname "${BASH_SOURCE[0]}")/metadata.sh"
+
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 header() { printf '\n=== %s ===\n' "$*"; }
-
-fetch_metadata() {
-    local meta_loc
-    meta_loc=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "$TABLE" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
-    aws s3 cp "$meta_loc" "$META_FILE" --region "$AWS_REGION" > /dev/null
-}
 
 # Prints "<key> <value>" lines describing the current metadata.
 table_summary() {
@@ -86,50 +78,13 @@ assert_format() {
 assert_columns()    { assert_equals "columns" "$1" "$(summary_value columns)"; }
 assert_partitions() { assert_equals "partitions" "$1" "$(summary_value partitions)"; }
 
-# Issue #43 regression check, applied to the v3 spec history: no
-# partition field-id may be bound to two different (source-id,
-# transform) pairs, and last-partition-id must cover the highest
-# field-id in any spec.
-assert_partition_history() {
-    if python3 -c "
-import json, sys
-m = json.load(open(sys.argv[1]))
-specs = m['partition-specs']
-bindings = {}
-conflicts = []
-max_field_id = 0
-for spec in specs:
-    for f in spec['fields']:
-        binding = (f['source-id'], f['transform'])
-        max_field_id = max(max_field_id, f['field-id'])
-        previous = bindings.setdefault(f['field-id'], binding)
-        if previous != binding:
-            conflicts.append((f['field-id'], previous, binding))
-print('spec-count', len(specs))
-print('partition-field-ids', ','.join(str(i) for i in sorted(bindings)))
-print('last-partition-id', m['last-partition-id'])
-if conflicts:
-    for field_id, a, b in conflicts:
-        print(f'CONFLICT: field-id {field_id} bound to both {a} and {b}')
-    sys.exit(1)
-if m['last-partition-id'] < max_field_id:
-    print(f'STALE COUNTER: last-partition-id {m[\"last-partition-id\"]} < max field-id {max_field_id}')
-    sys.exit(1)
-" "$META_FILE"; then
-        green "  partition-spec history consistent ✓"
-    else
-        red   "  partition-spec history violates Iceberg invariants ✗"
-        return 1
-    fi
-}
-
 verify_step() {
     local columns="$1" partitions="$2"
-    fetch_metadata
+    fetch_metadata "$TABLE" > "$META_FILE"
     assert_format
     assert_columns "$columns"
     assert_partitions "$partitions"
-    assert_partition_history
+    assert_partition_history < "$META_FILE"
     yellow "  $(table_summary | grep -E '^(schema-id|schemas-count|last-column-id) ' | tr '\n' ' ')"
 }
 
