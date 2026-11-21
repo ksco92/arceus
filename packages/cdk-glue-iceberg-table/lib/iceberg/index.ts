@@ -38,3 +38,6 @@ export {
     IcebergTableHistory,
     IcebergTableSchema,
 } from './iceberg-schema-history';
+export {
+    IcebergTableGrantOptions,
+} from './iceberg-table-grants';

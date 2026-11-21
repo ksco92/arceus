@@ -13,6 +13,9 @@ import {
     IGrantable,
 } from 'aws-cdk-lib/aws-iam';
 import {
+    IKey,
+} from 'aws-cdk-lib/aws-kms';
+import {
     Construct,
 } from 'constructs';
 import {
@@ -28,13 +31,12 @@ import {
     validateIcebergProperties,
 } from './iceberg-table-properties';
 import {
-    READ_S3_BUCKET_ACTIONS,
-    READ_S3_LIST_ACTIONS,
-    READ_S3_OBJECT_ACTIONS,
-    READ_TABLE_ACTIONS,
-    WRITE_S3_BUCKET_ACTIONS,
-    WRITE_S3_OBJECT_ACTIONS,
-    WRITE_TABLE_ACTIONS,
+    GrantContext,
+    IcebergTableGrantOptions,
+    READ_PROFILE,
+    READ_WRITE_PROFILE,
+    WRITE_PROFILE,
+    grantContext,
     grantSplit,
 } from './iceberg-table-grants';
 import {
@@ -172,6 +174,13 @@ export interface IcebergTableProps {
     /** S3 URI where Iceberg metadata + data live. Must start with `s3://`. */
     readonly location: string;
 
+    /**
+     * KMS key the table's bucket encrypts objects with. When set, read grants
+     * add `kms:Decrypt` and write grants add `kms:Decrypt` and
+     * `kms:GenerateDataKey`, on the whole key. Defaults to no KMS permission.
+     */
+    readonly encryptionKey?: IKey;
+
     /** Optional partition spec. Order is preserved in the partition layout. */
     readonly partitionSpec?: IcebergPartitionField[];
 
@@ -246,14 +255,17 @@ export interface IIcebergTable {
     /** S3 URI where the table is materialized. */
     readonly location: string;
 
+    /** KMS key the table's objects are encrypted with, when known. */
+    readonly encryptionKey?: IKey;
+
     /** Grant Glue + S3 read on this table. */
-    grantRead(grantee: IGrantable): Grant;
+    grantRead(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant;
 
     /** Grant Glue + S3 write on this table. */
-    grantWrite(grantee: IGrantable): Grant;
+    grantWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant;
 
     /** Grant Glue + S3 read + write on this table. */
-    grantReadWrite(grantee: IGrantable): Grant;
+    grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant;
 }
 
 /// /////////////////////////////////////////////////
@@ -283,6 +295,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
     /** S3 URI where the Iceberg metadata + data live. */
     public readonly location: string;
 
+    /** KMS key the table's objects are encrypted with, as given in the props. */
+    public readonly encryptionKey?: IKey;
+
     /** Resolved data format (after defaulting). */
     public readonly dataFormat: IcebergDataFormat;
 
@@ -292,9 +307,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
     /** The underlying L1 — exposed for escape-hatch use. */
     public readonly resource: CfnTable;
 
-    private readonly bucketArn: string;
-    private readonly objectArn: string;
-    private readonly s3PrefixGlob: string;
+    private readonly grantContext: GrantContext;
 
     constructor(scope: Construct, id: string, props: IcebergTableProps) {
         props = snapshotProps(props);
@@ -307,13 +320,18 @@ export class IcebergTable extends Resource implements IIcebergTable {
         this.database = props.database;
         this.tableName = props.tableName;
         this.location = normalizeLocation(props.location);
+        this.encryptionKey = props.encryptionKey;
         this.dataFormat = props.dataFormat ?? IcebergDataFormat.PARQUET;
         this.formatVersion = props.formatVersion;
 
-        const parsed = parseS3Uri(this.location);
-        this.bucketArn = `arn:${Stack.of(this).partition}:s3:::${parsed.bucket}`;
-        this.objectArn = `${this.bucketArn}/${parsed.key}*`;
-        this.s3PrefixGlob = `${parsed.key}*`;
+        this.grantContext = grantContext(
+            Stack.of(this),
+            this.database,
+            this.tableName,
+            parseS3Uri(this.location),
+            this.encryptionKey,
+        );
+        this.tableArn = this.grantContext.tableArn;
 
         const mergedProperties = mergeProperties(
             this.dataFormat,
@@ -359,12 +377,6 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const removalPolicy = props.removalPolicy ?? RemovalPolicy.RETAIN;
         this.resource.applyRemovalPolicy(removalPolicy);
 
-        this.tableArn = Stack.of(this).formatArn({
-            service: 'glue',
-            resource: 'table',
-            resourceName: `${props.database.databaseName}/${this.tableName}`,
-        });
-
         this.node.defaultChild = this.resource;
     }
 
@@ -393,6 +405,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
     ): IIcebergTable {
         const {
             database,
+            encryptionKey,
             tableName: importedName,
         } = attrs;
         const importedLocation = primitive('location', attrs.location, 'string', {
@@ -405,125 +418,45 @@ export class IcebergTable extends Resource implements IIcebergTable {
             validateTableName(tableName);
         }
         validateLocation(importedLocation);
-        const stack = Stack.of(scope);
         const location = normalizeLocation(importedLocation);
-        const parsed = parseS3Uri(location);
-        const bucketArn = `arn:${stack.partition}:s3:::${parsed.bucket}`;
-        const objectArn = `${bucketArn}/${parsed.key}*`;
-        const prefixGlob = `${parsed.key}*`;
-        const tableArn = stack.formatArn({
-            service: 'glue',
-            resource: 'table',
-            resourceName: `${database.databaseName}/${tableName}`,
-        });
+        const context = grantContext(Stack.of(scope), database, tableName, parseS3Uri(location), encryptionKey);
 
         class Imported extends Resource implements IIcebergTable {
-            public readonly tableArn = tableArn;
+            public readonly tableArn = context.tableArn;
             public readonly tableName = tableName;
             public readonly database = database;
             public readonly location = location;
+            public readonly encryptionKey = encryptionKey;
 
-            public grantRead(grantee: IGrantable): Grant {
-                return grantSplit(grantee, {
-                    tableArn,
-                    bucketArn,
-                    objectArn,
-                    prefixGlob,
-                    tableActions: READ_TABLE_ACTIONS,
-                    listActions: READ_S3_LIST_ACTIONS,
-                    bucketActions: READ_S3_BUCKET_ACTIONS,
-                    objectActions: READ_S3_OBJECT_ACTIONS,
-                });
+            public grantRead(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
+                return grantSplit(grantee, READ_PROFILE, context, options);
             }
 
-            public grantWrite(grantee: IGrantable): Grant {
-                return grantSplit(grantee, {
-                    tableArn,
-                    bucketArn,
-                    objectArn,
-                    prefixGlob,
-                    tableActions: WRITE_TABLE_ACTIONS,
-                    listActions: [],
-                    bucketActions: WRITE_S3_BUCKET_ACTIONS,
-                    objectActions: WRITE_S3_OBJECT_ACTIONS,
-                });
+            public grantWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
+                return grantSplit(grantee, WRITE_PROFILE, context, options);
             }
 
-            public grantReadWrite(grantee: IGrantable): Grant {
-                return grantSplit(grantee, {
-                    tableArn,
-                    bucketArn,
-                    objectArn,
-                    prefixGlob,
-                    tableActions: [
-                        ...READ_TABLE_ACTIONS,
-                        ...WRITE_TABLE_ACTIONS,
-                    ],
-                    listActions: READ_S3_LIST_ACTIONS,
-                    bucketActions: [
-                        ...READ_S3_BUCKET_ACTIONS,
-                        ...WRITE_S3_BUCKET_ACTIONS,
-                    ],
-                    objectActions: [
-                        ...READ_S3_OBJECT_ACTIONS,
-                        ...WRITE_S3_OBJECT_ACTIONS,
-                    ],
-                });
+            public grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
+                return grantSplit(grantee, READ_WRITE_PROFILE, context, options);
             }
         }
 
         return new Imported(scope, id);
     }
 
-    /** Grant Glue read + S3 read on this table. */
-    public grantRead(grantee: IGrantable): Grant {
-        return grantSplit(grantee, {
-            tableArn: this.tableArn,
-            bucketArn: this.bucketArn,
-            objectArn: this.objectArn,
-            prefixGlob: this.s3PrefixGlob,
-            tableActions: READ_TABLE_ACTIONS,
-            listActions: READ_S3_LIST_ACTIONS,
-            bucketActions: READ_S3_BUCKET_ACTIONS,
-            objectActions: READ_S3_OBJECT_ACTIONS,
-        });
+    /** Grant Glue + S3 read on this table. */
+    public grantRead(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
+        return grantSplit(grantee, READ_PROFILE, this.grantContext, options);
     }
 
-    /** Grant Glue write + S3 write on this table. */
-    public grantWrite(grantee: IGrantable): Grant {
-        return grantSplit(grantee, {
-            tableArn: this.tableArn,
-            bucketArn: this.bucketArn,
-            objectArn: this.objectArn,
-            prefixGlob: this.s3PrefixGlob,
-            tableActions: WRITE_TABLE_ACTIONS,
-            listActions: [],
-            bucketActions: WRITE_S3_BUCKET_ACTIONS,
-            objectActions: WRITE_S3_OBJECT_ACTIONS,
-        });
+    /** Grant Glue + S3 write on this table. */
+    public grantWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
+        return grantSplit(grantee, WRITE_PROFILE, this.grantContext, options);
     }
 
     /** Grant Glue + S3 read + write on this table. */
-    public grantReadWrite(grantee: IGrantable): Grant {
-        return grantSplit(grantee, {
-            tableArn: this.tableArn,
-            bucketArn: this.bucketArn,
-            objectArn: this.objectArn,
-            prefixGlob: this.s3PrefixGlob,
-            tableActions: [
-                ...READ_TABLE_ACTIONS,
-                ...WRITE_TABLE_ACTIONS,
-            ],
-            listActions: READ_S3_LIST_ACTIONS,
-            bucketActions: [
-                ...READ_S3_BUCKET_ACTIONS,
-                ...WRITE_S3_BUCKET_ACTIONS,
-            ],
-            objectActions: [
-                ...READ_S3_OBJECT_ACTIONS,
-                ...WRITE_S3_OBJECT_ACTIONS,
-            ],
-        });
+    public grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
+        return grantSplit(grantee, READ_WRITE_PROFILE, this.grantContext, options);
     }
 }
 
@@ -537,4 +470,7 @@ export interface IcebergTableAttributes {
 
     /** S3 URI where the table's data + metadata live. */
     readonly location: string;
+
+    /** KMS key the table's objects are encrypted with; grants add the actions of `IcebergTableProps.encryptionKey` on the whole key. */
+    readonly encryptionKey?: IKey;
 }

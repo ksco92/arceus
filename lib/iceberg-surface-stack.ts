@@ -1,5 +1,6 @@
 import {
     CfnOutput,
+    CfnParameter,
     RemovalPolicy,
     Stack,
     StackProps,
@@ -12,8 +13,13 @@ import {
 } from 'aws-cdk-lib/aws-lakeformation';
 import {
     ArnPrincipal,
+    Policy,
+    PolicyStatement,
     Role,
 } from 'aws-cdk-lib/aws-iam';
+import {
+    Key,
+} from 'aws-cdk-lib/aws-kms';
 import {
     Database,
 } from 'aws-cdk-lib/aws-glue';
@@ -45,7 +51,7 @@ export interface IcebergSurfaceStackProps extends StackProps {
      * DESCRIBE on every test table. Also the trust principal for the
      * two grantee roles the stack creates: it's the only identity
      * allowed to `sts:AssumeRole` them, so the integ-test script can
-     * exercise the construct's `grantRead` machinery.
+     * exercise the construct's grants.
      */
     readonly principalArn: string;
 }
@@ -62,12 +68,8 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *     queried via Spark SQL.
  *   - `creation_order_test` — nested columns declared with ids out of
  *     creation order, to read back the ids Glue assigns at CREATE.
- *   - `transforms_test.grantRead(granteeRole)` — the four-statement
- *     IAM split exercised at runtime by assuming the role from the
- *     integ script and calling Glue / S3 directly.
- *   - `IcebergTable.fromIcebergTableAttributes(...)` on the same
- *     table, then `grantRead(grantee2Role)` — proves the import
- *     factory's grant path is symmetric with the native one.
+ *   - `grants_test` — read by `ReaderRole` (`grantRead`) and written by
+ *     `ReadWriterRole` (`grantReadWrite` on an imported handle).
  */
 export class IcebergSurfaceStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergSurfaceStackProps) {
@@ -85,6 +87,12 @@ export class IcebergSurfaceStack extends Stack {
         );
         const dbName = importedDatabase.databaseName;
         const bucketName = importedBucket.bucketName;
+        const dataLakeKey = Key.fromKeyArn(this, 'DataLakeKey', new CfnParameter(this, 'DataLakeKeyArn', {
+            description: 'ARN of the KMS key the data-lake bucket encrypts objects with.',
+        }).valueAsString);
+        const catalogKey = Key.fromKeyArn(this, 'CatalogKey', new CfnParameter(this, 'CatalogKeyArn', {
+            description: 'ARN of the KMS key the Data Catalog is encrypted with.',
+        }).valueAsString);
 
         /// ////////////////////////////////////////////////////////
         // Table 1 — every partition transform.
@@ -360,23 +368,37 @@ export class IcebergSurfaceStack extends Stack {
         });
 
         /// ////////////////////////////////////////////////////////
+        // Table 5 — read and written only by the two grantee roles.
+
+        const grantsTable = new IcebergTable(this, 'GrantsTable', {
+            database: importedDatabase,
+            tableName: 'grants_test',
+            formatVersion: IcebergFormatVersion.V2,
+            comment: 'Read and written by roles whose table permissions come from the construct grants.',
+            columns: [
+                {
+                    name: 'id',
+                    type: IcebergType.LONG,
+                    required: true,
+                    id: 1,
+                },
+                {
+                    name: 'source',
+                    type: IcebergType.STRING,
+                    id: 2,
+                },
+            ],
+            location: `s3://${bucketName}/${dbName}/grants_test/`,
+            encryptionKey: dataLakeKey,
+            removalPolicy: RemovalPolicy.DESTROY,
+        });
+
+        /// ////////////////////////////////////////////////////////
         // LF table grants for the deployer principal.
 
-        const tablesForLfGrant = [
-            transformsTable,
-            sortedTable,
-            nestedTable,
-            creationOrderTable,
-        ];
-        tablesForLfGrant.forEach((table, index) => {
-            const permission = new CfnPermissions(this, `LfPermission${index}`, {
-                permissions: [
-                    'SELECT',
-                    'INSERT',
-                    'DELETE',
-                    'ALTER',
-                    'DESCRIBE',
-                ],
+        const tablePermission = (id: string, table: IcebergTable, principalArn: string, permissions: string[]): void => {
+            new CfnPermissions(this, id, {
+                permissions,
                 permissionsWithGrantOption: [],
                 resource: {
                     tableResource: {
@@ -386,49 +408,117 @@ export class IcebergSurfaceStack extends Stack {
                     },
                 },
                 dataLakePrincipal: {
-                    dataLakePrincipalIdentifier: props.principalArn,
+                    dataLakePrincipalIdentifier: principalArn,
                 },
-            });
-            permission.addResourceDependency(table.resource);
+            }).addResourceDependency(table.resource);
+        };
+        [
+            transformsTable,
+            sortedTable,
+            nestedTable,
+            creationOrderTable,
+            grantsTable,
+        ].forEach((table, index) => {
+            tablePermission(`LfPermission${index}`, table, props.principalArn, [
+                'SELECT',
+                'INSERT',
+                'DELETE',
+                'ALTER',
+                'DESCRIBE',
+            ]);
         });
 
         /// ////////////////////////////////////////////////////////
-        // GranteeRole — trusts the deployer principal so the integ
-        // script can assume it. `grantRead` is then exercised on the
-        // role to verify the IAM-grant machinery at runtime (Glue
-        // perms + S3 list-with-prefix-condition + S3 object reads).
+        // Grantee roles, trusted by the deployer principal so the script
+        // can assume them. Their table permissions come from the grants;
+        // the Lake Formation permissions and the Athena policy below are
+        // what a caller adds alongside them.
 
-        const granteeRole = new Role(this, 'GranteeRole', {
+        const grantOptions = {
+            catalogEncryptionKey: catalogKey,
+            lakeFormationDataAccess: true,
+        };
+        const readerRole = new Role(this, 'ReaderRole', {
             assumedBy: new ArnPrincipal(props.principalArn),
-            description: 'Trust-by-deployer role used by the surface integ-test script to exercise grantRead at runtime.',
+            description: 'Holds grantRead on grants_test.',
         });
-        transformsTable.grantRead(granteeRole);
+        grantsTable.grantRead(readerRole, grantOptions);
 
-        /// ////////////////////////////////////////////////////////
-        // Imported handle on the same table + a second grantee role
-        // it gets granted to. Validates that the import-by-attributes
-        // path produces the same four IAM statements as the native
-        // path.
-
-        const importedTransforms = IcebergTable.fromIcebergTableAttributes(this, 'ImportedTransformsTable', {
+        const importedGrantsTable = IcebergTable.fromIcebergTableAttributes(this, 'ImportedGrantsTable', {
             database: importedDatabase,
-            tableName: transformsTable.tableName,
-            location: transformsTable.location,
+            tableName: grantsTable.tableName,
+            location: grantsTable.location,
+            encryptionKey: dataLakeKey,
         });
-        const importedGranteeRole = new Role(this, 'ImportedGranteeRole', {
+        const readWriterRole = new Role(this, 'ReadWriterRole', {
             assumedBy: new ArnPrincipal(props.principalArn),
-            description: 'Trust-by-deployer role granted via the imported-table factory; symmetry check against GranteeRole.',
+            description: 'Holds grantReadWrite on an imported handle of grants_test.',
         });
-        importedTransforms.grantRead(importedGranteeRole);
+        importedGrantsTable.grantReadWrite(readWriterRole, grantOptions);
+
+        tablePermission('ReaderLfPermission', grantsTable, readerRole.roleArn, [
+            'SELECT',
+            'DESCRIBE',
+        ]);
+        tablePermission('ReadWriterLfPermission', grantsTable, readWriterRole.roleArn, [
+            'SELECT',
+            'INSERT',
+            'DELETE',
+            'ALTER',
+            'DESCRIBE',
+        ]);
+
+        /// Athena runs the queries in the `primary` workgroup and writes
+        /// results under `athena-results/` (scripts/athena.sh).
+        new Policy(this, 'AthenaQueryPolicy', {
+            roles: [
+                readerRole,
+                readWriterRole,
+            ],
+            statements: [
+                new PolicyStatement({
+                    actions: [
+                        'athena:StartQueryExecution',
+                        'athena:GetQueryExecution',
+                        'athena:GetQueryResults',
+                        'athena:StopQueryExecution',
+                    ],
+                    resources: [
+                        this.formatArn({
+                            service: 'athena',
+                            resource: 'workgroup',
+                            resourceName: 'primary',
+                        }),
+                    ],
+                }),
+                new PolicyStatement({
+                    actions: [
+                        's3:GetObject',
+                        's3:PutObject',
+                    ],
+                    resources: [
+                        importedBucket.arnForObjects('athena-results/*'),
+                    ],
+                }),
+                new PolicyStatement({
+                    actions: [
+                        'kms:GenerateDataKey',
+                    ],
+                    resources: [
+                        dataLakeKey.keyArn,
+                    ],
+                }),
+            ],
+        });
 
         /// ////////////////////////////////////////////////////////
         // Outputs the script reads.
 
-        new CfnOutput(this, 'GranteeRoleArnOutput', {
-            value: granteeRole.roleArn,
+        new CfnOutput(this, 'ReaderRoleArnOutput', {
+            value: readerRole.roleArn,
         });
-        new CfnOutput(this, 'ImportedGranteeRoleArnOutput', {
-            value: importedGranteeRole.roleArn,
+        new CfnOutput(this, 'ReadWriterRoleArnOutput', {
+            value: readWriterRole.roleArn,
         });
     }
 }

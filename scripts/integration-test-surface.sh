@@ -8,14 +8,7 @@
 #   - the field ids Glue stores at CREATE: each table declared in
 #     creation order keeps its declared ids, and a table declared out of
 #     creation order gets the creation-order ids.
-#   - grantRead's four-statement IAM split exercised at runtime by
-#     assuming the grantee role and calling Glue / S3 directly (this
-#     bypasses Lake Formation, which is exactly what isolates the
-#     IAM-grant logic in a test).
-#   - IcebergTable.fromIcebergTableAttributes(...).grantRead(...) on
-#     the same underlying table, then the same runtime checks under
-#     the second grantee role — proves the import-by-attributes path
-#     produces symmetric grants.
+#   - grants_test read and written as roles holding the construct's grants.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -23,7 +16,9 @@
 #     script. It's the LF grant principal AND the trust principal
 #     for both grantee roles, so the script can `sts:AssumeRole`
 #     them under its own creds.
-#   - ArceusStack already deployed with the same `PRINCIPAL_ARN`.
+#   - ArceusStack already deployed with the same `PRINCIPAL_ARN`. The
+#     data-lake bucket's key and the Data Catalog key are read from the
+#     account and passed to the stack as parameters.
 #   - The Spark toolchain installed (scripts/spark/install-spark.sh).
 #   - An Athena workgroup and query result location (scripts/athena.sh).
 #
@@ -94,27 +89,40 @@ cleanup_table_prefix "transforms_test"
 cleanup_table_prefix "sorted_test"
 cleanup_table_prefix "nested_test"
 cleanup_table_prefix "creation_order_test"
+cleanup_table_prefix "grants_test"
 
 ################################################
 # Deploy.
 
-header "DEPLOY IcebergSurfaceStack"
-npx cdk deploy "$STACK" --require-approval=never 2>&1 | tail -5
-
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 BUCKET="data-lake-bucket-${ACCOUNT}"
-GRANTEE_ROLE_ARN=$(aws cloudformation describe-stacks \
+DATA_LAKE_KEY_ARN=$(aws s3api get-bucket-encryption \
+    --bucket "$BUCKET" \
     --region "$AWS_REGION" \
-    --stack-name "$STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='GranteeRoleArnOutput'].OutputValue" \
+    --query 'ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.KMSMasterKeyID' \
     --output text)
-IMPORTED_GRANTEE_ROLE_ARN=$(aws cloudformation describe-stacks \
+CATALOG_KEY_ID=$(aws glue get-data-catalog-encryption-settings \
     --region "$AWS_REGION" \
-    --stack-name "$STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='ImportedGranteeRoleArnOutput'].OutputValue" \
+    --query 'DataCatalogEncryptionSettings.EncryptionAtRest.SseAwsKmsKeyId' \
     --output text)
-yellow "  GranteeRole         = ${GRANTEE_ROLE_ARN}"
-yellow "  ImportedGranteeRole = ${IMPORTED_GRANTEE_ROLE_ARN}"
+CATALOG_KEY_ARN="arn:aws:kms:${AWS_REGION}:${ACCOUNT}:key/${CATALOG_KEY_ID##*/}"
+
+header "DEPLOY IcebergSurfaceStack"
+npx cdk deploy "$STACK" --require-approval=never \
+    --parameters "${STACK}:DataLakeKeyArn=${DATA_LAKE_KEY_ARN}" \
+    --parameters "${STACK}:CatalogKeyArn=${CATALOG_KEY_ARN}" 2>&1 | tail -5
+
+stack_output() {
+    aws cloudformation describe-stacks \
+        --region "$AWS_REGION" \
+        --stack-name "$STACK" \
+        --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
+        --output text
+}
+READER_ROLE_ARN=$(stack_output ReaderRoleArnOutput)
+READ_WRITER_ROLE_ARN=$(stack_output ReadWriterRoleArnOutput)
+yellow "  ReaderRole     = ${READER_ROLE_ARN}"
+yellow "  ReadWriterRole = ${READ_WRITER_ROLE_ARN}"
 
 ################################################
 # Verify 1 — every partition transform rendered correctly.
@@ -197,19 +205,17 @@ athena_expect "nested_test list, struct and map values" \
     "2|1|only-one|Grace|Hopper|NULL|US|NULL"
 
 ################################################
-# Test 5 — grantRead via the native construct: assume the role,
-# call Glue + S3 directly. This bypasses Lake Formation, isolating
-# the IAM grants the construct produces.
+# Test 5 — the construct's grants, under roles assumed from the
+# script's own credentials.
 
-# Snapshot the script's starting credentials so we can restore them
-# after each assume-role hop. In CI these come from
-# aws-actions/configure-aws-credentials and live in env vars; in
-# local-dev runs they may live in `~/.aws/credentials` (in which
-# case the env vars are unset, and "restoring" them to empty is the
-# correct behavior).
+# Restored after each assume-role hop and on exit. In CI the starting
+# credentials live in env vars; in a local run they may come from a
+# profile, which is unset while the assumed credentials are in use.
 ORIGINAL_AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
 ORIGINAL_AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
 ORIGINAL_AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}"
+ORIGINAL_AWS_PROFILE="${AWS_PROFILE-}"
+ORIGINAL_AWS_PROFILE_SET="${AWS_PROFILE+1}"
 
 assume_role_and_export() {
     local role_arn="$1"
@@ -218,11 +224,11 @@ assume_role_and_export() {
     creds=$(aws sts assume-role \
         --role-arn "$role_arn" \
         --role-session-name "$session" \
-        --query 'Credentials' \
-        --output json)
-    export AWS_ACCESS_KEY_ID=$(echo "$creds" | python3 -c 'import json,sys; print(json.load(sys.stdin)["AccessKeyId"])')
-    export AWS_SECRET_ACCESS_KEY=$(echo "$creds" | python3 -c 'import json,sys; print(json.load(sys.stdin)["SecretAccessKey"])')
-    export AWS_SESSION_TOKEN=$(echo "$creds" | python3 -c 'import json,sys; print(json.load(sys.stdin)["SessionToken"])')
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text)
+    unset AWS_PROFILE
+    read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< "$creds"
+    export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 }
 
 unset_assumed_role() {
@@ -231,68 +237,74 @@ unset_assumed_role() {
         export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
         export AWS_SESSION_TOKEN="$ORIGINAL_AWS_SESSION_TOKEN"
     else
-        unset AWS_ACCESS_KEY_ID
-        unset AWS_SECRET_ACCESS_KEY
-        unset AWS_SESSION_TOKEN
+        unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+    fi
+    if [ -n "$ORIGINAL_AWS_PROFILE_SET" ]; then
+        export AWS_PROFILE="$ORIGINAL_AWS_PROFILE"
     fi
 }
 
-# Restore caller credentials on ANY script exit (failure or success).
-# Without this trap, a `set -e` exit in a TEST block between an
-# `assume_role_and_export` and the matching `unset_assumed_role`
-# leaves a local-dev shell holding the assumed-role STS credentials
-# for up to an hour.
+# A `set -e` exit between an assume and its restore would otherwise
+# leave a local shell holding the assumed credentials.
 trap unset_assumed_role EXIT
 
-header "TEST 5 — grantRead S3 statements via the native IcebergTable (assume GranteeRole)"
-# Why only S3 here, not Glue: ArceusStack registers the data-lake bucket
-# with Lake Formation. LF gates every `glue:GetTable` call against
-# tables in registered locations, irrespective of the principal's IAM
-# permissions — so a runtime `glue:GetTable` from GranteeRole hits LF
-# DENY before the IAM grant is even consulted. The construct's
-# Glue-action grants are still validated by the unit tests in
-# `test/iceberg-surface-stack.test.ts`. S3 direct calls, on the other
-# hand, are NOT gated by LF, so they exercise the grant logic the
-# construct produces in isolation.
+assert_prefix_listing() {
+    local role="$1"
+    if aws s3 ls "s3://${BUCKET}/${DATABASE}/grants_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
+        green "  ${role}: s3:ListBucket on grants_test's prefix succeeds ✓"
+    else
+        red "  ${role}: s3:ListBucket on grants_test's prefix failed"; exit 1
+    fi
+    if aws s3 ls "s3://${BUCKET}/${DATABASE}/nested_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
+        red "  ${role}: s3:ListBucket on nested_test's prefix succeeded — the prefix condition leaks"; exit 1
+    else
+        green "  ${role}: s3:ListBucket on a foreign prefix is denied ✓"
+    fi
+}
 
-# Wait for IAM policy attachment to propagate. Even after CFN says
-# UPDATE_COMPLETE on the role's inline policy, the policy can take a
-# few seconds to propagate to STS/IAM resolvers.
+# expect_denied LABEL PATTERN COMMAND... passes when COMMAND fails with
+# an access-denied message matching PATTERN.
+expect_denied() {
+    local label="$1" pattern="$2" out
+    shift 2
+    if out=$("$@" 2>&1); then
+        red "  ${label} succeeded; expected an access denial"; exit 1
+    fi
+    if grep -qE "$pattern" <<< "$out"; then
+        green "  ${label} is denied ✓"
+        printf '    %s\n' "$(grep -oE 'not authorized to perform: [^ ]+' <<< "$out" | head -1)"
+    else
+        red "  ${label} failed without the expected denial:"; printf '%s\n' "$out" >&2; exit 1
+    fi
+}
+
+GRANTS_SPARK="$(dirname "${BASH_SOURCE[0]}")/spark/verify_grants.py"
+
+# The roles' policies can take a few seconds to reach STS after the deploy.
 sleep 10
-assume_role_and_export "$GRANTEE_ROLE_ARN" "surface-integ-native"
-# S3 list with s3:prefix condition: the table's own prefix is allowed.
-if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
-    green "  s3:ListBucket on the table's own prefix succeeds ✓"
-else
-    red "  s3:ListBucket on transforms_test prefix failed as GranteeRole"; unset_assumed_role; exit 1
-fi
-# Cross-prefix list: the prefix-condition should DENY this.
-if aws s3 ls "s3://${BUCKET}/${DATABASE}/nested_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
-    red "  s3:ListBucket on nested_test prefix succeeded — prefix condition is leaking grants!"
-    unset_assumed_role
-    exit 1
-else
-    green "  s3:ListBucket on a foreign prefix is denied ✓"
-fi
+
+header "TEST 5a — ReadWriterRole (grantReadWrite, imported table) writes through Spark and Athena"
+assume_role_and_export "$READ_WRITER_ROLE_ARN" "surface-integ-read-writer"
+spark_submit "$GRANTS_SPARK" --phase write
+run_athena "INSERT INTO grants_test VALUES (2, 'athena')" >/dev/null
+green "  ReadWriterRole wrote one row through Spark and one through Athena ✓"
+assert_prefix_listing ReadWriterRole
 unset_assumed_role
 
-################################################
-# Test 6 — grantRead via the import factory (assume ImportedGranteeRole).
-
-header "TEST 6 — grantRead via IcebergTable.fromIcebergTableAttributes (assume ImportedGranteeRole)"
-assume_role_and_export "$IMPORTED_GRANTEE_ROLE_ARN" "surface-integ-imported"
-if aws s3 ls "s3://${BUCKET}/${DATABASE}/transforms_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
-    green "  imported-path s3:ListBucket on table prefix succeeds ✓"
-else
-    red "  imported-path s3:ListBucket failed"; unset_assumed_role; exit 1
-fi
-if aws s3 ls "s3://${BUCKET}/${DATABASE}/sorted_test/" --region "$AWS_REGION" >/dev/null 2>&1; then
-    red "  imported-path s3:ListBucket on foreign prefix succeeded — prefix condition leak!"
-    unset_assumed_role
-    exit 1
-else
-    green "  imported-path s3:ListBucket on a foreign prefix is denied ✓"
-fi
+header "TEST 5b — ReaderRole (grantRead) reads through Spark and Athena and cannot write"
+assume_role_and_export "$READER_ROLE_ARN" "surface-integ-reader"
+spark_submit "$GRANTS_SPARK" --phase read
+athena_expect "ReaderRole reads grants_test" "SELECT id, source FROM grants_test ORDER BY id" \
+    "id|source" \
+    "1|spark" \
+    "2|athena"
+assert_prefix_listing ReaderRole
+# A stale version id leaves the table unchanged even if the update were allowed.
+expect_denied "ReaderRole glue:UpdateTable" 'AccessDeniedException.*glue:UpdateTable' \
+    aws glue update-table --region "$AWS_REGION" --database-name "$DATABASE" \
+        --table-input '{"Name":"grants_test"}' --version-id 999999
+expect_denied "ReaderRole S3 write under grants_test" 'AccessDenied.*s3:PutObject' \
+    aws s3 cp - "s3://${BUCKET}/${DATABASE}/grants_test/data/denied.txt" --region "$AWS_REGION" <<< "denied"
 unset_assumed_role
 
 ################################################
@@ -305,6 +317,7 @@ if [ "${DESTROY:-0}" = "1" ]; then
     cleanup_table_prefix "sorted_test"
     cleanup_table_prefix "nested_test"
     cleanup_table_prefix "creation_order_test"
+    cleanup_table_prefix "grants_test"
 fi
 
 green ""

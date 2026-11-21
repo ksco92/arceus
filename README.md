@@ -179,7 +179,7 @@ surface lives under `dist/lib/iceberg/` after `npm install`; in Python
 the same surface is imported from the `cdk_glue_iceberg_table` module
 after `pip install`:
 
-- **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite`, the `fromIcebergTableAttributes(...)` import factory, and `creationOrderFieldIds(columns)` (Python: `creation_order_field_ids`), which returns a map from field path to the id Glue gives that field in a new table; a name containing `.` or a backquote appears in backquotes.
+- **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite` (each taking an optional `IcebergTableGrantOptions`), the `fromIcebergTableAttributes(...)` import factory, and `creationOrderFieldIds(columns)` (Python: `creation_order_field_ids`), which returns a map from field path to the id Glue gives that field in a new table; a name containing `.` or a backquote appears in backquotes.
 - **`IcebergSchemaHistory`** — `validateSchemaEvolution(previous, next)` (Python: `validate_schema_evolution`), which returns the unsafe changes from a table's history record to a definition (`IcebergTableSchema`) as `IcebergSchemaViolation`s, each carrying an `IcebergSchemaViolationKind` that names the class of unsafe change; `append`, `toJson` and `fromJson`, which record a definition in, write and read the history file (`IcebergSchemaHistoryFile`, `IcebergTableHistory`, `IcebergFieldHistory`, `IcebergPartitionFieldHistory`); and `updateFromCloudAssembly(directory)`, which records every table of a synthesized app. See [Checking changes against a schema history](#checking-changes-against-a-schema-history).
 - **`IcebergType`** — primitive types, the v3 constants `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, and `VARIANT`, and the `list` / `map` / `struct` / `decimal` / `fixed` / `geometry(crs?)` / `geography(crs?, algorithm?)` factories. `list` takes an `IcebergListDefinition`, `map` an `IcebergMapDefinition`, and `struct` a list of `IcebergStructFieldDefinition`, each carrying the nested field ids. Renders to the string Glue's `IcebergStructField.type` expects.
 - **`IcebergPartitionTransform`** — identity / `bucket(N)` / `truncate(W)` / year / month / day / hour / void. Each transform validates against the source column type at synth time.
@@ -600,14 +600,74 @@ Which engines read a v3 table created by the construct:
 ### Granting access
 
 ```typescript
-table.grantRead(role);        // Glue read + S3 read on the table's prefix
-table.grantWrite(role);       // Glue write + S3 write
-table.grantReadWrite(role);
+const table = new IcebergTable(this, 'Orders', {
+    // ...
+    encryptionKey: bucketKey,        // the key the table's bucket encrypts objects with
+});
+table.grantRead(role);
+table.grantWrite(role);
+table.grantReadWrite(role, {
+    catalogEncryptionKey: catalogKey, // the Data Catalog's SSE-KMS key
+    lakeFormationDataAccess: true,    // Athena on a location registered with Lake Formation
+});
 ```
 
-The `grant*` helpers issue **IAM grants only**. Under Lake Formation
-you still add the matching `SELECT` / `INSERT` / `DELETE` LF grants on
-top of the construct's IAM grants for Athena queries to succeed.
+Each method issues these statements and no others:
+
+| Statement | `grantRead` | `grantWrite` | `grantReadWrite` | Resource |
+| --- | --- | --- | --- | --- |
+| Glue | `glue:BatchGetPartition`, `glue:GetDatabase`, `glue:GetPartition`, `glue:GetPartitions`, `glue:GetTable`, `glue:GetTables`, `glue:GetTableVersion`, `glue:GetTableVersions` | `glue:BatchCreatePartition`, `glue:BatchDeletePartition`, `glue:CreatePartition`, `glue:DeletePartition`, `glue:UpdatePartition`, `glue:UpdateTable` | both lists | `arn:<partition>:glue:<region>:<account>:catalog`, the database ARN and the table ARN |
+| S3 list | `s3:ListBucket` | none | `s3:ListBucket` | the bucket, with condition `StringLike` `s3:prefix` = `<prefix>*` or `<prefix>` |
+| S3 bucket | `s3:GetBucketLocation` | `s3:ListBucketMultipartUploads` | both | the bucket |
+| S3 objects | `s3:GetObject` | `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts` | both lists | `<bucket>/<prefix>*` |
+| Table key, when `encryptionKey` is set | `kms:Decrypt` | `kms:Decrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:GenerateDataKey` | the key |
+| Catalog key, when `catalogEncryptionKey` is passed | `kms:Decrypt` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | the key |
+| Lake Formation, when `lakeFormationDataAccess` is `true` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `*` |
+
+The KMS statements are on the whole key: `IKey.grant` adds no
+encryption-context condition, so a key shared with other data (a bucket
+or lake key, the catalog key) is covered for everything it encrypts,
+not only this table.
+
+`lakeformation:GetDataAccess` is the one statement on `*`, because Lake
+Formation supports no resource for it. It is issued only with
+`lakeFormationDataAccess: true`; with it, Lake Formation vends
+credentials for every table the principal holds Lake Formation
+permissions on, which includes tables open to `IAM_ALLOWED_PRINCIPALS`.
+
+Pass `catalogEncryptionKey` when the Data Catalog is encrypted with a
+customer managed key.
+
+Lake Formation permissions themselves (`AWS::LakeFormation::Permissions`)
+are yours to create:
+
+```typescript
+import { CfnPermissions } from 'aws-cdk-lib/aws-lakeformation';
+
+new CfnPermissions(this, 'OrdersReader', {
+    dataLakePrincipal: { dataLakePrincipalIdentifier: role.roleArn },
+    resource: {
+        tableResource: {
+            catalogId: this.account,
+            databaseName: table.database.databaseName,
+            name: table.tableName,
+        },
+    },
+    permissions: ['SELECT', 'DESCRIBE'],
+});
+```
+
+Add `INSERT`, `DELETE` and `ALTER` for a principal that writes.
+
+In Python the new names are `encryption_key`, and the grant options are
+the keyword arguments `lake_formation_data_access` and
+`catalog_encryption_key`.
+
+Upgrading from a version before 0.17.0: existing `grantRead`,
+`grantWrite` and `grantReadWrite` policies change with no code edit.
+The Glue statement names the catalog and database ARNs as well as the
+table, and read grants add `glue:GetDatabase`. Nothing for KMS or Lake
+Formation is issued unless the new prop or options are passed.
 
 ### Importing an existing table
 
@@ -616,6 +676,7 @@ const existing = IcebergTable.fromIcebergTableAttributes(this, 'Orders', {
     database: db,
     tableName: 'orders',
     location: 's3://my-bucket/analytics/orders/',
+    encryptionKey: bucketKey, // optional; grants then cover the key
 });
 existing.grantRead(role);
 ```
@@ -928,12 +989,13 @@ Athena as well as Spark, on the same tables:
 - the `(PK) ` comment on identifier columns, read from
   `information_schema.columns`;
 - rows written by Spark read through Athena, and rows written by Athena
-  read through Spark.
+  read through Spark;
+- reads and writes through Spark and Athena as roles whose table
+  permissions come from `grantRead` and `grantReadWrite`, and a denied
+  write as the `grantRead` role.
 
 The suites grant the querying principal `SELECT`, `INSERT`, `DELETE`,
-`ALTER` and `DESCRIBE` through Lake Formation. The construct's `grant*`
-helpers issue IAM grants only; under Lake Formation you add the
-matching LF grants. See [Granting access](#granting-access).
+`ALTER` and `DESCRIBE` through Lake Formation. See [Granting access](#granting-access).
 
 ### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
 

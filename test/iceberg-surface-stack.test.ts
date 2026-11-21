@@ -41,8 +41,8 @@ describe('IcebergSurfaceStack', () => {
         template = synth();
     });
 
-    it('creates exactly four Glue tables', () => {
-        template.resourceCountIs('AWS::Glue::Table', 4);
+    it('creates exactly five Glue tables', () => {
+        template.resourceCountIs('AWS::Glue::Table', 5);
     });
 
     it('creation_order_test has no partition spec, sort order or identifier fields', () => {
@@ -115,19 +115,23 @@ describe('IcebergSurfaceStack', () => {
     });
 
     it('emits Lake-Formation table grants for the principal on every table', () => {
-        template.resourceCountIs('AWS::LakeFormation::Permissions', 4);
-        template.allResourcesProperties('AWS::LakeFormation::Permissions', {
-            DataLakePrincipal: {
-                DataLakePrincipalIdentifier: 'arn:aws:iam::123456789012:user/me',
-            },
-            Permissions: [
-                'SELECT',
-                'INSERT',
-                'DELETE',
-                'ALTER',
-                'DESCRIBE',
-            ],
-        });
+        const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'))
+            .map((r) => r.Properties)
+            .filter((p) => p.DataLakePrincipal.DataLakePrincipalIdentifier === 'arn:aws:iam::123456789012:user/me');
+        expect(permissions.map((p) => p.Resource.TableResource.Name)).toEqual([
+            'transforms_test',
+            'sorted_test',
+            'nested_test',
+            'creation_order_test',
+            'grants_test',
+        ]);
+        expect(permissions.map((p) => p.Permissions)).toEqual(Array(5).fill([
+            'SELECT',
+            'INSERT',
+            'DELETE',
+            'ALTER',
+            'DESCRIBE',
+        ]));
     });
 
     it('creates two grantee roles, each trust-policied to the deployer principal', () => {
@@ -146,34 +150,105 @@ describe('IcebergSurfaceStack', () => {
     });
 
     it('outputs the two grantee role ARNs', () => {
-        template.hasOutput('GranteeRoleArnOutput', {});
-        template.hasOutput('ImportedGranteeRoleArnOutput', {});
+        template.hasOutput('ReaderRoleArnOutput', {});
+        template.hasOutput('ReadWriterRoleArnOutput', {});
     });
 
-    it('grantRead on the native table issues Glue + S3 list + S3 bucket + S3 object statements', () => {
-        const policies = template.findResources('AWS::IAM::Policy');
-        const policyEntries = Object.values(policies);
-        const allActions = policyEntries
-            .flatMap((policy) => (policy.Properties.PolicyDocument as {
-                Statement: Array<{
-                    Action: string | string[];
-                }>;
-            }).Statement)
-            .flatMap((s) => (Array.isArray(s.Action) ? s.Action : [
-                s.Action,
-            ]));
-        expect(allActions).toContain('glue:GetTable');
-        expect(allActions).toContain('s3:ListBucket');
-        expect(allActions).toContain('s3:GetBucketLocation');
-        expect(allActions).toContain('s3:GetObject');
-    });
-
-    it('grantRead via the imported factory produces a separate IAM::Policy attached to ImportedGranteeRole', () => {
-        const policies = template.findResources('AWS::IAM::Policy');
-        const importedPolicyAttached = Object.values(policies).some((policy) => {
-            const roles = (policy.Properties.Roles ?? []) as Array<unknown>;
-            return roles.some((ref) => JSON.stringify(ref).includes('ImportedGranteeRole'));
+    it.each([
+        [
+            'ReaderRole',
+            [
+                'SELECT',
+                'DESCRIBE',
+            ],
+        ],
+        [
+            'ReadWriterRole',
+            [
+                'SELECT',
+                'INSERT',
+                'DELETE',
+                'ALTER',
+                'DESCRIBE',
+            ],
+        ],
+    ])('grants %s Lake Formation %s on grants_test', (role, permissions) => {
+        template.hasResourceProperties('AWS::LakeFormation::Permissions', {
+            DataLakePrincipal: {
+                DataLakePrincipalIdentifier: {
+                    'Fn::GetAtt': [
+                        Match.stringLikeRegexp(`^${role}`),
+                        'Arn',
+                    ],
+                },
+            },
+            Permissions: permissions,
+            Resource: {
+                TableResource: Match.objectLike({
+                    Name: 'grants_test',
+                }),
+            },
         });
-        expect(importedPolicyAttached).toBe(true);
+    });
+
+    function grantPolicyStatements(role: string): Array<Record<string, unknown>> {
+        const policy = Object.values(template.findResources('AWS::IAM::Policy')).find((p) => {
+            const roles = p.Properties.Roles as Array<{ Ref: string }>;
+            return roles.length === 1 && roles[0].Ref.startsWith(role);
+        });
+        return policy?.Properties.PolicyDocument.Statement;
+    }
+
+    it.each([
+        [
+            'ReaderRole',
+            'kms:Decrypt',
+            'kms:Decrypt',
+        ],
+        [
+            'ReadWriterRole',
+            [
+                'kms:Decrypt',
+                'kms:GenerateDataKey',
+            ],
+            [
+                'kms:Decrypt',
+                'kms:Encrypt',
+                'kms:GenerateDataKey',
+            ],
+        ],
+    ])('%s holds the table key, catalog key and GetDataAccess statements from its grant', (role, tableKeyActions, catalogKeyActions) => {
+        expect(grantPolicyStatements(role).slice(-3)).toEqual([
+            {
+                Action: tableKeyActions,
+                Effect: 'Allow',
+                Resource: {
+                    Ref: 'DataLakeKeyArn',
+                },
+            },
+            {
+                Action: catalogKeyActions,
+                Effect: 'Allow',
+                Resource: {
+                    Ref: 'CatalogKeyArn',
+                },
+            },
+            {
+                Action: 'lakeformation:GetDataAccess',
+                Effect: 'Allow',
+                Resource: '*',
+            },
+        ]);
+    });
+
+    it('attaches the Athena query policy to both grantee roles', () => {
+        const policy = Object.entries(template.findResources('AWS::IAM::Policy'))
+            .find(([
+                id,
+            ]) => id.startsWith('AthenaQueryPolicy'))?.[1];
+        expect((policy?.Properties.Roles as Array<{ Ref: string }>).map((r) => r.Ref.replace(/[0-9A-F]{8}$/, ''))).toEqual([
+            'ReaderRole',
+            'ReadWriterRole',
+        ]);
     });
 });

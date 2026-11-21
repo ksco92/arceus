@@ -161,13 +161,13 @@ The integration test does the following AWS actions:
 | --- | --- |
 | CloudFormation | Create / update / delete the test stacks (`IcebergSparkSmokeStack`, `IcebergEvolutionStack`, `IcebergDmlStack`, `IcebergSurfaceStack`, `IcebergV3EvolutionStack`, `IcebergV3DmlStack`). |
 | IAM (PassRole) | Pass the CDK bootstrap roles to CloudFormation. |
-| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`; Athena writes query results to the result location). |
-| Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. |
-| Lake Formation | Read settings + grant the test table to the developer principal. Athena reads the v2 test tables with credentials Lake Formation vends against those grants (`lakeformation:GetDataAccess`). |
+| S3 | Read + write the data lake bucket (Spark writes Iceberg data and metadata files through `S3FileIO`; Athena writes query results to the result location); `s3:GetEncryptionConfiguration` on the data lake bucket, whose key the surface suite passes to its stack. |
+| Glue | Read database + table metadata; the Iceberg table writes go through the `OpenTableFormatInput` path. Spark's `GlueCatalog` commits writes with `glue:UpdateTable`. `glue:GetDataCatalogEncryptionSettings` for the catalog key the surface suite passes to its stack. |
+| Lake Formation | Read settings + grant the test tables to the developer principal and to the surface suite's two grantee roles. Athena reads the v2 test tables with credentials Lake Formation vends against those grants (`lakeformation:GetDataAccess`). |
 | Athena | `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, and `athena:StopQueryExecution` in the workgroup the scripts use. Athena writes query results to the result location with the role's own S3 and KMS permissions, so the role needs `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, and `s3:GetBucketLocation` on that location plus `kms:GenerateDataKey` and `kms:Decrypt` on the bucket's key. |
 | KMS | Encrypt / decrypt the bucket KMS keys, including the `S3FileIO` writes from Spark. |
 | SSM | Read `/cdk-bootstrap/hnb659fds/version` parameter. |
-| STS | `GetCallerIdentity` for the script. |
+| STS | `GetCallerIdentity` for the script; `AssumeRole` into the surface suite's two grantee roles, which trust the workflow's role. |
 
 The simplest correct policy attaches the AWS-managed
 `PowerUserAccess` (no IAM management, everything else) plus an
