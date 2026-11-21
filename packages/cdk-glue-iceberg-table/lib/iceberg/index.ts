@@ -36,15 +36,5 @@ export {
     IIcebergTable,
 } from './iceberg-table';
 export {
-    IcebergFieldHistory,
-    IcebergPartitionFieldHistory,
-    IcebergSchemaHistory,
-    IcebergSchemaHistoryFile,
-    IcebergSchemaViolation,
-    IcebergSchemaViolationKind,
-    IcebergTableHistory,
-    IcebergTableSchema,
-} from './iceberg-schema-history';
-export {
     IcebergTableGrantOptions,
 } from './iceberg-table-grants';

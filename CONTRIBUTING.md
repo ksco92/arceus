@@ -40,7 +40,6 @@ arceus/
 │       │   ├── iceberg-sort-field.ts
 │       │   ├── iceberg-table-grants.ts
 │       │   ├── iceberg-table-render.ts
-│       │   ├── iceberg-schema-history.ts
 │       │   └── index.ts                # Re-exports (the package's entry point)
 │       ├── test/iceberg/               # Unit tests for the construct
 │       ├── test/packed-consumer/       # Fixture installed from the PR's npm pack tarball (not shipped)
@@ -58,7 +57,6 @@ arceus/
 │   ├── iceberg-dml-stack.ts            # Stack for the DML / time-travel / compaction / snapshot-expiry test
 │   ├── iceberg-surface-stack.ts        # Stack for transforms / sort / nested types / grants test
 │   ├── iceberg-spark-smoke-stack.ts    # Stack for the Spark toolchain smoke check
-│   ├── sample-database.schema-history.json # Schema history the Spark smoke table is checked against
 │   ├── iceberg-v3-evolution-stack.ts   # Parameterized stack for the v3 evolution test
 │   └── iceberg-v3-dml-stack.ts         # Stack for the v3 DML / row lineage / upgrade test
 ├── test/                               # Demo stack tests
@@ -93,6 +91,7 @@ arceus/
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
+│   ├── field-ids.md                    # What field ids are and the rule for not reusing them
 │   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test workflow
 ├── cdk.json                            # CDK app config (app: bin/arceus.ts)
 ├── tsconfig.json                       # Demo-app tsconfig (used by ESLint and ts-node)

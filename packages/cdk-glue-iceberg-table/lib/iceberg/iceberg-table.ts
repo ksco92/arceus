@@ -52,9 +52,6 @@ import {
     validateTableName,
 } from './iceberg-table-render';
 import {
-    checkSchemaHistory,
-} from './iceberg-schema-history';
-import {
     IcebergColumn,
 } from './iceberg-column';
 import {
@@ -148,14 +145,6 @@ export interface IcebergTableProps {
      * avoid accidentally dropping production metadata.
      */
     readonly removalPolicy?: RemovalPolicy;
-
-    /**
-     * Path of the committed schema history file of the table's database, relative to the
-     * working directory; the README section "Checking changes against a schema history"
-     * lists what synth checks against it.
-     * @default - no history check
-     */
-    readonly schemaHistoryFile?: string;
 }
 
 /** Public interface implemented by `IcebergTable` and by import shims. */
@@ -264,9 +253,6 @@ export class IcebergTable extends Resource implements IIcebergTable {
         validateSortOrder(props.sortOrder, rendered.columnByName);
         const identifierFieldIds = resolveIdentifierFieldIds(props.identifierFieldNames, rendered.columnByName);
         const partitionSpec = renderPartitionSpec(props.partitionSpec, rendered.columnByName);
-        if (props.schemaHistoryFile !== undefined) {
-            checkSchemaHistory(this, props.schemaHistoryFile, this.tableName, props.columns, partitionSpec);
-        }
 
         this.resource = new CfnTable(this, 'Resource', {
             catalogId: props.catalogId ?? Stack.of(this).account,

@@ -31,8 +31,7 @@ export interface IcebergPartitionField {
      * different transform, a different source column — makes it a NEW
      * field that needs a fresh, never-before-used id. Only an
      * untouched field keeps its id across deploys. Once a field is
-     * changed or dropped, its id is retired for good; the construct
-     * checks retirement only against a `schemaHistoryFile`.
+     * changed or dropped, its id is retired for good.
      */
     readonly fieldId: number;
 }
