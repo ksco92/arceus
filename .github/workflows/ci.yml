@@ -11,6 +11,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-policy:
+    # Checks out the merge commit, so HEAD^1 is the base branch tip.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: node .github/scripts/release-policy.js HEAD^1 HEAD
+
   build-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -65,7 +79,7 @@ jobs:
     # Proves the published cdk-glue-iceberg-table package is importable
     # by a downstream CDK app. Pinned to a specific version in
     # e2e-consumer/package.json so a bad publish breaks this job on
-    # the NEXT version-bump PR, not silently.
+    # the follow-up PR after the next release, not silently.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
