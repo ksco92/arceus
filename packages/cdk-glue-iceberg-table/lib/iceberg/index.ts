@@ -15,7 +15,6 @@ export {
 export {
     IcebergDataFormat,
     IcebergFormatVersion,
-    IcebergPropertyKeys,
 } from './iceberg-table-properties';
 export {
     IcebergNullOrder,

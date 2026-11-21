@@ -188,7 +188,7 @@ after `pip install`:
 - **`IcebergSchemaHistory`** — `validateSchemaEvolution(previous, next)` (Python: `validate_schema_evolution`), which returns the unsafe changes from a table's history record to a definition (`IcebergTableSchema`) as `IcebergSchemaViolation`s, each carrying an `IcebergSchemaViolationKind` that names the class of unsafe change; `append`, `toJson` and `fromJson`, which record a definition in, write and read the history file (`IcebergSchemaHistoryFile`, `IcebergTableHistory`, `IcebergFieldHistory`, `IcebergPartitionFieldHistory`); and `updateFromCloudAssembly(directory)`, which records every table of a synthesized app. See [Checking changes against a schema history](#checking-changes-against-a-schema-history).
 - **`IcebergType`** — primitive types, the v3 constants `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, and `VARIANT`, and the `list` / `map` / `struct` / `decimal` / `fixed` / `geometry(crs?)` / `geography(crs?, algorithm?)` factories. `list` takes an `IcebergListDefinition`, `map` an `IcebergMapDefinition`, and `struct` a list of `IcebergStructFieldDefinition`, each carrying the nested field ids. Renders to the string Glue's `IcebergStructField.type` expects.
 - **`IcebergPartitionTransform`** — identity / `bucket(N)` / `truncate(W)` / year / month / day / hour / void. Each transform validates against the source column type at synth time.
-- **`IcebergDataFormat`** (parquet/orc/avro, default parquet), **`IcebergFormatVersion`** (v1/v2/v3, required — set explicitly per table; Athena cannot query v3 tables), **`IcebergSortDirection`**, **`IcebergNullOrder`**, **`IcebergEdgeAlgorithm`** (`SPHERICAL`, `VINCENTY`, `THOMAS`, `ANDOYER`, `KARNEY`; the second argument of `IcebergType.geography`), plus a `tableProperties` validator that catches misconfigured properties before they leave your machine (wrong codec for the chosen format, `merge-on-read` on a v1 table, non-positive numeric values, …).
+- **`IcebergDataFormat`** (parquet/orc/avro, default parquet), **`IcebergFormatVersion`** (v1/v2/v3, required — set explicitly per table; Athena cannot query v3 tables), **`IcebergSortDirection`**, **`IcebergNullOrder`**, **`IcebergEdgeAlgorithm`** (`SPHERICAL`, `VINCENTY`, `THOMAS`, `ANDOYER`, `KARNEY`; the second argument of `IcebergType.geography`). `tableProperties` entries are passed to Glue as given, except that the construct sets `format-version` and `write.format.default` (a supplied value must agree with `formatVersion` or `dataFormat`) and `comment` is set in one place only.
 
 ## Using `IcebergTable`
 
@@ -454,6 +454,10 @@ Every string you pass is a literal string, not a token, and an
 enum-typed one must be a member of its enum; the exceptions are
 `location`, `comment`, table property values, `tableName` and
 `catalogId`.
+
+Upgrading from a version before 0.20.0: `IcebergPropertyKeys` is removed, and
+synth no longer checks the compression codec, write mode, distribution mode,
+`gc.enabled` and numeric table properties.
 
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:
@@ -995,7 +999,7 @@ section.)
 - **The schema history check covers only the changes it lists.** It does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), whose ids the file never records, or a deploy whose definition was not recorded in the file. No integration suite deploys a table after an engine-side `ALTER TABLE`, so what a deploy does to such a table is not observed. It does not check sort order or identifier field changes or report an added required field, top level or nested, and it treats a field moved into another struct under its id as a rename. It reports the format v3 promotions `unknown` to any type and `date` to `timestamp` or `timestamp_ns` as type changes.
 - **CREATE-only metadata operation.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that. Subsequent deploys use Glue's normal `UpdateTable` path, which writes new Iceberg metadata in-place.
 - **Format version is immutable after CREATE.** Glue ignores a V2 to V3 `formatVersion` change, though `properties.format-version` then reads `3`. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it (remove its [schema history record](#adopting-a-table-that-exists-in-glue) first). An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
-- **`merge-on-read` requires v2 or later.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
+- **`merge-on-read` requires v2 or later.** The construct does not check `write.{delete,update,merge}.mode`; set `merge-on-read` only on a v2 or later table.
 - **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property. Revisit when that schema gains the two properties.
 - **Nanosecond timestamps are catalog-only for Spark 4.1.1 with Iceberg 1.11.0.** In [`TypeToSparkType`](https://github.com/apache/iceberg/blob/apache-iceberg-1.11.0/spark/v4.1/spark/src/main/java/org/apache/iceberg/spark/TypeToSparkType.java) at the `apache-iceberg-1.11.0` tag, `primitive()` has no case for the `TIMESTAMP_NANO` type id, so a table with a `timestamp_ns` or `timestamptz_ns` column reaches the `Cannot convert unsupported type to Spark` error. The integration suite asserts these columns from `metadata.json` only.
 - **Geometry and geography columns are catalog-only for Spark 4.1.1 with Iceberg 1.11.0, the versions AWS Glue 6.0 ships.** The first Spark read of a table holding a `geography` and a `geometry` column failed with `UnsupportedOperationException: Cannot convert unsupported type to Spark: geography(OGC:CRS84, spherical)` on those versions. [`TypeToSparkType`](https://github.com/apache/iceberg/blob/apache-iceberg-1.11.0/spark/v4.1/spark/src/main/java/org/apache/iceberg/spark/TypeToSparkType.java) at the `apache-iceberg-1.11.0` tag has no conversion for `geometry` either. The integration suite deploys these columns on a table no Spark job opens and asserts them from `metadata.json` only.
@@ -1101,7 +1105,7 @@ The suites grant the querying principal `SELECT`, `INSERT`, `DELETE`,
 
 Yes — set `formatVersion: IcebergFormatVersion.V2` and the
 `write.{delete,update,merge}.mode = merge-on-read` table properties.
-The construct rejects merge-on-read on a v1 table at synth time.
+The construct does not check these properties; use merge-on-read only on a v2 or later table.
 
 ### Can I create an Iceberg v3 table?
 

@@ -19,9 +19,10 @@ import {
     IcebergPartitionTransform,
 } from './iceberg-partition-transform';
 import {
-    IcebergPropertyKeys,
+    FORMAT_VERSION_KEY,
     IcebergDataFormat,
     IcebergFormatVersion,
+    WRITE_FORMAT_DEFAULT_KEY,
 } from './iceberg-table-properties';
 import {
     IcebergNullOrder,
@@ -604,8 +605,8 @@ export function mergeProperties(
         );
     }
     const merged: { [key: string]: string } = {
-        [IcebergPropertyKeys.FORMAT_VERSION]: formatVersion,
-        [IcebergPropertyKeys.WRITE_FORMAT_DEFAULT]: dataFormat,
+        [FORMAT_VERSION_KEY]: formatVersion,
+        [WRITE_FORMAT_DEFAULT_KEY]: dataFormat,
         ...(user ?? {}),
     };
     if (comment !== undefined) {

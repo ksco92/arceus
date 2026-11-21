@@ -3940,21 +3940,13 @@ describe('IcebergTable — rendered values are the validated values', () => {
         [
             'write.format.default',
             'avro',
-            IcebergFormatVersion.V2,
-        ],
-        [
-            'write.delete.mode',
-            'merge-on-read',
-            IcebergFormatVersion.V1,
         ],
         [
             'comment',
             'second',
-            IcebergFormatVersion.V2,
         ],
-    ])('rejects a table property key that is a token resolving to %s', (resolved, value, formatVersion) => {
+    ])('rejects a table property key that is a token resolving to %s', (resolved, value) => {
         expect(() => synthInput({
-            formatVersion,
             comment: 'first',
             tableProperties: {
                 [Lazy.string({
@@ -4168,6 +4160,30 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
         Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
             CatalogId: {
                 Ref: 'Catalog',
+            },
+        });
+    });
+
+    it('renders a CfnParameter table property value as a Ref on a key the construct does not check', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            tableProperties: {
+                'gc.enabled': new CfnParameter(stack, 'P').valueAsString,
+            },
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            OpenTableFormatInput: {
+                IcebergInput: {
+                    IcebergTableInput: {
+                        Properties: {
+                            'gc.enabled': {
+                                Ref: 'P',
+                            },
+                        },
+                    },
+                },
             },
         });
     });
