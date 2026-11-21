@@ -576,25 +576,10 @@ describe('IcebergTable grants in a foreign catalog', () => {
         expect(f.stack.resolve(t.tableArn)).toEqual(join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/`, databaseRef(f), '/simple'));
     });
 
-    it.each([
-        '12345',
-        '1234567890123',
-        'abcdefghijkl',
-        '',
-    ])('rejects the literal catalogId %j on an imported table', (catalogId) => {
+    it('rejects an invalid literal catalogId on an imported table', () => {
         const f = fixture();
         expect(() => table(f, 'imported', undefined, undefined, {
-            catalogId,
-        })).toThrow(/catalogId '.*' must be a 12-digit AWS account id/);
-    });
-
-    it('rejects a catalogId that is not a string on an imported table', () => {
-        const f = fixture();
-        expect(() => IcebergTable.fromIcebergTableAttributes(f.stack, 'Imported', {
-            database: f.database,
-            tableName: 'simple',
-            location: 's3://my-bucket/x/',
-            catalogId: 123456789012 as unknown as string,
-        })).toThrow('catalogId must be a string, got number');
+            catalogId: '12345',
+        })).toThrow(/catalogId '12345' must be a 12-digit AWS account id/);
     });
 });

@@ -1,5 +1,6 @@
 import {
     Token,
+    Tokenization,
 } from 'aws-cdk-lib';
 import {
     CfnTable,
@@ -166,9 +167,19 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
     };
 }
 
+/** The literal text of `value`, with every token removed. */
+function literalText(value: string): string {
+    return Tokenization.reverseString(value).mapTokens({
+        mapToken: () => '',
+    }).join({
+        join: (left, right) => `${left}${right}`,
+    });
+}
+
 /** @internal */
 export function validateTableName(tableName: string): void {
-    if (!Token.isUnresolved(tableName) && !tableName.match(/^[a-z0-9_]+$/)) {
+    const pattern = Token.isUnresolved(tableName) ? /^[a-z0-9_]*$/ : /^[a-z0-9_]+$/;
+    if (!pattern.test(literalText(tableName))) {
         throw new Error(
             `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
@@ -177,8 +188,12 @@ export function validateTableName(tableName: string): void {
 
 /** @internal */
 export function validateCatalogId(catalogId: string | undefined): void {
-    if (catalogId !== undefined && !Token.isUnresolved(catalogId) && !catalogId.match(/^[0-9]{12}$/)) {
-        throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id`);
+    if (catalogId === undefined) {
+        return;
+    }
+    const text = literalText(catalogId);
+    if (Token.isUnresolved(catalogId) ? text !== '' : !/^[0-9]{12}$/.test(text)) {
+        throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id or a single token, not text mixed with a token`);
     }
 }
 

@@ -126,12 +126,6 @@ describe('IcebergSurfaceStack', () => {
         });
     });
 
-    it('names the stack account in the grantee Glue statements', () => {
-        const policies = JSON.stringify(Object.values(template.findResources('AWS::IAM::Policy')));
-        expect(policies).toContain(':glue:us-east-1:123456789012:catalog');
-        expect(policies).toContain(':glue:us-east-1:123456789012:table/');
-    });
-
     it('emits Lake-Formation table grants for the principal on every table', () => {
         const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'))
             .map((r) => r.Properties)

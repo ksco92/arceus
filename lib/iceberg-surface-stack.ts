@@ -69,8 +69,7 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *   - `creation_order_test` — nested columns declared with ids out of
  *     creation order, to read back the ids Glue assigns at CREATE.
  *   - `grants_test` — read by `ReaderRole` (`grantRead`) and written by
- *     `ReadWriterRole` (`grantReadWrite` on an imported handle), both
- *     with `catalogId` set to the stack account.
+ *     `ReadWriterRole` (`grantReadWrite` on an imported handle).
  */
 export class IcebergSurfaceStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergSurfaceStackProps) {
@@ -376,7 +375,6 @@ export class IcebergSurfaceStack extends Stack {
 
         const grantsTable = new IcebergTable(this, 'GrantsTable', {
             database: importedDatabase,
-            catalogId: this.account,
             tableName: 'grants_test',
             formatVersion: IcebergFormatVersion.V2,
             comment: 'Read and written by roles whose table permissions come from the construct grants.',
@@ -451,7 +449,6 @@ export class IcebergSurfaceStack extends Stack {
 
         const importedGrantsTable = IcebergTable.fromIcebergTableAttributes(this, 'ImportedGrantsTable', {
             database: importedDatabase,
-            catalogId: this.account,
             tableName: grantsTable.tableName,
             location: grantsTable.location,
             encryptionKey: dataLakeKey,

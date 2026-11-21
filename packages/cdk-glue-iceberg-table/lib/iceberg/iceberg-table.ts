@@ -81,7 +81,6 @@ export interface IcebergTableProps {
 
     /**
      * Account id of the Glue Data Catalog that holds the table: 12 digits, or a token.
-     * Reaches the table's `CatalogId` and the catalog, database and table ARNs the grants name.
      * @default - the stack's account
      */
     readonly catalogId?: string;
@@ -206,9 +205,6 @@ export class IcebergTable extends Resource implements IIcebergTable {
     /** Table name as it appears in Glue / Athena. */
     public readonly tableName: string;
 
-    /** Account id of the Glue Data Catalog holding the table, after defaulting. */
-    public readonly catalogId: string;
-
     /** Glue database holding the table. */
     public readonly database: IDatabase;
 
@@ -239,7 +235,6 @@ export class IcebergTable extends Resource implements IIcebergTable {
 
         this.database = props.database;
         this.tableName = props.tableName;
-        this.catalogId = props.catalogId ?? Stack.of(this).account;
         this.location = normalizeLocation(props.location);
         this.encryptionKey = props.encryptionKey;
         this.dataFormat = props.dataFormat ?? IcebergDataFormat.PARQUET;
@@ -273,7 +268,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         }
 
         this.resource = new CfnTable(this, 'Resource', {
-            catalogId: this.catalogId,
+            catalogId: props.catalogId ?? Stack.of(this).account,
             databaseName: props.database.databaseName,
             name: this.tableName,
             openTableFormatInput: {
