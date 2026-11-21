@@ -129,8 +129,9 @@ new IcebergTable(this, 'OrdersTable', {
 ### Python
 
 The same table in Python — the API mirrors TypeScript with
-`snake_case` props and `PascalCase` types, and nested values such as a
-column or a partition field are the typed classes, not dicts:
+`snake_case` props and `PascalCase` types; nested values are passed as the
+typed classes with `snake_case` arguments, and a plain dict keeps the
+TypeScript key spelling:
 
 ```python
 from aws_cdk.aws_s3 import Bucket
@@ -550,6 +551,7 @@ The same table in Python:
 
 ```python
 from cdk_glue_iceberg_table import (
+    IcebergColumn,
     IcebergEdgeAlgorithm,
     IcebergFormatVersion,
     IcebergTable,
@@ -561,13 +563,13 @@ IcebergTable(self, "Events",
     table_name="events",
     location=f"s3://{bucket.bucket_name}/analytics/events/",
     columns=[
-        {"name": "occurred_at", "type": IcebergType.TIMESTAMP_NS, "id": 1},
-        {"name": "payload", "type": IcebergType.VARIANT, "id": 2},
-        {
-            "name": "origin",
-            "type": IcebergType.geography("OGC:CRS84", IcebergEdgeAlgorithm.SPHERICAL),
-            "id": 3,
-        },
+        IcebergColumn(name="occurred_at", type=IcebergType.TIMESTAMP_NS, id=1),
+        IcebergColumn(name="payload", type=IcebergType.VARIANT, id=2),
+        IcebergColumn(
+            name="origin",
+            type=IcebergType.geography("OGC:CRS84", IcebergEdgeAlgorithm.SPHERICAL),
+            id=3,
+        ),
     ],
     format_version=IcebergFormatVersion.V3,
 )

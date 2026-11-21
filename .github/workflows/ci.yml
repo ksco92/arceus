@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Install the built wheel and synthesize a table with it
+      - name: Install the built wheel and run the README Python examples
         run: |
           python -m venv "$RUNNER_TEMP/smoke"
           "$RUNNER_TEMP/smoke/bin/pip" install packages/cdk-glue-iceberg-table/dist/jsii/python/*.whl
