@@ -18,11 +18,19 @@ export {
     IcebergPropertyKeys,
 } from './iceberg-table-properties';
 export {
-    IcebergColumn,
     IcebergNullOrder,
-    IcebergPartitionField,
     IcebergSortDirection,
+} from './iceberg-sort-order';
+export {
+    IcebergColumn,
+} from './iceberg-column';
+export {
+    IcebergPartitionField,
+} from './iceberg-partition-field';
+export {
     IcebergSortField,
+} from './iceberg-sort-field';
+export {
     IcebergTable,
     IcebergTableAttributes,
     IcebergTableProps,

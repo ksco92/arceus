@@ -23,11 +23,19 @@ import {
     IcebergFormatVersion,
 } from './iceberg-table-properties';
 import {
-    IcebergColumn,
     IcebergNullOrder,
-    IcebergPartitionField,
     IcebergSortDirection,
+} from './iceberg-sort-order';
+import {
+    IcebergColumn,
+} from './iceberg-column';
+import {
+    IcebergPartitionField,
+} from './iceberg-partition-field';
+import {
     IcebergSortField,
+} from './iceberg-sort-field';
+import {
     IcebergTableProps,
 } from './iceberg-table';
 
