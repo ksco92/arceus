@@ -4,4 +4,4 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
-- (patch) Say in the README that GitHub shows `main`, which can be ahead of the latest release, and link CHANGELOG.md.
+- (patch) The README now says that GitHub shows `main`, which can be ahead of the latest release, and links this changelog for what is unreleased.

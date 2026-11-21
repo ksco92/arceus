@@ -148,32 +148,41 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 ## Changelog lines and releases
 
-Leave `version` alone: a release pull request sets it. If your change
-touches a file the package publishes (`packages/cdk-glue-iceberg-table/lib/`,
-the package `README.md` or `LICENSE`, or the package `package.json`
-other than its `devDependencies`), add one line under `## Unreleased` in
-[CHANGELOG.md](CHANGELOG.md):
+Leave `version` alone: a release pull request sets it. A file counts as
+published when it is under `packages/cdk-glue-iceberg-table/lib/`, or is
+the package's `README.md`, `LICENSE` or `package.json` (an edit confined
+to `devDependencies` does not count). If your change touches one, add
+one line under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md), tagged
+with the level of the change:
 
 ```
 - (patch) Describe the change in a sentence a user of the package can act on
 ```
 
-Use `(patch)`, `(minor)` or `(breaking)`; [CLAUDE.md](CLAUDE.md) says
-which fits. A `(breaking)` line also needs its upgrade note under
-`## Unreleased` in [UPGRADING.md](UPGRADING.md). The `release-policy`
-job in `ci.yml` fails a pull request that changes a published file with
-no line, or whose lines are not of that form. The maintainer opens
-release pull requests; they turn `## Unreleased` in `CHANGELOG.md` into
-the new version's section, and do the same in `UPGRADING.md` when notes
-sit under it.
+- `(patch)`: a bug fix, a doc-only change to a published file, or a refactor that leaves the public API alone.
+- `(minor)`: an additive feature that does not break existing API.
+- `(breaking)`: a change that breaks existing API. It also needs its upgrade note under `## Unreleased` in [UPGRADING.md](UPGRADING.md).
+
+The `release-policy` job in `ci.yml` fails a pull request that changes a
+published file with no line, or whose lines are not of that form. Run it
+locally against the point your branch left `main`:
+
+```bash
+node .github/scripts/release-policy.js "$(git merge-base origin/main HEAD)" HEAD
+```
+
+The maintainer opens release pull requests, and merging one is what
+publishes to npm and PyPI; [CLAUDE.md](CLAUDE.md) says what a release
+edits and what follows it.
 
 ## Conditions for merging a pull request
 
 A change goes to `main` through a pull request. The maintainer applies these conditions at merge; branch protection does not enforce them today.
 
 - The `ci.yml` jobs pass: `release-policy`, `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
-- A PR that changes the published package adds a changelog line under `## Unreleased` and leaves `version` alone.
-- A breaking change also adds a note to `UPGRADING.md` under `## Unreleased`.
+- A PR other than a release that changes the published package adds a changelog line under `## Unreleased` and leaves `version` alone.
+- A breaking change in such a PR also adds a note to `UPGRADING.md` under `## Unreleased`.
+- A release PR passes the same `release-policy` job; [CLAUDE.md](CLAUDE.md) says what it edits.
 - The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.
 - `README.md` and `packages/cdk-glue-iceberg-table/README.md` stay byte-identical.
 

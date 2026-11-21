@@ -59,8 +59,10 @@ and the lockfile (`npm install cdk-glue-iceberg-table@<version>
 surface-anchor test only catches a rename when the lock pin matches the
 version being reviewed, so a stale pin silently weakens the guarantee.
 
-A fix to an older version is made on a branch cut from that version's
-tag.
+Only the latest release line is maintained. If an older version ever
+needs a fix, it is made on a branch cut from that version's tag, and
+`publish.yml` is never dispatched from that branch: it publishes
+whatever version it is given as npm's `latest`.
 
 ## No AI authorship signals
 
