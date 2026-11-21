@@ -18,6 +18,7 @@ import {
     IcebergPartitionField,
 } from './iceberg-table';
 import {
+    creationOrderFieldIds,
     renderPartitionSpec,
     renderSchema,
     snapshotSchema,
@@ -240,8 +241,9 @@ export class IcebergSchemaHistory {
 
 /**
  * Throw if the validated definition is unsafe against the record of `tableName` in the
- * history file at `file`, resolved against the working directory, and attach it to
- * `scope` for `updateFromCloudAssembly`.
+ * history file at `file`, resolved against the working directory, or, when the file has
+ * no record of the table, if its ids are not the ones Glue assigns at creation. Attach
+ * the definition to `scope` for `updateFromCloudAssembly`.
  *
  * @internal
  */
@@ -262,11 +264,33 @@ export function checkSchemaHistory(
                 `table '${tableName}' is not a safe change from its record in ${resolved}:\n${formatViolations(violations)}`,
             );
         }
+    } else {
+        const differing = unassignedIds(columns);
+        if (differing.length > 0) {
+            throw new Error(
+                `table '${tableName}' has no record in ${resolved}, so it is a new table and Glue `
+                + 'assigns its field ids in creation order, ignoring the declared ones. '
+                + `These fields declare other ids:\n${differing.join('\n')}\n`
+                + 'Declare the ids Glue assigns (IcebergTable.creationOrderFieldIds(columns) returns them). '
+                + 'For a table that already exists in Glue, see "Adopting a table that exists in Glue" in the README.',
+            );
+        }
     }
     scope.node.addMetadata(METADATA_TYPE, {
         file: resolved,
         table: current,
     });
+}
+
+function unassignedIds(columns: IcebergColumn[]): string[] {
+    const assigned = creationOrderFieldIds(columns);
+    const lines: string[] = [];
+    walkFields(columns, (fieldPath, id) => {
+        if (id !== assigned[fieldPath]) {
+            lines.push(`  - '${fieldPath}' declares id ${id}; Glue assigns id ${assigned[fieldPath]}`);
+        }
+    });
+    return lines;
 }
 
 function formatViolations(violations: IcebergSchemaViolation[]): string {
