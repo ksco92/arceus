@@ -167,7 +167,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
     };
 }
 
-/** The literal text of `value`, with every token removed. */
+/** The literal text of a string that contains a token, with every token removed. */
 function literalText(value: string): string {
     return Tokenization.reverseString(value).mapTokens({
         mapToken: () => '',
@@ -178,8 +178,9 @@ function literalText(value: string): string {
 
 /** @internal */
 export function validateTableName(tableName: string): void {
-    const pattern = Token.isUnresolved(tableName) ? /^[a-z0-9_]*$/ : /^[a-z0-9_]+$/;
-    if (!pattern.test(literalText(tableName))) {
+    const tokenized = Token.isUnresolved(tableName);
+    const pattern = tokenized ? /^[a-z0-9_]*$/ : /^[a-z0-9_]+$/;
+    if (!pattern.test(tokenized ? literalText(tableName) : tableName)) {
         throw new Error(
             `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
@@ -191,8 +192,10 @@ export function validateCatalogId(catalogId: string | undefined): void {
     if (catalogId === undefined) {
         return;
     }
-    const text = literalText(catalogId);
-    if (Token.isUnresolved(catalogId) ? text !== '' : !/^[0-9]{12}$/.test(text)) {
+    const valid = Token.isUnresolved(catalogId)
+        ? Tokenization.reverseString(catalogId).length === 1
+        : /^[0-9]{12}$/.test(catalogId);
+    if (!valid) {
         throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id or a single token, not text mixed with a token`);
     }
 }

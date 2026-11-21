@@ -75,12 +75,13 @@ export interface IcebergTableProps {
 
     /**
      * Table name (lower-case, no spaces — Glue and Athena will fold it). A literal is
-     * checked; a token (a `CfnParameter`, a cross-stack reference) is used as given.
+     * checked, and so is the literal text of a string that mixes text with a token (a
+     * `CfnParameter`, a cross-stack reference); a token itself is used as given.
      */
     readonly tableName: string;
 
     /**
-     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a token.
+     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a single token.
      * @default - the stack's account
      */
     readonly catalogId?: string;
@@ -393,7 +394,7 @@ export interface IcebergTableAttributes {
     readonly location: string;
 
     /**
-     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a token.
+     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a single token.
      * @default - the stack's account
      */
     readonly catalogId?: string;

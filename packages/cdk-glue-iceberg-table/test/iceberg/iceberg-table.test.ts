@@ -4264,9 +4264,12 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
             })).toThrow(/must contain only lowercase letters, digits, and underscores/);
         });
 
-        it('rejects an invalid literal', () => {
+        it.each([
+            'Bad-Name',
+            '',
+        ])('rejects the literal %j', (tableName) => {
             expect(() => build(path, {
-                tableName: 'Bad-Name',
+                tableName,
             })).toThrow(/must contain only lowercase letters, digits, and underscores/);
         });
     });
@@ -4311,6 +4314,12 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
             })).toThrow(/not text mixed with a token/);
             expect(() => build(path, {
                 catalogId: `${token()}${text}`,
+            })).toThrow(/not text mixed with a token/);
+        });
+
+        it('rejects two adjacent tokens', () => {
+            expect(() => build(path, {
+                catalogId: `${token()}${token()}`,
             })).toThrow(/not text mixed with a token/);
         });
 
