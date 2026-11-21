@@ -3,7 +3,8 @@
 This repo develops [`cdk-glue-iceberg-table`](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 in an npm-workspace monorepo. Consumer documentation lives in the
 [README](README.md), with breaking changes by version in
-[UPGRADING.md](UPGRADING.md). This file covers the monorepo layout, how to
+[UPGRADING.md](UPGRADING.md) and unreleased changes in
+[CHANGELOG.md](CHANGELOG.md). This file covers the monorepo layout, how to
 work in it, the CI / publish / integ-test gates, and the CDK demo app.
 
 The repo has two parts:
@@ -99,7 +100,7 @@ arceus/
 ├── jest.config.js                      # Demo stack tests
 ├── eslint.config.js
 └── .github/workflows/
-    ├── ci.yml                          # Lint + test + jsii build + Python package + wheel smoke + pack + e2e-consumer + packed-consumer + peer-floor
+    ├── ci.yml                          # Lint + test + jsii build + Python package + wheel smoke + pack + e2e-consumer + packed-consumer + peer-floor + release-policy
     ├── publish.yml                     # Trusted-publish the package to npm + PyPI on version bump
     ├── integ-gate.yml                  # Posts the integ-gate commit status on each PR to main
     └── integ-test.yml                  # Real-AWS Spark smoke + evolution/DML/surface tests (gated)
@@ -140,22 +141,51 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 ## How the CI / publish / integ-test gates fit together
 
-- **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, installs the wheel into a virtual environment and runs the README's Python examples against it with `test/python-smoke/smoke.py`, runs `npm pack` on the package, synths the `e2e-consumer` app against the pinned published npm version, installs the PR's own `npm pack` tarball into the `packed-consumer` fixture and synthesizes it, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
-- **`publish.yml`** runs on push to `main` and on manual dispatch. A `check` job compares the package version with npm and PyPI; when either differs, a `build` job with read-only permissions lints, tests, builds the npm tarball and the Python distribution, and uploads both as artifacts. `publish-npm` (npm OIDC trusted publishing, `--provenance`) and `publish-pypi` (PyPI OIDC trusted publishing) each run only when their own registry's version differs; only these two jobs hold `id-token: write`. A PR that forgets to bump runs `check` alone and publishes nothing, and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
+- **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, installs the wheel into a virtual environment and runs the README's Python examples against it with `test/python-smoke/smoke.py`, runs `npm pack` on the package, runs the `release-policy` check described under "Changelog lines and releases", synths the `e2e-consumer` app against the pinned published npm version, installs the PR's own `npm pack` tarball into the `packed-consumer` fixture and synthesizes it, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
+- **`publish.yml`** runs on push to `main` and on manual dispatch. A `check` job compares the package version with npm and PyPI; when either differs, a `build` job with read-only permissions lints, tests, builds the npm tarball and the Python distribution, and uploads both as artifacts. `publish-npm` (npm OIDC trusted publishing, `--provenance`) and `publish-pypi` (PyPI OIDC trusted publishing) each run only when their own registry's version differs; only these two jobs hold `id-token: write`. A merge that leaves `version` alone runs `check` alone and publishes nothing, and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
 - **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (twelve `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, a property-only update, a sort order change and a rolled-back deploy, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and reads and writes through Spark and Athena as roles holding `grantRead` and `grantReadWrite`), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. The paths that require a green run before merging are listed in `.github/integ-trigger-set.txt` (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs").
 - **`integ-gate.yml`** posts the `integ-gate` commit status on each PR to `main`; see [docs/integ-test-setup.md](docs/integ-test-setup.md).
+
+## Changelog lines and releases
+
+Leave `version` alone: a release pull request sets it. A file counts as
+published when it is under `packages/cdk-glue-iceberg-table/lib/`, or is
+the package's `README.md`, `LICENSE` or `package.json` (an edit confined
+to `devDependencies` does not count). If your change touches one, add
+one line under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md), tagged
+with the level of the change:
+
+```
+- (patch) Describe the change in a sentence a user of the package can act on
+```
+
+- `(patch)`: a bug fix, a doc-only change to a published file, or a refactor that leaves the public API alone.
+- `(minor)`: an additive feature that does not break existing API.
+- `(breaking)`: a change that breaks existing API. It also needs its upgrade note under `## Unreleased` in [UPGRADING.md](UPGRADING.md).
+
+The `release-policy` job in `ci.yml` fails a pull request that changes a
+published file with no line, or whose lines are not of that form. Run it
+locally against the point your branch left `main`:
+
+```bash
+node .github/scripts/release-policy.js "$(git merge-base origin/main HEAD)" HEAD
+```
+
+The maintainer opens release pull requests, and merging one is what
+publishes to npm and PyPI; [CLAUDE.md](CLAUDE.md) says what a release
+edits and what follows it.
 
 ## Conditions for merging a pull request
 
 A change goes to `main` through a pull request. The maintainer applies these conditions at merge; branch protection does not enforce them today.
 
-- The `ci.yml` jobs pass: `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
-- A PR that changes the published package bumps `version` in `packages/cdk-glue-iceberg-table/package.json`; [CLAUDE.md](CLAUDE.md) sets the level.
-- A breaking change also adds a note to `UPGRADING.md` under the new version.
+- The `ci.yml` jobs pass: `release-policy`, `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
+- A PR other than a release that changes the published package adds a changelog line under `## Unreleased` and leaves `version` alone.
+- A breaking change in such a PR also adds a note to `UPGRADING.md` under `## Unreleased`.
 - The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.
 - `README.md` and `packages/cdk-glue-iceberg-table/README.md` stay byte-identical.
 
-After a version bump publishes, a follow-up PR moves `e2e-consumer` to the new version; [CLAUDE.md](CLAUDE.md) gives the steps.
+After a release publishes, a follow-up PR moves `e2e-consumer` to the new version; [CLAUDE.md](CLAUDE.md) gives the steps.
 
 ## Demo app: prerequisites
 

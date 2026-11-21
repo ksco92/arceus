@@ -3,29 +3,66 @@
 These rules apply to every contribution to this repo, including those
 written with AI assistance.
 
-## Version bumping
+## Releases
 
-Every PR merged to `main` that changes the published package must
-include a bump to the `version` field in
-`packages/cdk-glue-iceberg-table/package.json` (the published
-manifest — the monorepo root `package.json` is private and
-unpublished, so its version is not released). Pick the level per
+A pull request records what it changes in `CHANGELOG.md`; a release is
+a pull request of its own that sets the version. Only a release edits
+`version` in `packages/cdk-glue-iceberg-table/package.json` (the
+published manifest — the monorepo root `package.json` is private and
+unpublished, so its version is not released).
+
+### Changelog lines
+
+A pull request that changes a published file adds one line under
+`## Unreleased` in `CHANGELOG.md`. The published files are those the
+manifest's `files` field ships (built from
+`packages/cdk-glue-iceberg-table/lib/`), the package `README.md`, and
+the manifest apart from its `devDependencies`. A line is
+`- (patch) …`, `- (minor) …` or `- (breaking) …`, the level chosen per
 semver:
 
-- **patch** (`0.1.0` → `0.1.1`) — bug fixes, doc-only changes, internal
-  refactors that don't change the public API.
-- **minor** (`0.1.0` → `0.2.0`) — additive features that don't break
-  existing API.
-- **major** (`1.0.0` → `2.0.0`) — breaking changes after the package
-  has reached `1.0.0`. While the package is still pre-1.0 (the
-  current state), per semver it is acceptable to bump *minor* on
-  breaking changes; reserve the `0.x` → `1.0.0` jump for the
-  "graduate to stable" milestone.
+- **patch** — bug fixes, doc-only changes, internal refactors that
+  don't change the public API.
+- **minor** — additive features that don't break existing API.
+- **breaking** — changes that break existing API.
+
+A `(breaking)` line also adds its upgrade note under `## Unreleased` in
+`UPGRADING.md`.
+
+### Release pull requests
+
+A release pull request is opened when the owner asks, and at once for a
+fix to a wrong-data read, a failing deploy or a security defect. It
+edits only `version` in the package manifest, the files the previous
+version bump touched for the version alone (`package-lock.json`), and
+the `## Unreleased` heading of `CHANGELOG.md`, which becomes
+`## <version>` with a new empty `## Unreleased` above it. The
+`## Unreleased` heading of `UPGRADING.md` changes the same way only when
+notes sit under it; a release with no breaking change leaves
+`UPGRADING.md` untouched.
+
+The version is a minor bump when any pending line is `(minor)` or
+`(breaking)` and a patch bump otherwise. While the package is pre-1.0
+(the current state), per semver it is acceptable for a breaking change
+to bump *minor*; the `0.x` → `1.0.0` jump is the "graduate to stable"
+milestone and never happens without the owner's say.
 
 `.github/workflows/publish.yml` only publishes when the version on
-`main` is newer than the version on the npm registry. A PR that
-forgets to bump won't error — it just becomes a no-op on merge — but
-the policy is "always bump".
+`main` differs from the version on the npm registry. After it succeeds
+on both registries, the release's merge commit is tagged `v<version>`
+and a GitHub release is created from that changelog section. Then
+`e2e-consumer/`, which consumes the **published** npm package, moves to
+the new version: while the package is pre-1.0 a `^0.y.z` range does not
+cross a minor, so bump both the range in `e2e-consumer/package.json`
+and the lockfile (`npm install cdk-glue-iceberg-table@<version>
+--package-lock-only` in `e2e-consumer/`), in a small follow-up PR. The
+surface-anchor test only catches a rename when the lock pin matches the
+version being reviewed, so a stale pin silently weakens the guarantee.
+
+Only the latest release line is maintained. If an older version ever
+needs a fix, it is made on a branch cut from that version's tag, and
+`publish.yml` is never dispatched from that branch: it publishes
+whatever version it is given as npm's `latest`.
 
 ## No AI authorship signals
 
@@ -93,7 +130,7 @@ Exemption list (no integ-test required):
 - `test/` and `packages/cdk-glue-iceberg-table/test/` (unit tests,
   exercised by `npm test` in `ci.yml`).
 - `packages/cdk-glue-iceberg-table/package.json` if the only change is
-  the `version` bump.
+  the `version` bump of a release.
 
 When in doubt, run it.
 
@@ -106,17 +143,6 @@ the commit it ran on; a failed or cancelled one posts `failure`. A new
 commit has no status until the workflow posts one. The one manual step:
 the owner marks the status check `integ-gate` as required in branch
 protection for `main`.
-
-`e2e-consumer/` consumes the **published** npm package, so every
-version bump in `packages/cdk-glue-iceberg-table/package.json` should
-be followed by bumping `e2e-consumer/package-lock.json` to the same
-version once the publish workflow completes. While the package is
-pre-1.0 a `^0.y.z` range does not cross a minor, so bump both the range
-in `e2e-consumer/package.json` and the lockfile (`npm install
-cdk-glue-iceberg-table@<version> --package-lock-only` in
-`e2e-consumer/`), in a small follow-up PR. The surface-anchor
-test only catches a rename when the lock pin matches the version
-being reviewed, so a stale pin silently weakens the guarantee.
 
 See `docs/integ-test-setup.md` for the AWS-side prerequisites
 (`ArceusStack` deployed, account `cdk bootstrap`ped, IAM role +
