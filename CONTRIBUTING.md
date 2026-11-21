@@ -143,6 +143,17 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 - **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (twelve `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, a property-only update, a sort order change and a rolled-back deploy, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and reads and writes through Spark and Athena as roles holding `grantRead` and `grantReadWrite`), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. The paths that require a green run before merging are listed in `.github/integ-trigger-set.txt` (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs").
 - **`integ-gate.yml`** posts the `integ-gate` commit status on each PR to `main`; see [docs/integ-test-setup.md](docs/integ-test-setup.md).
 
+## Conditions for merging a pull request
+
+A change goes to `main` through a pull request. The maintainer applies these conditions at merge; branch protection does not enforce them today.
+
+- The `ci.yml` jobs pass: `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
+- A PR that changes the published package bumps `version` in `packages/cdk-glue-iceberg-table/package.json`; [CLAUDE.md](CLAUDE.md) sets the level.
+- The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.
+- `README.md` and `packages/cdk-glue-iceberg-table/README.md` stay byte-identical.
+
+After a version bump publishes, a follow-up PR moves `e2e-consumer` to the new version; [CLAUDE.md](CLAUDE.md) gives the steps.
+
 ## Demo app: prerequisites
 
 Before running the quickstart you need:
