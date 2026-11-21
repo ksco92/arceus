@@ -45,6 +45,8 @@ header() { printf '\n=== %s ===\n' "$*"; }
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
 # shellcheck source=scripts/athena.sh
 source "$(dirname "${BASH_SOURCE[0]}")/athena.sh"
+# shellcheck source=scripts/metadata.sh
+source "$(dirname "${BASH_SOURCE[0]}")/metadata.sh"
 
 cleanup_table_prefix() {
     local table="$1"
@@ -53,23 +55,9 @@ cleanup_table_prefix() {
     aws s3 rm "s3://${bucket}/${DATABASE}/${table}/" --recursive --region "$AWS_REGION" 2>/dev/null || true
 }
 
-read_metadata_json() {
-    local table="$1"
-    local meta_loc
-    meta_loc=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "$table" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
-    aws s3 cp "$meta_loc" - --region "$AWS_REGION" 2>/dev/null
-}
-
-FIELD_IDS="$(dirname "${BASH_SOURCE[0]}")/field_ids.py"
-
 assert_stored_ids() {
     local table="$1" expected="$2" stored
-    stored=$(read_metadata_json "$table" | python3 "$FIELD_IDS")
+    stored=$(fetch_metadata "$table" | field_ids)
     if [ "$stored" = "$expected" ]; then
         green "  ${table} ids ✓ ($stored)"
     else
@@ -128,7 +116,7 @@ yellow "  ReadWriterRole = ${READ_WRITER_ROLE_ARN}"
 # Verify 1 — every partition transform rendered correctly.
 
 header "VERIFY 1 — transforms_test metadata.json has all 7 partition fields"
-META=$(read_metadata_json "transforms_test")
+META=$(fetch_metadata "transforms_test")
 EXPECTED_TRANSFORMS="year month day hour bucket[8] truncate[4] identity"
 for transform in $EXPECTED_TRANSFORMS; do
     if echo "$META" | python3 -c "
@@ -150,7 +138,7 @@ done
 # Verify 2 — sortOrder rendered correctly.
 
 header "VERIFY 2 — sorted_test metadata.json has the multi-field sort order"
-META=$(read_metadata_json "sorted_test")
+META=$(fetch_metadata "sorted_test")
 echo "$META" | python3 -c "
 import json, sys
 m = json.load(sys.stdin)

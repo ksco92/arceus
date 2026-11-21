@@ -42,8 +42,9 @@ STACK="IcebergEvolutionStack"
 source "$(dirname "${BASH_SOURCE[0]}")/spark/spark-env.sh"
 # shellcheck source=scripts/athena.sh
 source "$(dirname "${BASH_SOURCE[0]}")/athena.sh"
+# shellcheck source=scripts/metadata.sh
+source "$(dirname "${BASH_SOURCE[0]}")/metadata.sh"
 VERIFY_PROGRAM="$(dirname "${BASH_SOURCE[0]}")/spark/verify_evolution.py"
-FIELD_IDS="$(dirname "${BASH_SOURCE[0]}")/field_ids.py"
 
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -51,14 +52,8 @@ yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 header() { printf '\n=== %s ===\n' "$*"; }
 
 table_column_names() {
-    META_LOC=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "${1:-$TABLE}" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
     local meta
-    meta=$(aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null)
+    meta=$(fetch_metadata "${1:-$TABLE}")
     echo "$meta" | python3 -c "
 import json, sys
 m = json.load(sys.stdin)
@@ -79,7 +74,7 @@ print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fi
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
 print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
-    echo "nested-ids $(echo "$meta" | python3 "$FIELD_IDS")"
+    echo "nested-ids $(echo "$meta" | field_ids)"
 }
 
 assert_same() {
@@ -101,55 +96,6 @@ assert_columns() {
 
 assert_partitions() {
     assert_same partitions "$1" "$(table_column_names | grep ^partition-spec-fields | cut -d' ' -f2)"
-}
-
-# Issue #43 regression check. Walks the FULL partition-spec history in
-# the current metadata JSON and enforces the two invariants a partition
-# evolution must uphold for strict engines (Spark, Trino):
-#   1. no partition field-id is bound to two different
-#      (source-id, transform) pairs across specs — the exact corruption
-#      behind "ValidationException: Conflicting partition fields";
-#   2. last-partition-id has advanced to the highest field-id in any
-#      spec, so a later engine-side evolution allocates from the right
-#      counter instead of colliding.
-assert_partition_history() {
-    META_LOC=$(aws glue get-table \
-        --database-name "$DATABASE" \
-        --name "$TABLE" \
-        --region "$AWS_REGION" \
-        --query 'Table.Parameters.metadata_location' \
-        --output text)
-    if aws s3 cp "$META_LOC" - --region "$AWS_REGION" 2>/dev/null \
-        | python3 -c "
-import json, sys
-m = json.load(sys.stdin)
-specs = m['partition-specs']
-bindings = {}
-conflicts = []
-max_field_id = 0
-for spec in specs:
-    for f in spec['fields']:
-        binding = (f['source-id'], f['transform'])
-        max_field_id = max(max_field_id, f['field-id'])
-        previous = bindings.setdefault(f['field-id'], binding)
-        if previous != binding:
-            conflicts.append((f['field-id'], previous, binding))
-print('spec-count', len(specs))
-print('partition-field-ids', ','.join(str(i) for i in sorted(bindings)))
-print('last-partition-id', m['last-partition-id'])
-if conflicts:
-    for field_id, a, b in conflicts:
-        print(f'CONFLICT: field-id {field_id} bound to both {a} and {b}')
-    sys.exit(1)
-if m['last-partition-id'] < max_field_id:
-    print(f'STALE COUNTER: last-partition-id {m[\"last-partition-id\"]} < max field-id {max_field_id}')
-    sys.exit(1)
-"; then
-        green "  partition-spec history consistent ✓"
-    else
-        red   "  partition-spec history violates Iceberg invariants ✗"
-        return 1
-    fi
 }
 
 assert_meta() {
@@ -316,7 +262,8 @@ deploy_step 5
 header "VERIFY step 5 (CHANGE partition transform day -> month)"
 assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
 assert_partitions "signed_up_at_month"
-assert_partition_history
+META=$(fetch_metadata "$TABLE")
+assert_partition_history <<< "$META"
 
 header "SPARK step 5 (INSERT under the month spec, rows queryable)"
 spark_submit "$VERIFY_PROGRAM" --phase 5
