@@ -22,6 +22,7 @@ import type {
     IcebergSortField,
     IcebergStructFieldDefinition,
     IcebergTableAttributes,
+    IcebergTableGrantOptions,
     IcebergTableProps,
     IcebergTypeOptions,
     IIcebergTable,
@@ -33,7 +34,6 @@ import {
     IcebergNullOrder,
     IcebergPartitionTransform,
     IcebergPartitionTransformKind,
-    IcebergPropertyKeys,
     IcebergSortDirection,
     IcebergTable,
     IcebergType,
@@ -146,22 +146,7 @@ const enums = [
 
 const fromAttributes = IcebergTable.fromIcebergTableAttributes;
 
-const propertyKeys = [
-    IcebergPropertyKeys.FORMAT_VERSION,
-    IcebergPropertyKeys.WRITE_FORMAT_DEFAULT,
-    IcebergPropertyKeys.WRITE_PARQUET_COMPRESSION_CODEC,
-    IcebergPropertyKeys.WRITE_ORC_COMPRESSION_CODEC,
-    IcebergPropertyKeys.WRITE_AVRO_COMPRESSION_CODEC,
-    IcebergPropertyKeys.WRITE_TARGET_FILE_SIZE_BYTES,
-    IcebergPropertyKeys.WRITE_DELETE_MODE,
-    IcebergPropertyKeys.WRITE_UPDATE_MODE,
-    IcebergPropertyKeys.WRITE_MERGE_MODE,
-    IcebergPropertyKeys.WRITE_DISTRIBUTION_MODE,
-    IcebergPropertyKeys.GC_ENABLED,
-    IcebergPropertyKeys.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS,
-    IcebergPropertyKeys.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP,
-    IcebergPropertyKeys.COMMIT_RETRY_NUM_RETRIES,
-];
+const creationOrderFieldIds = IcebergTable.creationOrderFieldIds;
 
 // Type-only imports must be referenced via a value position to
 // survive `tsc` tree-shaking. A throwaway `null as unknown as T`
@@ -175,6 +160,7 @@ const typeAnchors: Array<unknown> = [
     null as unknown as IcebergSortField,
     null as unknown as IcebergStructFieldDefinition,
     null as unknown as IcebergTableAttributes,
+    null as unknown as IcebergTableGrantOptions,
     null as unknown as IcebergTableProps,
     null as unknown as IcebergTypeOptions,
     null as unknown as IIcebergTable,
@@ -186,6 +172,6 @@ export const SURFACE_ANCHORS = {
     transforms,
     enums,
     fromAttributes,
-    propertyKeys,
+    creationOrderFieldIds,
     typeAnchors,
 };
