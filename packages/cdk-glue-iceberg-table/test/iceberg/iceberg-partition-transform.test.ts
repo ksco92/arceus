@@ -110,6 +110,17 @@ describe('IcebergPartitionTransform — source type validation', () => {
         expect(() => IcebergPartitionTransform.HOUR._validateSourceType('c', IcebergType.STRING)).toThrow(/timestamp\/timestamptz/);
     });
 
+    it('names the legal source types with the article that matches the first one', () => {
+        expect(() => IcebergPartitionTransform.bucket(8)._validateSourceType('c', IcebergType.BOOLEAN)).toThrow(
+            "partition transform 'bucket[8]' on column 'c' requires an "
+            + 'int/long/decimal/date/time/timestamp/timestamptz/timestamp_ns/timestamptz_ns/string/uuid/fixed/binary column',
+        );
+        expect(() => IcebergPartitionTransform.YEAR._validateSourceType('c', IcebergType.BOOLEAN)).toThrow(
+            "partition transform 'year' on column 'c' requires a "
+            + 'date/timestamp/timestamptz/timestamp_ns/timestamptz_ns column',
+        );
+    });
+
     it.each([
         IcebergType.INT,
         IcebergType.LONG,

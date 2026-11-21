@@ -53,19 +53,22 @@ const MINIMAL_COLUMNS = [
     },
 ];
 
+const props = (database: Database, overrides: Partial<IcebergTableProps> = {}): IcebergTableProps => ({
+    database,
+    tableName: 'simple',
+    formatVersion: IcebergFormatVersion.V2,
+    columns: MINIMAL_COLUMNS,
+    location: 's3://my-bucket/simple/',
+    ...overrides,
+});
+
 describe('IcebergTable — happy path', () => {
     it('emits an AWS::Glue::Table with the openTableFormatInput shape (no tableInput)', () => {
         const {
             stack, database,
         } = makeStack();
 
-        new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        new IcebergTable(stack, 'Tbl', props(database));
 
         const template = Template.fromStack(stack);
         template.hasResourceProperties('AWS::Glue::Table', {
@@ -104,13 +107,7 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        const table = new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        const table = new IcebergTable(stack, 'Tbl', props(database));
         expect(table.dataFormat).toBe(IcebergDataFormat.PARQUET);
         expect(table.formatVersion).toBe(IcebergFormatVersion.V2);
     });
@@ -514,14 +511,9 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
+        new IcebergTable(stack, 'Tbl', props(database, {
             comment: 'demo comment',
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        }));
         const template = Template.fromStack(stack);
         template.hasResourceProperties('AWS::Glue::Table', {
             OpenTableFormatInput: {
@@ -560,13 +552,7 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        new IcebergTable(stack, 'Tbl', props(database));
         const template = Template.fromStack(stack);
         template.hasResource('AWS::Glue::Table', {
             DeletionPolicy: 'Retain',
@@ -578,14 +564,9 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        new IcebergTable(stack, 'Tbl', props(database, {
             removalPolicy: RemovalPolicy.DESTROY,
-        });
+        }));
         const template = Template.fromStack(stack);
         template.hasResource('AWS::Glue::Table', {
             DeletionPolicy: 'Delete',
@@ -611,13 +592,7 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        const table = new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        const table = new IcebergTable(stack, 'Tbl', props(database));
         expect(stack.resolve(table.tableArn)).toEqual({
             'Fn::Join': [
                 '',
@@ -654,13 +629,7 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        const table = new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        const table = new IcebergTable(stack, 'Tbl', props(database));
         expect(table.resource).toBeDefined();
         expect(table.node.defaultChild).toBe(table.resource);
     });
@@ -669,19 +638,31 @@ describe('IcebergTable — happy path', () => {
         const {
             stack, database,
         } = makeStack();
-        new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        });
+        new IcebergTable(stack, 'Tbl', props(database));
         const template = Template.fromStack(stack);
         template.hasResourceProperties('AWS::Glue::Table', {
             OpenTableFormatInput: {
                 IcebergInput: {
                     IcebergTableInput: Match.objectLike({
                         WriteOrder: Match.absent(),
+                        PartitionSpec: Match.absent(),
+                    }),
+                },
+            },
+        });
+    });
+
+    it('renders no PartitionSpec for an empty partitionSpec', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            partitionSpec: [],
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            OpenTableFormatInput: {
+                IcebergInput: {
+                    IcebergTableInput: Match.objectLike({
                         PartitionSpec: Match.absent(),
                     }),
                 },
@@ -1244,14 +1225,9 @@ describe('IcebergTable — validation', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             dataFormat: 'csv' as IcebergDataFormat,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        })).toThrow("dataFormat must be one of parquet, orc, avro, got 'csv'");
+        }))).toThrow("dataFormat must be one of parquet, orc, avro, got 'csv'");
     });
 
     it('rejects an empty column list', () => {
@@ -1308,12 +1284,7 @@ describe('IcebergTable — validation', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             partitionSpec: [
                 {
                     sourceColumn: 'who_dis',
@@ -1321,7 +1292,7 @@ describe('IcebergTable — validation', () => {
                     fieldId: 1000,
                 },
             ],
-        })).toThrow(/unknown column 'who_dis'/);
+        }))).toThrow(/unknown column 'who_dis'/);
     });
 
     it('rejects an incompatible partition transform', () => {
@@ -1389,12 +1360,7 @@ describe('IcebergTable — validation', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             partitionSpec: [
                 {
                     sourceColumn: 'id',
@@ -1402,19 +1368,14 @@ describe('IcebergTable — validation', () => {
                     fieldId: 999,
                 },
             ],
-        })).toThrow(/partition field 'id' has invalid fieldId 999/);
+        }))).toThrow(/partition field 'id' has invalid fieldId 999/);
     });
 
     it('rejects a fractional partition fieldId', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             partitionSpec: [
                 {
                     sourceColumn: 'id',
@@ -1422,7 +1383,7 @@ describe('IcebergTable — validation', () => {
                     fieldId: 1000.5,
                 },
             ],
-        })).toThrow(/partition field 'id' has invalid fieldId 1000.5/);
+        }))).toThrow(/partition field 'id' has invalid fieldId 1000.5/);
     });
 
     it('rejects duplicate partition fieldIds', () => {
@@ -1461,32 +1422,22 @@ describe('IcebergTable — validation', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             sortOrder: [],
-        })).toThrow(/sortOrder must contain at least one field/);
+        }))).toThrow(/sortOrder must contain at least one field/);
     });
 
     it('rejects a sortOrder referencing unknown columns', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             sortOrder: [
                 {
                     sourceColumn: 'nope',
                 },
             ],
-        })).toThrow(/unknown column 'nope'/);
+        }))).toThrow(/unknown column 'nope'/);
     });
 
     it('rejects an incompatible sortOrder transform', () => {
@@ -1519,49 +1470,34 @@ describe('IcebergTable — validation', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             identifierFieldNames: [
                 'id',
                 'id',
             ],
-        })).toThrow(/duplicate identifier field/);
+        }))).toThrow(/duplicate identifier field/);
     });
 
     it('rejects identifierFieldNames referencing unknown columns', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             identifierFieldNames: [
                 'who',
             ],
-        })).toThrow(/identifierFieldNames.*who/);
+        }))).toThrow(/identifierFieldNames.*who/);
     });
 
     it('propagates table-property validation errors', () => {
         const {
             stack, database,
         } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             tableProperties: {
                 'write.format.default': 'orc',
             },
-        })).toThrow(/write\.format\.default.*orc/);
+        }))).toThrow(/write\.format\.default.*orc/);
     });
 });
 
@@ -2349,15 +2285,6 @@ describe('IcebergTable.creationOrderFieldIds', () => {
 });
 
 describe('IcebergTable — catalogId and tokenized tableName', () => {
-    const props = (database: Database, overrides: Partial<IcebergTableProps> = {}): IcebergTableProps => ({
-        database,
-        tableName: 'simple',
-        formatVersion: IcebergFormatVersion.V2,
-        columns: MINIMAL_COLUMNS,
-        location: 's3://my-bucket/simple/',
-        ...overrides,
-    });
-
     it('renders a literal catalogId in the template', () => {
         const {
             stack, database,
