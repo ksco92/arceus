@@ -1,9 +1,9 @@
 # Contributing to arceus
 
 This repo develops [`cdk-glue-iceberg-table`](https://www.npmjs.com/package/cdk-glue-iceberg-table)
-in an npm-workspace monorepo. Consumer documentation — install, API
-reference, the two footguns, known limitations, and the FAQ — lives in
-the [README](README.md). This file covers the monorepo layout, how to
+in an npm-workspace monorepo. Consumer documentation lives in the
+[README](README.md), with breaking changes by version in
+[UPGRADING.md](UPGRADING.md). This file covers the monorepo layout, how to
 work in it, the CI / publish / integ-test gates, and the CDK demo app.
 
 The repo has two parts:
@@ -92,6 +92,7 @@ arceus/
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
 │   ├── field-ids.md                    # What field ids are and the rule for not reusing them
+│   ├── glue-behaviours.md              # Glue behaviours the construct relies on, with the assertion for each
 │   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test workflow
 ├── cdk.json                            # CDK app config (app: bin/arceus.ts)
 ├── tsconfig.json                       # Demo-app tsconfig (used by ESLint and ts-node)
@@ -150,6 +151,7 @@ A change goes to `main` through a pull request. The maintainer applies these con
 
 - The `ci.yml` jobs pass: `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
 - A PR that changes the published package bumps `version` in `packages/cdk-glue-iceberg-table/package.json`; [CLAUDE.md](CLAUDE.md) sets the level.
+- A breaking change also adds a note to `UPGRADING.md` under the new version.
 - The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.
 - `README.md` and `packages/cdk-glue-iceberg-table/README.md` stay byte-identical.
 
