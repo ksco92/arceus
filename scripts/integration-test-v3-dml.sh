@@ -39,7 +39,9 @@ cleanup_table_prefixes() {
 
 assert_metadata() {
     local table="$1" format_version="$2" min_next_row_id="${3:-0}" columns="${4:-}"
-    fetch_metadata "$table" | python3 -c '
+    local meta
+    meta=$(fetch_metadata "$table")
+    echo "$meta" | python3 -c '
 import ast, json, sys
 m = json.load(sys.stdin)
 table, format_version, min_next_row_id, columns = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]

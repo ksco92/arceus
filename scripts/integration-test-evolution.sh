@@ -262,7 +262,8 @@ deploy_step 5
 header "VERIFY step 5 (CHANGE partition transform day -> month)"
 assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
 assert_partitions "signed_up_at_month"
-fetch_metadata "$TABLE" | assert_partition_history
+META=$(fetch_metadata "$TABLE")
+assert_partition_history <<< "$META"
 
 header "SPARK step 5 (INSERT under the month spec, rows queryable)"
 spark_submit "$VERIFY_PROGRAM" --phase 5

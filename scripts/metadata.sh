@@ -19,7 +19,7 @@ fetch_metadata() {
         --name "$1" \
         --region "$AWS_REGION" \
         --query 'Table.Parameters.metadata_location' \
-        --output text)
+        --output text) || return
     aws s3 cp "$meta_loc" - --region "$AWS_REGION"
 }
 
