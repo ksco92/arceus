@@ -8,11 +8,7 @@
 #   - the field ids Glue stores at CREATE: each table declared in
 #     creation order keeps its declared ids, and a table declared out of
 #     creation order gets the creation-order ids.
-#   - the construct's grants at runtime: as ReadWriterRole
-#     (grantReadWrite on an imported handle of grants_test) write a row
-#     through Spark and one through Athena; as ReaderRole (grantRead)
-#     read both through Spark and Athena, and be denied glue:UpdateTable
-#     and an S3 write. Each role lists only its table's prefix.
+#   - grants_test read and written as roles holding the construct's grants.
 #
 # Prereqs:
 #   - AWS credentials in the default profile (us-east-1).
@@ -289,7 +285,7 @@ sleep 10
 
 header "TEST 5a — ReadWriterRole (grantReadWrite, imported table) writes through Spark and Athena"
 assume_role_and_export "$READ_WRITER_ROLE_ARN" "surface-integ-read-writer"
-spark_submit "$GRANTS_SPARK" write
+spark_submit "$GRANTS_SPARK" --phase write
 run_athena "INSERT INTO grants_test VALUES (2, 'athena')" >/dev/null
 green "  ReadWriterRole wrote one row through Spark and one through Athena ✓"
 assert_prefix_listing ReadWriterRole
@@ -297,7 +293,7 @@ unset_assumed_role
 
 header "TEST 5b — ReaderRole (grantRead) reads through Spark and Athena and cannot write"
 assume_role_and_export "$READER_ROLE_ARN" "surface-integ-reader"
-spark_submit "$GRANTS_SPARK" read
+spark_submit "$GRANTS_SPARK" --phase read
 athena_expect "ReaderRole reads grants_test" "SELECT id, source FROM grants_test ORDER BY id" \
     "id|source" \
     "1|spark" \

@@ -68,12 +68,8 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *     queried via Spark SQL.
  *   - `creation_order_test` — nested columns declared with ids out of
  *     creation order, to read back the ids Glue assigns at CREATE.
- *   - `grants_test` — `grantRead` on the table to `ReaderRole`, and
- *     `grantReadWrite` on an imported handle of it to `ReadWriterRole`,
- *     each with the bucket key, the catalog key and Lake Formation data
- *     access. The script assumes each role to read and write through
- *     Spark and Athena. The key ARNs arrive as the `DataLakeKeyArn` and
- *     `CatalogKeyArn` parameters.
+ *   - `grants_test` — read by `ReaderRole` (`grantRead`) and written by
+ *     `ReadWriterRole` (`grantReadWrite` on an imported handle).
  */
 export class IcebergSurfaceStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergSurfaceStackProps) {
@@ -400,22 +396,9 @@ export class IcebergSurfaceStack extends Stack {
         /// ////////////////////////////////////////////////////////
         // LF table grants for the deployer principal.
 
-        const tablesForLfGrant = [
-            transformsTable,
-            sortedTable,
-            nestedTable,
-            creationOrderTable,
-            grantsTable,
-        ];
-        tablesForLfGrant.forEach((table, index) => {
-            const permission = new CfnPermissions(this, `LfPermission${index}`, {
-                permissions: [
-                    'SELECT',
-                    'INSERT',
-                    'DELETE',
-                    'ALTER',
-                    'DESCRIBE',
-                ],
+        const tablePermission = (id: string, table: IcebergTable, principalArn: string, permissions: string[]): void => {
+            new CfnPermissions(this, id, {
+                permissions,
                 permissionsWithGrantOption: [],
                 resource: {
                     tableResource: {
@@ -425,10 +408,24 @@ export class IcebergSurfaceStack extends Stack {
                     },
                 },
                 dataLakePrincipal: {
-                    dataLakePrincipalIdentifier: props.principalArn,
+                    dataLakePrincipalIdentifier: principalArn,
                 },
-            });
-            permission.addResourceDependency(table.resource);
+            }).addResourceDependency(table.resource);
+        };
+        [
+            transformsTable,
+            sortedTable,
+            nestedTable,
+            creationOrderTable,
+            grantsTable,
+        ].forEach((table, index) => {
+            tablePermission(`LfPermission${index}`, table, props.principalArn, [
+                'SELECT',
+                'INSERT',
+                'DELETE',
+                'ALTER',
+                'DESCRIBE',
+            ]);
         });
 
         /// ////////////////////////////////////////////////////////
@@ -459,42 +456,17 @@ export class IcebergSurfaceStack extends Stack {
         });
         importedGrantsTable.grantReadWrite(readWriterRole, grantOptions);
 
-        [
-            {
-                id: 'ReaderLfPermission',
-                role: readerRole,
-                permissions: [
-                    'SELECT',
-                    'DESCRIBE',
-                ],
-            },
-            {
-                id: 'ReadWriterLfPermission',
-                role: readWriterRole,
-                permissions: [
-                    'SELECT',
-                    'INSERT',
-                    'DELETE',
-                    'ALTER',
-                    'DESCRIBE',
-                ],
-            },
-        ].forEach((grant) => {
-            new CfnPermissions(this, grant.id, {
-                permissions: grant.permissions,
-                permissionsWithGrantOption: [],
-                resource: {
-                    tableResource: {
-                        catalogId: this.account,
-                        name: grantsTable.tableName,
-                        databaseName: dbName,
-                    },
-                },
-                dataLakePrincipal: {
-                    dataLakePrincipalIdentifier: grant.role.roleArn,
-                },
-            }).addResourceDependency(grantsTable.resource);
-        });
+        tablePermission('ReaderLfPermission', grantsTable, readerRole.roleArn, [
+            'SELECT',
+            'DESCRIBE',
+        ]);
+        tablePermission('ReadWriterLfPermission', grantsTable, readWriterRole.roleArn, [
+            'SELECT',
+            'INSERT',
+            'DELETE',
+            'ALTER',
+            'DESCRIBE',
+        ]);
 
         /// Athena runs the queries in the `primary` workgroup and writes
         /// results under `athena-results/` (scripts/athena.sh).
