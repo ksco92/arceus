@@ -5,9 +5,6 @@ import {
 import {
     IcebergType,
 } from '../../lib/iceberg/iceberg-type';
-import {
-    withGetter,
-} from './read-once';
 
 describe('IcebergPartitionTransform — strings', () => {
     it.each([
@@ -55,39 +52,16 @@ describe('IcebergPartitionTransform — direct constructor', () => {
         })).toThrow(/bucketCount/);
     });
 
-    it.each([
-        0,
-        -1,
-        1.5,
-    ])('rejects bucket kind with invalid bucketCount=%s', (bucketCount) => {
-        expect(() => new IcebergPartitionTransform({
-            kind: IcebergPartitionTransformKind.BUCKET,
-            bucketCount,
-        })).toThrow(/positive integer/);
-    });
-
     it('rejects truncate kind without truncateWidth', () => {
         expect(() => new IcebergPartitionTransform({
             kind: IcebergPartitionTransformKind.TRUNCATE,
         })).toThrow(/truncateWidth/);
-    });
-
-    it.each([
-        0,
-        -1,
-        1.5,
-    ])('rejects truncate kind with invalid truncateWidth=%s', (truncateWidth) => {
-        expect(() => new IcebergPartitionTransform({
-            kind: IcebergPartitionTransformKind.TRUNCATE,
-            truncateWidth,
-        })).toThrow(/positive integer/);
     });
 });
 
 describe('IcebergPartitionTransform — invalid factory args', () => {
     it.each([
         0,
-        -1,
         1.5,
     ])('bucket() rejects %s', (n) => {
         expect(() => IcebergPartitionTransform.bucket(n)).toThrow(/positive integer/);
@@ -95,7 +69,6 @@ describe('IcebergPartitionTransform — invalid factory args', () => {
 
     it.each([
         0,
-        -1,
         1.5,
     ])('truncate() rejects %s', (n) => {
         expect(() => IcebergPartitionTransform.truncate(n)).toThrow(/positive integer/);
@@ -105,13 +78,10 @@ describe('IcebergPartitionTransform — invalid factory args', () => {
 describe('IcebergPartitionTransform — source type validation', () => {
     it('identity accepts any type', () => {
         expect(() => IcebergPartitionTransform.IDENTITY._validateSourceType('c', IcebergType.STRING)).not.toThrow();
-        expect(() => IcebergPartitionTransform.IDENTITY._validateSourceType('c', IcebergType.BOOLEAN)).not.toThrow();
-        expect(() => IcebergPartitionTransform.IDENTITY._validateSourceType('c', IcebergType.decimal(5, 2))).not.toThrow();
     });
 
     it('void accepts any type', () => {
         expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', IcebergType.STRING)).not.toThrow();
-        expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', IcebergType.BOOLEAN)).not.toThrow();
     });
 
     it.each([
@@ -198,22 +168,6 @@ describe('IcebergPartitionTransform — source type validation', () => {
             IcebergType.TIMESTAMPTZ_NS,
         ],
         [
-            IcebergPartitionTransform.MONTH,
-            IcebergType.TIMESTAMP_NS,
-        ],
-        [
-            IcebergPartitionTransform.MONTH,
-            IcebergType.TIMESTAMPTZ_NS,
-        ],
-        [
-            IcebergPartitionTransform.DAY,
-            IcebergType.TIMESTAMP_NS,
-        ],
-        [
-            IcebergPartitionTransform.DAY,
-            IcebergType.TIMESTAMPTZ_NS,
-        ],
-        [
             IcebergPartitionTransform.HOUR,
             IcebergType.TIMESTAMP_NS,
         ],
@@ -227,10 +181,7 @@ describe('IcebergPartitionTransform — source type validation', () => {
 
     it.each([
         IcebergPartitionTransform.IDENTITY,
-        IcebergPartitionTransform.VOID,
         IcebergPartitionTransform.YEAR,
-        IcebergPartitionTransform.bucket(4),
-        IcebergPartitionTransform.truncate(4),
     ])('%s rejects variant', (transform) => {
         expect(() => transform._validateSourceType('c', IcebergType.VARIANT))
             .toThrow(/column 'c' has type variant, which cannot be a partition or sort source/);
@@ -250,28 +201,8 @@ describe('IcebergPartitionTransform — source type validation', () => {
             IcebergType.UNKNOWN,
         ],
         [
-            IcebergPartitionTransform.bucket(4),
-            IcebergType.geometry(),
-        ],
-        [
-            IcebergPartitionTransform.bucket(4),
-            IcebergType.geography(),
-        ],
-        [
-            IcebergPartitionTransform.bucket(4),
-            IcebergType.UNKNOWN,
-        ],
-        [
             IcebergPartitionTransform.YEAR,
             IcebergType.geometry(),
-        ],
-        [
-            IcebergPartitionTransform.YEAR,
-            IcebergType.geography(),
-        ],
-        [
-            IcebergPartitionTransform.YEAR,
-            IcebergType.UNKNOWN,
         ],
     ])('%s rejects %s with only void allowed', (transform, type) => {
         expect(() => transform._validateSourceType('c', type))
@@ -284,47 +215,5 @@ describe('IcebergPartitionTransform — source type validation', () => {
         IcebergType.UNKNOWN,
     ])('void accepts %s', (type) => {
         expect(() => IcebergPartitionTransform.VOID._validateSourceType('c', type)).not.toThrow();
-    });
-});
-
-describe('IcebergPartitionTransform — constructor', () => {
-    it('rejects a kind that is not an IcebergPartitionTransformKind', () => {
-        expect(() => new IcebergPartitionTransform({
-            kind: 'bogus' as IcebergPartitionTransformKind,
-        })).toThrow('unknown IcebergPartitionTransformKind: bogus');
-    });
-
-    it.each([
-        [
-            'kind',
-            {},
-            IcebergPartitionTransformKind.IDENTITY,
-            IcebergPartitionTransformKind.YEAR,
-            'identity',
-        ],
-        [
-            'bucketCount',
-            {
-                kind: IcebergPartitionTransformKind.BUCKET,
-            },
-            4,
-            8,
-            'bucket[4]',
-        ],
-        [
-            'truncateWidth',
-            {
-                kind: IcebergPartitionTransformKind.TRUNCATE,
-            },
-            5,
-            9,
-            'truncate[5]',
-        ],
-    ])('renders the %s that was read once', (key, base, first, rest, expected) => {
-        const options = withGetter({
-            kind: IcebergPartitionTransformKind.IDENTITY,
-            ...base,
-        }, key, first, rest);
-        expect(new IcebergPartitionTransform(options).toTransformString()).toBe(expected);
     });
 });

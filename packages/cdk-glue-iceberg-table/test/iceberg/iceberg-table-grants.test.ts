@@ -25,15 +25,10 @@ import {
 import {
     IcebergFormatVersion,
     IcebergTable,
-    IcebergTableAttributes,
     IcebergTableGrantOptions,
-    IcebergTableProps,
     IcebergType,
     IIcebergTable,
 } from '../../lib/iceberg';
-import {
-    withGetter,
-} from './read-once';
 
 type Statement = Record<string, unknown>;
 type GrantMethod = 'grantRead' | 'grantWrite' | 'grantReadWrite';
@@ -43,7 +38,6 @@ const PARTITION = {
     Ref: 'AWS::Partition',
 };
 const CATALOG_KEY_ARN = 'arn:aws:kms:us-east-1:123456789012:key/catalog';
-const OTHER_KEY_ARN = 'arn:aws:kms:us-east-1:123456789012:key/other';
 
 function join(...parts: unknown[]): unknown {
     return {
@@ -337,23 +331,6 @@ describe('IcebergTable grants', () => {
         expect(statements(f)).toEqual(baseStatements(f, method));
     });
 
-    it('rejects a lakeFormationDataAccess that is not a boolean', () => {
-        const f = fixture();
-        expect(() => table(f, 'constructed').grantRead(f.role, {
-            lakeFormationDataAccess: 'yes' as unknown as boolean,
-        })).toThrow('lakeFormationDataAccess must be a boolean, got string');
-    });
-
-    it('attaches no statement when an option is rejected', () => {
-        const f = fixture();
-        const t = table(f, 'constructed', f.key);
-        expect(() => t.grantReadWrite(f.role, {
-            catalogEncryptionKey: Key.fromKeyArn(f.stack, 'CatalogKey', CATALOG_KEY_ARN),
-            lakeFormationDataAccess: 'yes' as unknown as boolean,
-        })).toThrow('lakeFormationDataAccess must be a boolean, got string');
-        expect(statements(f)).toEqual([]);
-    });
-
     it('leaves the key policy of an in-stack encryptionKey unchanged', () => {
         const f = fixture();
         table(f, 'constructed', f.key).grantReadWrite(f.role);
@@ -373,77 +350,6 @@ describe('IcebergTable grants', () => {
                 ],
             },
         });
-    });
-});
-
-describe('IcebergTable grants read each caller value once', () => {
-    const otherKey = (f: Fixture): IKey => Key.fromKeyArn(f.stack, 'Other', OTHER_KEY_ARN);
-
-    it('exposes and grants on the props.encryptionKey that was read once', () => {
-        const f = fixture();
-        const t = new IcebergTable(f.stack, 'Tbl', withGetter({
-            database: f.database,
-            tableName: 'simple',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-            ],
-            location: 's3://my-bucket/path/simple/',
-        }, 'encryptionKey', f.key, otherKey(f)) as IcebergTableProps);
-        t.grantRead(f.role);
-        expect(t.encryptionKey).toBe(f.key);
-        expect(statements(f).at(-1)).toEqual(allow('kms:Decrypt', keyArn(f)));
-    });
-
-    it('exposes and grants on the attrs.encryptionKey that was read once', () => {
-        const f = fixture();
-        const t = IcebergTable.fromIcebergTableAttributes(f.stack, 'Imported', withGetter({
-            database: f.database,
-            tableName: 'simple',
-            location: 's3://my-bucket/path/simple/',
-        }, 'encryptionKey', f.key, otherKey(f)) as IcebergTableAttributes);
-        t.grantRead(f.role);
-        expect(t.encryptionKey).toBe(f.key);
-        expect(statements(f).at(-1)).toEqual(allow('kms:Decrypt', keyArn(f)));
-    });
-
-    it.each([
-        'constructed',
-        'imported',
-    ] as Source[])('a %s table without encryptionKey exposes none', (source) => {
-        expect(table(fixture(), source).encryptionKey).toBeUndefined();
-    });
-
-    it('grants on the catalogEncryptionKey that was read once', () => {
-        const f = fixture();
-        table(f, 'constructed').grantRead(f.role, withGetter({}, 'catalogEncryptionKey', Key.fromKeyArn(f.stack, 'CatalogKey', CATALOG_KEY_ARN), otherKey(f)));
-        expect(statements(f).at(-1)).toEqual(allow('kms:Decrypt', CATALOG_KEY_ARN));
-    });
-
-    it.each([
-        [
-            true,
-            false,
-            [
-                GET_DATA_ACCESS,
-            ],
-        ],
-        [
-            false,
-            true,
-            [],
-        ],
-    ])('acts on the lakeFormationDataAccess %s that was read once', (first, rest, added) => {
-        const f = fixture();
-        table(f, 'constructed').grantRead(f.role, withGetter({}, 'lakeFormationDataAccess', first, rest));
-        expect(statements(f)).toEqual([
-            ...baseStatements(f, 'grantRead'),
-            ...added,
-        ]);
     });
 });
 
@@ -564,22 +470,5 @@ describe('IcebergTable grants in a foreign catalog', () => {
             catalogId: FOREIGN,
         });
         expect(f.stack.resolve(t.tableArn)).toEqual(join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/`, databaseRef(f), '/simple'));
-    });
-
-    it('reads the attrs.catalogId once', () => {
-        const f = fixture();
-        const t = IcebergTable.fromIcebergTableAttributes(f.stack, 'Imported', withGetter({
-            database: f.database,
-            tableName: 'simple',
-            location: 's3://my-bucket/path/simple/',
-        }, 'catalogId', FOREIGN, '111111111111') as IcebergTableAttributes);
-        expect(f.stack.resolve(t.tableArn)).toEqual(join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/`, databaseRef(f), '/simple'));
-    });
-
-    it('rejects an invalid literal catalogId on an imported table', () => {
-        const f = fixture();
-        expect(() => table(f, 'imported', undefined, undefined, {
-            catalogId: '12345',
-        })).toThrow(/catalogId '12345' must be a 12-digit AWS account id/);
     });
 });

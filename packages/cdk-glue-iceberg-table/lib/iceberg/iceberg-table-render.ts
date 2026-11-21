@@ -1,6 +1,5 @@
 import {
     Token,
-    Tokenization,
 } from 'aws-cdk-lib';
 import {
     CfnTable,
@@ -9,14 +8,10 @@ import {
     IcebergStructFieldDefinition,
     IcebergType,
     IcebergTypeKind,
-    oneOf,
-    ownArray,
-    pathSegment,
-    primitive,
-    snapshotField,
 } from './iceberg-type';
 import {
     IcebergPartitionTransform,
+    IcebergPartitionTransformKind,
 } from './iceberg-partition-transform';
 import {
     FORMAT_VERSION_KEY,
@@ -41,143 +36,15 @@ import {
     IcebergTableProps,
 } from './iceberg-table';
 
-/// /////////////////////////////////////////////////
-/// /////////////////////////////////////////////////
-// Validation
+/** Largest field id the Iceberg spec allows (`Integer.MAX_VALUE - 200`). */
+const MAX_FIELD_ID = 2147483447;
 
 /** Doc prefix that marks identifier columns, so an identifier change is a field change. */
 const IDENTIFIER_DOC_PREFIX = '(PK) ';
 
-function snapshotPartitionField(field: IcebergPartitionField): IcebergPartitionField {
-    const {
-        sourceColumn,
-        transform,
-        name,
-        fieldId,
-    } = field;
-    return {
-        sourceColumn: primitive('partition sourceColumn', sourceColumn, 'string'),
-        transform: new IcebergPartitionTransform(transform),
-        name: primitive('partition field name', name, 'string', {
-            optional: true,
-        }),
-        fieldId,
-    };
-}
-
-/** @internal */
-export function snapshotSchema(
-    columns: IcebergColumn[],
-    partitionSpec: IcebergPartitionField[] | undefined,
-): { columns: IcebergColumn[]; partitionSpec: IcebergPartitionField[] | undefined } {
-    return {
-        columns: ownArray('columns', columns).map(snapshotField),
-        partitionSpec: partitionSpec === undefined
-            ? undefined
-            : ownArray('partitionSpec', partitionSpec).map(snapshotPartitionField),
-    };
-}
-
-function snapshotSortField(field: IcebergSortField): IcebergSortField {
-    const {
-        sourceColumn,
-        transform,
-        direction,
-        nullOrder,
-    } = field;
-    return {
-        sourceColumn: primitive('sort sourceColumn', sourceColumn, 'string'),
-        transform: transform === undefined ? undefined : new IcebergPartitionTransform(transform),
-        direction: oneOf('sort direction', direction, IcebergSortDirection, {
-            optional: true,
-        }),
-        nullOrder: oneOf('sort nullOrder', nullOrder, IcebergNullOrder, {
-            optional: true,
-        }),
-    };
-}
-
-/**
- * A copy of `props` built from one read of each prop: strings and enums checked, arrays and
- * objects rebuilt, so the construct validates and renders values the caller cannot change.
- * `database` and `removalPolicy` are passed to CDK as given.
- *
- * @internal
- */
-export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
-    const {
-        database,
-        tableName,
-        catalogId,
-        columns,
-        location,
-        encryptionKey,
-        partitionSpec,
-        sortOrder,
-        identifierFieldNames,
-        dataFormat,
-        formatVersion,
-        tableProperties,
-        comment,
-        removalPolicy,
-    } = props;
-    return {
-        database,
-        encryptionKey,
-        removalPolicy,
-        tableName: primitive('tableName', tableName, 'string', {
-            tokens: true,
-        }),
-        catalogId: primitive('catalogId', catalogId, 'string', {
-            optional: true,
-            tokens: true,
-        }),
-        location: primitive('location', location, 'string', {
-            tokens: true,
-        }),
-        dataFormat: oneOf('dataFormat', dataFormat, IcebergDataFormat, {
-            optional: true,
-        }),
-        formatVersion: oneOf('formatVersion', formatVersion, IcebergFormatVersion),
-        comment: primitive('comment', comment, 'string', {
-            optional: true,
-            tokens: true,
-        }),
-        ...snapshotSchema(columns, partitionSpec),
-        sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map(snapshotSortField),
-        identifierFieldNames: identifierFieldNames === undefined
-            ? undefined
-            : ownArray('identifierFieldNames', identifierFieldNames).map(
-                (name) => primitive('identifier field name', name, 'string'),
-            ),
-        tableProperties: tableProperties === undefined
-            ? undefined
-            : Object.fromEntries(Object.entries(tableProperties).map(([
-                key,
-                value,
-            ]) => [
-                primitive('tableProperties key', key, 'string'),
-                primitive(`tableProperties['${key}']`, value, 'string', {
-                    tokens: true,
-                }),
-            ])),
-    };
-}
-
-/** The literal text of a string that contains a token, with every token removed. */
-function literalText(value: string): string {
-    return Tokenization.reverseString(value).mapTokens({
-        mapToken: () => '',
-    }).join({
-        join: (left, right) => `${left}${right}`,
-    });
-}
-
 /** @internal */
 export function validateTableName(tableName: string): void {
-    const tokenized = Token.isUnresolved(tableName);
-    const pattern = tokenized ? /^[a-z0-9_]*$/ : /^[a-z0-9_]+$/;
-    if (!pattern.test(tokenized ? literalText(tableName) : tableName)) {
+    if (!Token.isUnresolved(tableName) && !/^[a-z0-9_]+$/.test(tableName)) {
         throw new Error(
             `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
@@ -186,14 +53,8 @@ export function validateTableName(tableName: string): void {
 
 /** @internal */
 export function validateCatalogId(catalogId: string | undefined): void {
-    if (catalogId === undefined) {
-        return;
-    }
-    const valid = Token.isUnresolved(catalogId)
-        ? Tokenization.reverseString(catalogId).length === 1
-        : /^[0-9]{12}$/.test(catalogId);
-    if (!valid) {
-        throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id or a single token, not text mixed with a token`);
+    if (catalogId !== undefined && !Token.isUnresolved(catalogId) && !/^[0-9]{12}$/.test(catalogId)) {
+        throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id`);
     }
 }
 
@@ -208,6 +69,16 @@ export function validateLocation(location: string): void {
 export function validateProps(props: IcebergTableProps): void {
     validateTableName(props.tableName);
     validateCatalogId(props.catalogId);
+    if (!Object.values(IcebergFormatVersion).includes(props.formatVersion)) {
+        throw new Error(
+            `formatVersion must be one of ${Object.values(IcebergFormatVersion).join(', ')}, got '${props.formatVersion}'`,
+        );
+    }
+    if (props.dataFormat !== undefined && !Object.values(IcebergDataFormat).includes(props.dataFormat)) {
+        throw new Error(
+            `dataFormat must be one of ${Object.values(IcebergDataFormat).join(', ')}, got '${props.dataFormat}'`,
+        );
+    }
     if (props.columns.length === 0) {
         throw new Error('IcebergTable requires at least one column');
     }
@@ -225,9 +96,20 @@ export function validateProps(props: IcebergTableProps): void {
         }
     }
     validateLocation(props.location);
-    for (const column of props.columns) {
-        validateFieldType(column.name, column.type, column.required ?? false, props.formatVersion);
-    }
+    const pathById = new Map<number, string>();
+    walkFields(props.columns, (path, id, type, required) => {
+        validateFieldType(path, type, required, props.formatVersion);
+        if (!Number.isInteger(id) || id < 1 || id > MAX_FIELD_ID) {
+            throw new Error(
+                `column '${path}' has invalid id ${id}; ids must be integers from 1 to ${MAX_FIELD_ID}`,
+            );
+        }
+        const owner = pathById.get(id);
+        if (owner !== undefined) {
+            throw new Error(`duplicate field id ${id} on column '${path}', already used by '${owner}'`);
+        }
+        pathById.set(id, path);
+    });
 }
 
 const V3_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
@@ -252,11 +134,7 @@ const NON_IDENTIFIER_TYPE_KINDS: ReadonlySet<IcebergTypeKind> = new Set([
     IcebergTypeKind.STRUCT,
 ]);
 
-/**
- * Throws if the field at `path`, or any field nested in it, uses a v3
- * type below format v3 or is a required `unknown`. List elements, map
- * keys, and map values count as fields.
- */
+/** Throws if the field at `path` uses a v3 type below format v3, is a map keyed by `unknown`, or is a required `unknown`. */
 function validateFieldType(
     path: string,
     type: IcebergType,
@@ -270,27 +148,17 @@ function validateFieldType(
             + 'Set formatVersion to IcebergFormatVersion.V3 or change the column type.',
         );
     }
+    if (type.mapKey?.kind === IcebergTypeKind.UNKNOWN) {
+        throw new Error(
+            `column '${path}.key' has type 'unknown' as a map key; `
+            + 'map keys are always required, so use a different key type',
+        );
+    }
     if (type.kind === IcebergTypeKind.UNKNOWN && required) {
         throw new Error(
             `column '${path}' has type 'unknown', which must be optional; `
             + 'drop required (or set elementRequired / valueRequired to false), or change the type.',
         );
-    }
-    if (type.listElement !== undefined) {
-        validateFieldType(`${path}.element`, type.listElement, type.listElementRequired!, formatVersion);
-    }
-    if (type.mapKey !== undefined) {
-        if (type.mapKey.kind === IcebergTypeKind.UNKNOWN) {
-            throw new Error(
-                `column '${path}.key' has type 'unknown' as a map key; `
-                + 'map keys are always required, so use a different key type',
-            );
-        }
-        validateFieldType(`${path}.key`, type.mapKey, true, formatVersion);
-        validateFieldType(`${path}.value`, type.mapValue!, type.mapValueRequired!, formatVersion);
-    }
-    for (const field of type.structFields ?? []) {
-        validateFieldType(`${path}.${field.name}`, field.type, field.required ?? false, formatVersion);
     }
 }
 
@@ -311,20 +179,10 @@ export function parseS3Uri(uri: string): { bucket: string; key: string } {
     };
 }
 
-/// /////////////////////////////////////////////////
-/// /////////////////////////////////////////////////
-// Schema / partition / sort rendering
-
-interface RenderedColumn {
-    readonly id: number;
-    readonly type: IcebergType;
-    readonly required: boolean;
-}
-
 /** @internal */
 export interface RenderedSchema {
     readonly fields: CfnTable.IcebergStructFieldProperty[];
-    readonly columnByName: Map<string, RenderedColumn>;
+    readonly columnByName: Map<string, IcebergColumn>;
 }
 
 /**
@@ -337,24 +195,15 @@ export function renderSchema(
     columns: IcebergColumn[],
     identifierFieldNames: string[] | undefined,
 ): RenderedSchema {
-    const pathById = new Map<number, string>();
-    const claimId = (path: string, id: unknown): number => claimFieldId(path, id, pathById);
     const identifierNames = new Set(identifierFieldNames);
-    const columnByName = new Map<string, RenderedColumn>();
+    const columnByName = new Map<string, IcebergColumn>();
     const fields: CfnTable.IcebergStructFieldProperty[] = columns.map((column) => {
-        const path = pathSegment(column.name);
-        const id = claimId(path, column.id);
-        const required = column.required ?? false;
-        columnByName.set(column.name, {
-            id,
-            type: column.type,
-            required,
-        });
+        columnByName.set(column.name, column);
         return {
-            id,
+            id: column.id,
             name: column.name,
-            type: column.type._render(path, claimId),
-            required,
+            type: column.type._render(),
+            required: column.required ?? false,
             doc: identifierNames.has(column.name) ? `${IDENTIFIER_DOC_PREFIX}${column.doc ?? ''}` : column.doc,
         };
     });
@@ -364,8 +213,12 @@ export function renderSchema(
     };
 }
 
-/** @internal */
-export function walkFields(
+/** Field name as a path segment, backquoted with inner backquotes doubled when it contains a dot or backquote. */
+function pathSegment(name: string): string {
+    return /[.`]/.test(name) ? `\`${name.replace(/`/g, '``')}\`` : name;
+}
+
+function walkFields(
     columns: IcebergStructFieldDefinition[],
     visit: (path: string, id: number, type: IcebergType, required: boolean) => void,
 ): void {
@@ -409,111 +262,47 @@ export function creationOrderFieldIds(columns: IcebergColumn[]): { [path: string
     return ids;
 }
 
-/** Largest field id the Iceberg spec allows (`Integer.MAX_VALUE - 200`). */
-const MAX_FIELD_ID = 2147483447;
-
-/** Check the id of the field at `path`, record it in `pathById`, and return it. */
-function claimFieldId(path: string, id: unknown, pathById: Map<number, string>): number {
-    if (id === undefined || id === null) {
-        throw new Error(`column '${path}' is missing a required id`);
-    }
-    if (typeof id !== 'number') {
-        throw new Error(`column '${path}' has invalid id ${String(id)} of type ${typeof id}; ids must be numbers`);
-    }
-    if (Token.isUnresolved(id)) {
-        throw new Error(`column '${path}' has an unresolved token as its id; ids must be concrete numbers, not tokens`);
-    }
-    if (!Number.isInteger(id) || id < 1 || id > MAX_FIELD_ID) {
-        throw new Error(`column '${path}' has invalid id ${id}; ids must be integers from 1 to ${MAX_FIELD_ID}`);
-    }
-    const owner = pathById.get(id);
-    if (owner !== undefined) {
-        throw new Error(`duplicate field id ${id} on column '${path}', already used by '${owner}'`);
-    }
-    pathById.set(id, path);
-    return id;
-}
-
-/** @internal */
-export function validatePartitionSpec(
-    partitionSpec: IcebergPartitionField[] | undefined,
-    columnByName: Map<string, RenderedColumn>,
-): void {
-    if (partitionSpec === undefined) {
-        return;
-    }
-    const partitionNames = new Set<string>();
-    const partitionFieldIds = new Set<number>();
-    for (const field of partitionSpec) {
-        const source = columnByName.get(field.sourceColumn);
-        if (source === undefined) {
-            throw new Error(
-                `partitionSpec references unknown column '${field.sourceColumn}'`,
-            );
-        }
-        field.transform._validateSourceType(field.sourceColumn, source.type);
-        const partitionName = field.name ?? defaultPartitionName(field);
-        if (partitionNames.has(partitionName)) {
-            throw new Error(`duplicate partition field name: ${partitionName}`);
-        }
-        partitionNames.add(partitionName);
-        /// Defensive: a jsii Python/JS caller can still pass nothing
-        /// despite the required TypeScript type, so guard at runtime.
-        if (field.fieldId === undefined || field.fieldId === null) {
-            throw new Error(
-                `partition field '${partitionName}' is missing a required fieldId`,
-            );
-        }
-        if (!Number.isInteger(field.fieldId) || field.fieldId < 1000) {
-            throw new Error(
-                `partition field '${partitionName}' has invalid fieldId ${field.fieldId}; `
-                + 'partition field ids must be integers >= 1000',
-            );
-        }
-        if (partitionFieldIds.has(field.fieldId)) {
-            throw new Error(
-                `duplicate partition fieldId ${field.fieldId} on partition field '${partitionName}'`,
-            );
-        }
-        partitionFieldIds.add(field.fieldId);
-    }
-}
-
-/** @internal */
-export function validateSortOrder(
-    sortOrder: IcebergSortField[] | undefined,
-    columnByName: Map<string, RenderedColumn>,
-): void {
-    if (sortOrder === undefined) {
-        return;
-    }
-    if (sortOrder.length === 0) {
-        throw new Error('sortOrder must contain at least one field when provided');
-    }
-    for (const field of sortOrder) {
-        const source = columnByName.get(field.sourceColumn);
-        if (source === undefined) {
-            throw new Error(`sortOrder references unknown column '${field.sourceColumn}'`);
-        }
-        const transform = field.transform ?? IcebergPartitionTransform.IDENTITY;
-        transform._validateSourceType(field.sourceColumn, source.type);
-    }
-}
-
 /** @internal */
 export function renderPartitionSpec(
     partitionSpec: IcebergPartitionField[] | undefined,
-    columnByName: Map<string, RenderedColumn>,
+    columnByName: Map<string, IcebergColumn>,
 ): CfnTable.IcebergPartitionSpecProperty | undefined {
     if (partitionSpec === undefined || partitionSpec.length === 0) {
         return undefined;
     }
-    const fields: CfnTable.IcebergPartitionFieldProperty[] = partitionSpec.map((field) => ({
-        name: field.name ?? defaultPartitionName(field),
-        sourceId: columnByName.get(field.sourceColumn)!.id,
-        transform: field.transform.toTransformString(),
-        fieldId: field.fieldId,
-    }));
+    const names = new Set<string>();
+    const fieldIds = new Set<number>();
+    const fields = partitionSpec.map((field) => {
+        const source = columnByName.get(field.sourceColumn);
+        if (source === undefined) {
+            throw new Error(`partitionSpec references unknown column '${field.sourceColumn}'`);
+        }
+        field.transform._validateSourceType(field.sourceColumn, source.type);
+        const name = field.name
+            ?? (field.transform.kind === IcebergPartitionTransformKind.IDENTITY
+                ? field.sourceColumn
+                : `${field.sourceColumn}_${field.transform.kind}`);
+        if (names.has(name)) {
+            throw new Error(`duplicate partition field name: ${name}`);
+        }
+        names.add(name);
+        if (!Number.isInteger(field.fieldId) || field.fieldId < 1000) {
+            throw new Error(
+                `partition field '${name}' has invalid fieldId ${field.fieldId}; `
+                + 'partition field ids must be integers >= 1000',
+            );
+        }
+        if (fieldIds.has(field.fieldId)) {
+            throw new Error(`duplicate partition fieldId ${field.fieldId} on partition field '${name}'`);
+        }
+        fieldIds.add(field.fieldId);
+        return {
+            name,
+            sourceId: source.id,
+            transform: field.transform.toTransformString(),
+            fieldId: field.fieldId,
+        };
+    });
     return {
         specId: 0,
         fields,
@@ -523,15 +312,23 @@ export function renderPartitionSpec(
 /** @internal */
 export function renderSortOrder(
     sortOrder: IcebergSortField[] | undefined,
-    columnByName: Map<string, RenderedColumn>,
+    columnByName: Map<string, IcebergColumn>,
 ): CfnTable.IcebergSortOrderProperty | undefined {
-    if (sortOrder === undefined || sortOrder.length === 0) {
+    if (sortOrder === undefined) {
         return undefined;
     }
-    const fields: CfnTable.IcebergSortFieldProperty[] = sortOrder.map((field) => {
+    if (sortOrder.length === 0) {
+        throw new Error('sortOrder must contain at least one field when provided');
+    }
+    const fields = sortOrder.map((field) => {
+        const source = columnByName.get(field.sourceColumn);
+        if (source === undefined) {
+            throw new Error(`sortOrder references unknown column '${field.sourceColumn}'`);
+        }
         const transform = field.transform ?? IcebergPartitionTransform.IDENTITY;
+        transform._validateSourceType(field.sourceColumn, source.type);
         return {
-            sourceId: columnByName.get(field.sourceColumn)!.id,
+            sourceId: source.id,
             transform: transform.toTransformString(),
             direction: field.direction ?? IcebergSortDirection.ASC,
             nullOrder: field.nullOrder ?? IcebergNullOrder.NULLS_LAST,
@@ -543,20 +340,10 @@ export function renderSortOrder(
     };
 }
 
-function defaultPartitionName(field: IcebergPartitionField): string {
-    const transformString = field.transform.toTransformString();
-    if (transformString === 'identity') {
-        return field.sourceColumn;
-    }
-    /// `bucket[16]` -> `sourceColumn_bucket`
-    const baseTransform = transformString.replace(/\[.*\]$/, '');
-    return `${field.sourceColumn}_${baseTransform}`;
-}
-
 /** @internal */
 export function resolveIdentifierFieldIds(
     identifierFieldNames: string[] | undefined,
-    columnByName: Map<string, RenderedColumn>,
+    columnByName: Map<string, IcebergColumn>,
 ): number[] | undefined {
     if (identifierFieldNames === undefined || identifierFieldNames.length === 0) {
         return undefined;

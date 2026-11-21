@@ -448,10 +448,7 @@ identifier column's `doc` with `(PK) `, so a `doc` you write must not
 start with `(PK) `; see [Evolving schema and
 partitions](#evolving-schema-and-partitions).
 
-Every string you pass is a literal string, not a token, and an
-enum-typed one must be a member of its enum; the exceptions are
-`location`, `comment`, table property values, `tableName` and
-`catalogId`.
+`formatVersion` and `dataFormat` must be members of their enums.
 
 Upgrading from a version before 0.20.0: `IcebergPropertyKeys` is removed, and
 synth no longer checks the compression codec, write mode, distribution mode,
@@ -694,9 +691,9 @@ existing.grantRead(role);
 
 `catalogId` (Python `catalog_id`) on `IcebergTable` and on the import
 attributes is the account id of the Glue Data Catalog that holds the
-table. It is 12 digits or a single token (`Stack.of(this).account`,
-`Aws.ACCOUNT_ID`, a `CfnParameter`); a string that mixes literal text
-with a token is rejected. Omitting it changes nothing: the table is
+table. A literal is 12 digits; a string that contains a token
+(`Stack.of(this).account`, `Aws.ACCOUNT_ID`, a `CfnParameter`) is used
+as given. Omitting it changes nothing: the table is
 created in the stack's account and `tableArn` and every grant keep
 their policies. When set, it is the table's `CatalogId` and the account
 in the catalog, database and table ARNs of `tableArn` and of every
@@ -709,11 +706,11 @@ Formation permissions and the IAM permissions of the deploying role in
 that account are yours.
 
 `tableName` may be a token, such as a `CfnParameter` or a cross-stack
-reference. A literal is checked against `^[a-z0-9_]+$`; in a string that
-mixes literal text with a token, the literal text is checked against
-`^[a-z0-9_]*$`. A token is rendered as given in the template and in the
-table ARN, for `tableName` and `catalogId` alike, so its deploy-time
-value is the deployer's responsibility. A `tableName` of `*` would make
+reference. A literal is checked against `^[a-z0-9_]+$`. A string that
+contains a token, with or without literal text around it, is not
+checked and is rendered as given in the template and in the table ARN,
+for `tableName` and `catalogId` alike, so its deploy-time value is the
+deployer's responsibility. A `tableName` of `*` would make
 every grant on the table cover every table in the database.
 
 ### Evolving schema and partitions
@@ -762,6 +759,11 @@ argument of `map` was `false`; set `elementRequired: true` or
 Upgrading from a version before 0.21.0: `schemaHistoryFile` and
 `IcebergSchemaHistory` are removed. Remove the prop, stop running the update
 command after synth, and delete the committed history file.
+
+Upgrading from a version before 0.22.0: `IcebergType.isPrimitive`,
+`isDecimal` and `isFixed` are removed; compare the type's `kind` with
+`IcebergTypeKind` instead, for example
+`type.kind === IcebergTypeKind.DECIMAL`.
 
 Glue's `UpdateTable` reuses an earlier schema whose fields (name,
 type, `required`, `doc`) match the request, together with that
