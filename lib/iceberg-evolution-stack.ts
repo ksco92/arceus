@@ -1,5 +1,6 @@
 import {
     CfnOutput,
+    CfnParameter,
     CfnWaitCondition,
     RemovalPolicy,
     Stack,
@@ -52,7 +53,7 @@ export interface IcebergEvolutionStackProps extends StackProps {
     /**
      * ARN of the IAM principal (user, role, or federated identity)
      * that should be granted SELECT/INSERT/DELETE/ALTER/DESCRIBE on
-     * both test tables — typically the principal running `cdk deploy`.
+     * every test table — typically the principal running `cdk deploy`.
      * For CI this is the OIDC role's ARN; for local dev pass your
      * IAM user or assumed-role ARN.
      */
@@ -60,14 +61,15 @@ export interface IcebergEvolutionStackProps extends StackProps {
 }
 
 /**
- * Stack that owns two Iceberg tables whose schemas change based on a
+ * Stack that owns Iceberg tables that change based on a
  * `--context evolutionStep=N` value: `evolution_test` (primitive
  * columns, partitions, identifiers; steps 1 to 6; a table property,
- * the sort order and a rolled-back column add; steps 9 to 12) and
+ * the sort order and a rolled-back column add; steps 9 to 12),
  * `nested_evolution_test` (list, map and struct columns; evolved at
- * steps 7 and 8). Step 11 adds a wait condition that fails to create
- * after the table update, so its deploy rolls back. Used as the target of
- * `scripts/integration-test-evolution.sh`.
+ * steps 7 and 8), and `reused_id_test`, `partition_id_test` and
+ * `parameter_name_test`, one Glue observation each. Step 11 adds a wait
+ * condition that fails to create after the table update, so its deploy
+ * rolls back. Used as the target of `scripts/integration-test-evolution.sh`.
  */
 export class IcebergEvolutionStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergEvolutionStackProps) {
@@ -119,6 +121,68 @@ export class IcebergEvolutionStack extends Stack {
             removalPolicy: RemovalPolicy.DESTROY,
         });
 
+        const reusedIdTable = new IcebergTable(this, 'ReusedIdTable', {
+            database: importedDatabase,
+            tableName: 'reused_id_test',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: buildReusedIdColumns(step),
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/reused_id_test/`,
+            removalPolicy: RemovalPolicy.DESTROY,
+        });
+
+        const partitionIdTable = new IcebergTable(this, 'PartitionIdTable', {
+            database: importedDatabase,
+            tableName: 'partition_id_test',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'id',
+                    type: IcebergType.LONG,
+                    id: 1,
+                },
+                {
+                    name: 'ts',
+                    type: IcebergType.TIMESTAMPTZ,
+                    id: 2,
+                },
+                {
+                    name: 'cat',
+                    type: IcebergType.STRING,
+                    id: 3,
+                },
+                {
+                    name: 'region',
+                    type: IcebergType.STRING,
+                    id: 4,
+                },
+            ],
+            partitionSpec: buildPartitionIdSpec(step),
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/partition_id_test/`,
+            removalPolicy: RemovalPolicy.DESTROY,
+        });
+
+        const parameterNameTable = new IcebergTable(this, 'ParameterNameTable', {
+            database: importedDatabase,
+            tableName: step >= 9 ? new CfnParameter(this, 'ParameterNameTableName', {
+                default: 'parameter_name_test',
+            }).valueAsString : 'parameter_name_test',
+            formatVersion: IcebergFormatVersion.V2,
+            columns: [
+                {
+                    name: 'id',
+                    type: IcebergType.LONG,
+                    id: 1,
+                },
+                {
+                    name: 'v',
+                    type: IcebergType.STRING,
+                    id: 2,
+                },
+            ],
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/parameter_name_test/`,
+            removalPolicy: RemovalPolicy.DESTROY,
+        });
+
         const grants: Array<[string, IcebergTable]> = [
             [
                 'EvolutionTablePermission',
@@ -127,6 +191,18 @@ export class IcebergEvolutionStack extends Stack {
             [
                 'NestedEvolutionTablePermission',
                 nestedTable,
+            ],
+            [
+                'ReusedIdTablePermission',
+                reusedIdTable,
+            ],
+            [
+                'PartitionIdTablePermission',
+                partitionIdTable,
+            ],
+            [
+                'ParameterNameTablePermission',
+                parameterNameTable,
             ],
         ];
         grants.forEach(([
@@ -326,6 +402,61 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
     return [
         monthPartition,
     ];
+}
+
+/// `reused_id_test` drops `c` (id 2) at step 2 and gives id 2 to the new
+/// column `d` from step 3.
+function buildReusedIdColumns(step: number): IcebergColumn[] {
+    const kept: IcebergColumn[] = [
+        {
+            name: 'a',
+            type: IcebergType.LONG,
+            id: 1,
+        },
+    ];
+    if (step === 2) {
+        return kept;
+    }
+    return [
+        ...kept,
+        {
+            name: step === 1 ? 'c' : 'd',
+            type: IcebergType.STRING,
+            id: 2,
+        },
+    ];
+}
+
+/// `partition_id_test` adds a field under 1005 at step 2, above the next
+/// free id 1002, and one under 1003 at step 3, below `last-partition-id`.
+function buildPartitionIdSpec(step: number): IcebergPartitionField[] {
+    const spec: IcebergPartitionField[] = [
+        {
+            sourceColumn: 'ts',
+            transform: IcebergPartitionTransform.DAY,
+            fieldId: 1000,
+        },
+        {
+            sourceColumn: 'id',
+            transform: IcebergPartitionTransform.bucket(4),
+            fieldId: 1001,
+        },
+    ];
+    if (step >= 2) {
+        spec.push({
+            sourceColumn: 'cat',
+            transform: IcebergPartitionTransform.IDENTITY,
+            fieldId: 1005,
+        });
+    }
+    if (step >= 3) {
+        spec.push({
+            sourceColumn: 'region',
+            transform: IcebergPartitionTransform.IDENTITY,
+            fieldId: 1003,
+        });
+    }
+    return spec;
 }
 
 /// Step 6 changes only the identifier set; columns and partitions match

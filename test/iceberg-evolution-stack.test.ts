@@ -32,16 +32,16 @@ function icebergInputAt(step: number | string, tableName = 'evolution_test') {
     return table!.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput;
 }
 
-function fieldsAt(step: number | string): Array<{ Id: number; Name: string }> {
-    const fields = icebergInputAt(step).Schema.Fields;
+function fieldsAt(step: number | string, tableName = 'evolution_test'): Array<{ Id: number; Name: string }> {
+    const fields = icebergInputAt(step, tableName).Schema.Fields;
     return fields.map((field: { Id: number; Name: string }) => ({
         Id: field.Id,
         Name: field.Name,
     }));
 }
 
-function partitionsAt(step: number | string): Array<{ Name: string; FieldId: number }> {
-    const fields = icebergInputAt(step).PartitionSpec.Fields;
+function partitionsAt(step: number | string, tableName = 'evolution_test'): Array<{ Name: string; FieldId: number }> {
+    const fields = icebergInputAt(step, tableName).PartitionSpec.Fields;
     return fields.map((field: { Name: string; FieldId: number }) => ({
         Name: field.Name,
         FieldId: field.FieldId,
@@ -407,6 +407,84 @@ describe('IcebergEvolutionStack — property, sort order and rollback steps', ()
     });
 });
 
+describe('IcebergEvolutionStack — Glue observation tables', () => {
+    function parameterNameTableAt(step: number): Record<string, unknown> {
+        return Object.entries(synthAt(step).findResources('AWS::Glue::Table')).find(([
+            logicalId,
+        ]) => logicalId.startsWith('ParameterNameTable'))![1].Properties;
+    }
+
+    it('reused_id_test drops c at step 2 and gives its id 2 to d from step 3', () => {
+        const kept = {
+            Id: 1,
+            Name: 'a',
+        };
+        expect(fieldsAt(1, 'reused_id_test')).toEqual([
+            kept,
+            {
+                Id: 2,
+                Name: 'c',
+            },
+        ]);
+        expect(fieldsAt(2, 'reused_id_test')).toEqual([
+            kept,
+        ]);
+        expect(fieldsAt(3, 'reused_id_test')).toEqual([
+            kept,
+            {
+                Id: 2,
+                Name: 'd',
+            },
+        ]);
+        expect(icebergInputAt(12, 'reused_id_test')).toEqual(icebergInputAt(3, 'reused_id_test'));
+    });
+
+    it('partition_id_test adds field 1005 at step 2 and field 1003 at step 3', () => {
+        const base = [
+            {
+                Name: 'ts_day',
+                FieldId: 1000,
+            },
+            {
+                Name: 'id_bucket',
+                FieldId: 1001,
+            },
+        ];
+        const cat = {
+            Name: 'cat',
+            FieldId: 1005,
+        };
+        expect(partitionsAt(1, 'partition_id_test')).toEqual(base);
+        expect(partitionsAt(2, 'partition_id_test')).toEqual([
+            ...base,
+            cat,
+        ]);
+        expect(partitionsAt(3, 'partition_id_test')).toEqual([
+            ...base,
+            cat,
+            {
+                Name: 'region',
+                FieldId: 1003,
+            },
+        ]);
+        expect(icebergInputAt(12, 'partition_id_test')).toEqual(icebergInputAt(3, 'partition_id_test'));
+    });
+
+    it('parameter_name_test takes its name from a parameter defaulting to it from step 9, nothing else changing', () => {
+        const before = parameterNameTableAt(8);
+        const after = parameterNameTableAt(9);
+        expect(before.Name).toBe('parameter_name_test');
+        expect(after.Name).toEqual({
+            Ref: 'ParameterNameTableName',
+        });
+        expect(synthAt(9).toJSON().Parameters.ParameterNameTableName.Default).toBe('parameter_name_test');
+        expect({
+            ...after,
+            Name: before.Name,
+        }).toEqual(before);
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -433,7 +511,7 @@ describe('IcebergEvolutionStack — wiring', () => {
         expect(() => synthAt('9.5')).toThrow(/evolutionStep must be an integer from 1 to 12/);
     });
 
-    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on both tables', () => {
+    it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on every table', () => {
         const template = synthAt(1);
         const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'));
         const tableIds = Object.fromEntries(Object.entries(template.findResources('AWS::Glue::Table')).map(([
@@ -446,6 +524,9 @@ describe('IcebergEvolutionStack — wiring', () => {
         expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
             'evolution_test',
             'nested_evolution_test',
+            'reused_id_test',
+            'partition_id_test',
+            'parameter_name_test',
         ]);
         permissions.forEach((permission) => {
             expect([

@@ -5,6 +5,7 @@ from pyspark.sql import SparkSession
 
 TABLE = "glue.sample_database.evolution_test"
 NESTED = "glue.sample_database.nested_evolution_test"
+REUSED = "glue.sample_database.reused_id_test"
 
 
 def phase_1(spark: SparkSession) -> None:
@@ -29,6 +30,8 @@ def phase_2(spark: SparkSession) -> None:
 def phase_3(spark: SparkSession) -> None:
     rows = spark.sql(f"SELECT contact_email FROM {TABLE} WHERE customer_id = 10").collect()
     assert rows == [("a@example.com",)], f"contact_email for customer_id 10: expected a@example.com, got {rows}"
+    rows = spark.sql(f"SELECT a, d FROM {REUSED}").collect()
+    assert rows == [(1, "c1")], f"{REUSED} row written before c was dropped: expected d = 'c1', got {rows}"
 
 
 def phase_4(spark: SparkSession) -> None:

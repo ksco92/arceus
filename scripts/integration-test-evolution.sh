@@ -36,6 +36,9 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 DATABASE="sample_database"
 TABLE="evolution_test"
 NESTED_TABLE="nested_evolution_test"
+REUSED_TABLE="reused_id_test"
+PARTITION_TABLE="partition_id_test"
+NAME_TABLE="parameter_name_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -70,6 +73,8 @@ print('sort-orders', ';'.join(str(o['order-id']) + ':' + ','.join(
     for o in m['sort-orders']))
 print('commit-retries', m['properties'].get('commit.retry.num-retries', 'unset'))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
+print('partition-ids', ','.join(f\"{f['field-id']}:{f['transform']}\" for f in current_spec['fields']))
+print('last-partition-id', m['last-partition-id'])
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
 print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
@@ -99,7 +104,7 @@ assert_partitions() {
 }
 
 assert_meta() {
-    assert_same "$1" "$2" "$(table_column_names | grep "^$1 " | cut -d' ' -f2)"
+    assert_same "$1" "$2" "$(table_column_names "${3:-$TABLE}" | grep "^$1 " | cut -d' ' -f2)"
 }
 
 # The listing of `evolution_test` without the lines whose key matches $1.
@@ -158,7 +163,7 @@ header "TEARDOWN any existing IcebergEvolutionStack from a prior run"
 npx cdk destroy "$STACK" --force --region "$AWS_REGION" 2>&1 | tail -3 || true
 yellow "  Also clearing the table's S3 prefix so Iceberg starts fresh."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-for prefix in "$TABLE" "$NESTED_TABLE"; do
+for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -186,6 +191,8 @@ athena_expect "(PK) comment on customer_id" "$COMMENTS" \
     "column_name|comment" "customer_id|(PK) Primary key." "email|NULL" "signed_up_at|NULL"
 athena_expect "nested seed row" "${NESTED_ROWS} FROM ${NESTED_TABLE} ORDER BY id" \
     "id|tag1|tag2|k1|k2|line1|city" "$ROW_100"
+run_athena "INSERT INTO ${REUSED_TABLE} VALUES (1, 'c1')" >/dev/null
+run_athena "INSERT INTO ${NAME_TABLE} VALUES (1, 'v1')" >/dev/null
 
 ################################################
 ################################################
@@ -196,6 +203,11 @@ deploy_step 2
 header "VERIFY step 2 (ADD column)"
 assert_columns "1:customer_id,2:email,3:signed_up_at,4:region"
 assert_partitions "signed_up_at_day"
+
+header "VERIFY step 2 (reused_id_test, partition_id_test)"
+assert_meta columns "1:a" "$REUSED_TABLE"
+assert_meta partition-ids "1000:day,1001:bucket[4],1005:identity" "$PARTITION_TABLE"
+assert_meta last-partition-id 1005 "$PARTITION_TABLE"
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
@@ -215,12 +227,19 @@ header "VERIFY step 3 (RENAME column + ADD partition)"
 assert_columns "1:customer_id,2:contact_email,3:signed_up_at,4:region"
 assert_partitions "signed_up_at_day,customer_id_bucket"
 
-header "SPARK step 3 (rename preserved data)"
+header "VERIFY step 3 (reused_id_test, partition_id_test)"
+assert_meta columns "1:a,2:d" "$REUSED_TABLE"
+assert_meta last-column-id 2 "$REUSED_TABLE"
+assert_meta partition-ids "1000:day,1001:bucket[4],1005:identity,1003:identity" "$PARTITION_TABLE"
+assert_meta last-partition-id 1005 "$PARTITION_TABLE"
+
+header "SPARK step 3 (rename preserved data, d of reused_id_test reads c's value)"
 spark_submit "$VERIFY_PROGRAM" --phase 3
 
 header "ATHENA step 3"
 athena_expect "renamed column keeps its values" "$ROWS" "customer_id|contact_email|signed_up_at|region" \
     "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
+athena_expect "d of the row written before the drop reads c's value" "SELECT * FROM ${REUSED_TABLE}" "a|d" "1|c1"
 
 ################################################
 ################################################
@@ -333,8 +352,15 @@ header "VERIFY step 9 (property-only update)"
 assert_meta commit-retries 5
 assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without commit-retries)"
 
+header "VERIFY step 9 (parameter_name_test)"
+assert_same "${NAME_TABLE} Glue version and metadata file" "1 00001" "$(aws glue get-table \
+    --database-name "$DATABASE" --name "$NAME_TABLE" --region "$AWS_REGION" \
+    --query '[Table.VersionId,Table.Parameters.metadata_location]' --output text \
+    | sed -E 's|[[:space:]].*/([0-9]+)-[^/]*$| \1|')"
+
 header "ATHENA step 9"
 rows_10_to_14 "rows unchanged"
+athena_expect "${NAME_TABLE} row written at step 1" "SELECT * FROM ${NAME_TABLE}" "id|v" "1|v1"
 
 ################################################
 ################################################
