@@ -624,26 +624,22 @@ Each method issues these statements and no others:
 | Catalog key, when `catalogEncryptionKey` is passed | `kms:Decrypt` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | the key |
 | Lake Formation, when `lakeFormationDataAccess` is `true` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `*` |
 
-Glue authorizes a table call against the catalog, the database and the
-table, so the Glue statement names all three; `glue:GetTables` returns
-only the tables the caller may `GetTable`. S3 encrypts a new object
-under the bucket key with the caller's `kms:GenerateDataKey`, not
-`kms:Encrypt`. Every resource is the table's own catalog, database,
-table, prefix or key, except `lakeformation:GetDataAccess`, which IAM
-matches only on `*`; Lake Formation vends data access only for tables
-the principal holds Lake Formation permissions on. Pass
-`catalogEncryptionKey` when the Data Catalog is encrypted with a
-customer managed key in `SSE-KMS` mode, where the caller needs the key;
-in `SSE-KMS-WITH-SERVICE-ROLE` mode the service role does. The catalog
-key actions do not include `kms:DescribeKey` and `kms:CreateGrant`,
-which the Glue encryption guide adds for catalog asset search. Both key
-statements come from the key's own `grant`; for a key in the same
-account under the default key policy, the key policy is unchanged.
+The KMS statements are on the whole key: `IKey.grant` adds no
+encryption-context condition, so a key shared with other data (a bucket
+or lake key, the catalog key) is covered for everything it encrypts,
+not only this table.
 
-The grants are IAM permissions only. When Lake Formation governs the
-database, the principal also needs Lake Formation permissions on the
-table (an `AWS::LakeFormation::Permissions` resource), which you
-create:
+`lakeformation:GetDataAccess` is the one statement on `*`, because Lake
+Formation supports no resource for it. It is issued only with
+`lakeFormationDataAccess: true`; with it, Lake Formation vends
+credentials for every table the principal holds Lake Formation
+permissions on, which includes tables open to `IAM_ALLOWED_PRINCIPALS`.
+
+Pass `catalogEncryptionKey` when the Data Catalog is encrypted with a
+customer managed key.
+
+Lake Formation permissions themselves (`AWS::LakeFormation::Permissions`)
+are yours to create:
 
 ```typescript
 import { CfnPermissions } from 'aws-cdk-lib/aws-lakeformation';
@@ -662,6 +658,16 @@ new CfnPermissions(this, 'OrdersReader', {
 ```
 
 Add `INSERT`, `DELETE` and `ALTER` for a principal that writes.
+
+In Python the new names are `encryption_key`, and the grant options are
+the keyword arguments `lake_formation_data_access` and
+`catalog_encryption_key`.
+
+Upgrading from a version before 0.17.0: existing `grantRead`,
+`grantWrite` and `grantReadWrite` policies change with no code edit.
+The Glue statement names the catalog and database ARNs as well as the
+table, and read grants add `glue:GetDatabase`. Nothing for KMS or Lake
+Formation is issued unless the new prop or options are passed.
 
 ### Importing an existing table
 
@@ -989,9 +995,7 @@ Athena as well as Spark, on the same tables:
   write as the `grantRead` role.
 
 The suites grant the querying principal `SELECT`, `INSERT`, `DELETE`,
-`ALTER` and `DESCRIBE` through Lake Formation. The construct's `grant*`
-helpers issue IAM grants only; under Lake Formation you add the
-matching LF grants. See [Granting access](#granting-access).
+`ALTER` and `DESCRIBE` through Lake Formation. See [Granting access](#granting-access).
 
 ### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
 
