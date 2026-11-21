@@ -447,8 +447,8 @@ partitions](#evolving-schema-and-partitions).
 
 Every string you pass is a literal string, not a token, and an
 enum-typed one must be a member of its enum; the exceptions are
-`location`, `comment`, table property values, and the `tableName` of
-an imported table.
+`location`, `comment`, table property values, `tableName` and
+`catalogId`.
 
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:
@@ -616,7 +616,7 @@ Each method issues these statements and no others:
 
 | Statement | `grantRead` | `grantWrite` | `grantReadWrite` | Resource |
 | --- | --- | --- | --- | --- |
-| Glue | `glue:BatchGetPartition`, `glue:GetDatabase`, `glue:GetPartition`, `glue:GetPartitions`, `glue:GetTable`, `glue:GetTables`, `glue:GetTableVersion`, `glue:GetTableVersions` | `glue:BatchCreatePartition`, `glue:BatchDeletePartition`, `glue:CreatePartition`, `glue:DeletePartition`, `glue:UpdatePartition`, `glue:UpdateTable` | both lists | `arn:<partition>:glue:<region>:<account>:catalog`, the database ARN and the table ARN |
+| Glue | `glue:BatchGetPartition`, `glue:GetDatabase`, `glue:GetPartition`, `glue:GetPartitions`, `glue:GetTable`, `glue:GetTables`, `glue:GetTableVersion`, `glue:GetTableVersions` | `glue:BatchCreatePartition`, `glue:BatchDeletePartition`, `glue:CreatePartition`, `glue:DeletePartition`, `glue:UpdatePartition`, `glue:UpdateTable` | both lists | the catalog, database and table ARNs, in the stack account or the [`catalogId`](#catalog-account-and-tokenized-table-names) |
 | S3 list | `s3:ListBucket` | none | `s3:ListBucket` | the bucket, with condition `StringLike` `s3:prefix` = `<prefix>*` or `<prefix>` |
 | S3 bucket | `s3:GetBucketLocation` | `s3:ListBucketMultipartUploads` | both | the bucket |
 | S3 objects | `s3:GetObject` | `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts` | both lists | `<bucket>/<prefix>*` |
@@ -677,9 +677,38 @@ const existing = IcebergTable.fromIcebergTableAttributes(this, 'Orders', {
     tableName: 'orders',
     location: 's3://my-bucket/analytics/orders/',
     encryptionKey: bucketKey, // optional; grants then cover the key
+    catalogId: '111122223333', // optional; see below
 });
 existing.grantRead(role);
 ```
+
+### Catalog account and tokenized table names
+
+`catalogId` (Python `catalog_id`) on `IcebergTable` and on the import
+attributes is the account id of the Glue Data Catalog that holds the
+table. It is 12 digits or a single token (`Stack.of(this).account`,
+`Aws.ACCOUNT_ID`, a `CfnParameter`); a string that mixes literal text
+with a token is rejected. Omitting it changes nothing: the table is
+created in the stack's account and `tableArn` and every grant keep
+their policies. When set, it is the table's `CatalogId` and the account
+in the catalog, database and table ARNs of `tableArn` and of every
+grant; the database ARN is then built from `database.databaseName` and
+that account, whatever account the `IDatabase` names. The database must
+already exist in that catalog: a `Database` construct in the stack
+creates one in the stack's account. The construct does not set up
+cross-account access: the resource policy of the catalog, the Lake
+Formation permissions and the IAM permissions of the deploying role in
+that account are yours.
+
+`tableName` may be a token, such as a `CfnParameter` or a cross-stack
+reference. A literal is checked against `^[a-z0-9_]+$`; in a string that
+mixes literal text with a token, the literal text is checked against
+`^[a-z0-9_]*$`. A token is rendered as given in the template and in the
+table ARN, for `tableName` and `catalogId` alike, so its deploy-time
+value is the deployer's responsibility. A `tableName` of `*` would make
+every grant on the table cover every table in the database. A table
+with a token `tableName` cannot set `schemaHistoryFile`, because a
+record is looked up by name at synth.
 
 ### Evolving schema and partitions
 

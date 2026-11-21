@@ -1,8 +1,11 @@
 import {
     App,
+    CfnParameter,
+    Fn,
     Lazy,
     RemovalPolicy,
     Stack,
+    Tokenization,
 } from 'aws-cdk-lib';
 import {
     Match,
@@ -2880,6 +2883,7 @@ describe('IcebergTable — rendered values are the validated values', () => {
         DeletionPolicy: string;
         Properties: {
             Name: string;
+            CatalogId: string;
             OpenTableFormatInput: { IcebergInput: { Version: string; IcebergTableInput: SynthedInput } };
         };
     }
@@ -3322,6 +3326,12 @@ describe('IcebergTable — rendered values are the validated values', () => {
             (r: SynthedTable) => r.Properties.Name,
         ],
         [
+            'catalogId',
+            '111111111111',
+            '222222222222',
+            (r: SynthedTable) => r.Properties.CatalogId,
+        ],
+        [
             'location',
             's3://my-bucket/snap/',
             'http://nope',
@@ -3697,12 +3707,6 @@ describe('IcebergTable — rendered values are the validated values', () => {
                 ],
             }),
         ],
-        [
-            'tableName',
-            (tableName) => synthInput({
-                tableName,
-            }),
-        ],
     ];
 
     describe.each(LITERAL_FIELDS)('%s', (_label, build) => {
@@ -3715,6 +3719,18 @@ describe('IcebergTable — rendered values are the validated values', () => {
                 produce: () => 'x',
             }))).toThrow(/must be a literal string, not a token/);
         });
+    });
+
+    it.each(OBJECTS)('rejects a tableName that is %s', (_kind, value) => {
+        expect(() => synthInput({
+            tableName: value as unknown as string,
+        })).toThrow(/tableName must be a string, got object/);
+    });
+
+    it.each(OBJECTS)('rejects a catalogId that is %s', (_kind, value) => {
+        expect(() => synthInput({
+            catalogId: value as unknown as string,
+        })).toThrow(/catalogId must be a string, got object/);
     });
 
     it.each(OBJECTS)('rejects a location that is %s', (_kind, value) => {
@@ -4117,5 +4133,207 @@ describe('IcebergTable.fromIcebergTableAttributes — boundary checks', () => {
             })}/p/`,
         });
         expect(stack.resolve(table.tableArn)).toBeDefined();
+    });
+});
+
+describe('IcebergTable — catalogId and tokenized tableName', () => {
+    const props = (database: Database, overrides: Partial<IcebergTableProps> = {}): IcebergTableProps => ({
+        database,
+        tableName: 'simple',
+        formatVersion: IcebergFormatVersion.V2,
+        columns: MINIMAL_COLUMNS,
+        location: 's3://my-bucket/simple/',
+        ...overrides,
+    });
+
+    it('renders a literal catalogId in the template', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: '999999999999',
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            CatalogId: '999999999999',
+        });
+    });
+
+    it('renders a CfnParameter catalogId as a Ref in the template', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: new CfnParameter(stack, 'Catalog').valueAsString,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            CatalogId: {
+                Ref: 'Catalog',
+            },
+        });
+    });
+
+    it('accepts the stack account token of an environment-agnostic stack as catalogId', () => {
+        const stack = new Stack(new App(), 'Agnostic');
+        const database = new Database(stack, 'Db', {
+            databaseName: 'test_db',
+        });
+        new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: stack.account,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            CatalogId: {
+                Ref: 'AWS::AccountId',
+            },
+        });
+    });
+
+    it('renders a CfnParameter tableName as a Ref in the template Name', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            tableName: new CfnParameter(stack, 'TableNameParam', {
+                default: 'from_parameter',
+            }).valueAsString,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            Name: {
+                Ref: 'TableNameParam',
+            },
+        });
+    });
+
+    const token = (): string => Lazy.string({
+        produce: () => 'resolved',
+    });
+    type Path = 'constructed' | 'imported';
+    const PATHS: Path[] = [
+        'constructed',
+        'imported',
+    ];
+
+    function build(path: Path, overrides: { tableName?: string; catalogId?: string }): void {
+        const {
+            stack, database,
+        } = makeStack();
+        if (path === 'imported') {
+            IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+                database,
+                tableName: 'simple',
+                location: 's3://my-bucket/simple/',
+                ...overrides,
+            });
+        } else {
+            new IcebergTable(stack, 'Tbl', props(database, overrides));
+        }
+    }
+
+    describe.each(PATHS)('tableName on a %s table', (path) => {
+        it.each([
+            [
+                'a token',
+                token(),
+            ],
+            [
+                'literal text of the allowed characters followed by a token',
+                `pre_9${token()}`,
+            ],
+            [
+                'a token followed by literal text of the allowed characters',
+                `${token()}_suffix`,
+            ],
+        ])('accepts %s', (_kind, tableName) => {
+            expect(() => build(path, {
+                tableName,
+            })).not.toThrow();
+        });
+
+        it.each([
+            '*',
+            '?',
+            '/',
+            ':',
+            'Upper',
+            ' ',
+        ])('rejects literal text %j mixed with a token', (text) => {
+            expect(() => build(path, {
+                tableName: `${text}${token()}`,
+            })).toThrow(/must contain only lowercase letters, digits, and underscores/);
+            expect(() => build(path, {
+                tableName: `${token()}${text}`,
+            })).toThrow(/must contain only lowercase letters, digits, and underscores/);
+        });
+
+        it.each([
+            'Bad-Name',
+            '',
+        ])('rejects the literal %j', (tableName) => {
+            expect(() => build(path, {
+                tableName,
+            })).toThrow(/must contain only lowercase letters, digits, and underscores/);
+        });
+    });
+
+    describe.each(PATHS)('catalogId on a %s table', (path) => {
+        it.each([
+            [
+                'a 12-digit literal',
+                '123456789012',
+            ],
+            [
+                'a string token',
+                token(),
+            ],
+            [
+                'a list-element token',
+                Fn.select(0, Fn.split(',', token())),
+            ],
+            [
+                'a number token',
+                Tokenization.stringifyNumber(Lazy.number({
+                    produce: () => 1,
+                })),
+            ],
+        ])('accepts %s', (_kind, catalogId) => {
+            expect(() => build(path, {
+                catalogId,
+            })).not.toThrow();
+        });
+
+        it.each([
+            '*',
+            '?',
+            '/',
+            ':',
+            'a',
+            ' ',
+            '123456789012',
+        ])('rejects literal text %j mixed with a token', (text) => {
+            expect(() => build(path, {
+                catalogId: `${text}${token()}`,
+            })).toThrow(/not text mixed with a token/);
+            expect(() => build(path, {
+                catalogId: `${token()}${text}`,
+            })).toThrow(/not text mixed with a token/);
+        });
+
+        it('rejects two adjacent tokens', () => {
+            expect(() => build(path, {
+                catalogId: `${token()}${token()}`,
+            })).toThrow(/not text mixed with a token/);
+        });
+
+        it.each([
+            '',
+            '12345678901',
+            '1234567890123',
+            'abcdefghijkl',
+            '123456789012\n',
+            '*',
+        ])('rejects the literal %j', (catalogId) => {
+            expect(() => build(path, {
+                catalogId,
+            })).toThrow(/must be a 12-digit AWS account id/);
+        });
     });
 });

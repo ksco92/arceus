@@ -27,7 +27,9 @@ function tableNamed(template: Template, name: string): Record<string, unknown> {
     const tables = template.findResources('AWS::Glue::Table');
     for (const entry of Object.values(tables)) {
         const props = entry.Properties;
-        if (props.Name === name) {
+        const parameter = props.Name?.Ref;
+        const resolved = parameter === undefined ? props.Name : template.toJSON().Parameters[parameter].Default;
+        if (resolved === name) {
             return props.OpenTableFormatInput.IcebergInput.IcebergTableInput;
         }
     }
@@ -114,13 +116,25 @@ describe('IcebergSurfaceStack', () => {
         expect(attrsType).toContain('"key":"string"');
     });
 
+    it('names the sorted table from a parameter that defaults to sorted_test', () => {
+        const parameter = template.toJSON().Parameters.SortedTableName;
+        expect(parameter.Default).toBe('sorted_test');
+        template.hasResourceProperties('AWS::Glue::Table', {
+            Name: {
+                Ref: 'SortedTableName',
+            },
+        });
+    });
+
     it('emits Lake-Formation table grants for the principal on every table', () => {
         const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'))
             .map((r) => r.Properties)
             .filter((p) => p.DataLakePrincipal.DataLakePrincipalIdentifier === 'arn:aws:iam::123456789012:user/me');
         expect(permissions.map((p) => p.Resource.TableResource.Name)).toEqual([
             'transforms_test',
-            'sorted_test',
+            {
+                Ref: 'SortedTableName',
+            },
             'nested_test',
             'creation_order_test',
             'grants_test',

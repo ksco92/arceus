@@ -63,7 +63,7 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *   - `transforms_test` — every partition transform (identity, year,
  *     month, day, hour, bucket(N), truncate(W)) on one table.
  *   - `sorted_test` — multi-field write order with mixed directions
- *     and null orderings.
+ *     and null orderings; its name comes from a `CfnParameter`.
  *   - `nested_test` — list, struct, and map columns inserted and
  *     queried via Spark SQL.
  *   - `creation_order_test` — nested columns declared with ids out of
@@ -195,7 +195,10 @@ export class IcebergSurfaceStack extends Stack {
 
         const sortedTable = new IcebergTable(this, 'SortedTable', {
             database: importedDatabase,
-            tableName: 'sorted_test',
+            tableName: new CfnParameter(this, 'SortedTableName', {
+                default: 'sorted_test',
+                description: 'Name of the sorted table.',
+            }).valueAsString,
             formatVersion: IcebergFormatVersion.V2,
             comment: 'Exercises sortOrder with multiple fields, mixed direction + null ordering.',
             columns: [

@@ -1,5 +1,6 @@
 import {
     Token,
+    Tokenization,
 } from 'aws-cdk-lib';
 import {
     CfnTable,
@@ -106,6 +107,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
     const {
         database,
         tableName,
+        catalogId,
         columns,
         location,
         encryptionKey,
@@ -123,7 +125,13 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         database,
         encryptionKey,
         removalPolicy,
-        tableName: primitive('tableName', tableName, 'string'),
+        tableName: primitive('tableName', tableName, 'string', {
+            tokens: true,
+        }),
+        catalogId: primitive('catalogId', catalogId, 'string', {
+            optional: true,
+            tokens: true,
+        }),
         location: primitive('location', location, 'string', {
             tokens: true,
         }),
@@ -159,12 +167,36 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
     };
 }
 
+/** The literal text of a string that contains a token, with every token removed. */
+function literalText(value: string): string {
+    return Tokenization.reverseString(value).mapTokens({
+        mapToken: () => '',
+    }).join({
+        join: (left, right) => `${left}${right}`,
+    });
+}
+
 /** @internal */
 export function validateTableName(tableName: string): void {
-    if (!tableName.match(/^[a-z0-9_]+$/)) {
+    const tokenized = Token.isUnresolved(tableName);
+    const pattern = tokenized ? /^[a-z0-9_]*$/ : /^[a-z0-9_]+$/;
+    if (!pattern.test(tokenized ? literalText(tableName) : tableName)) {
         throw new Error(
             `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
+    }
+}
+
+/** @internal */
+export function validateCatalogId(catalogId: string | undefined): void {
+    if (catalogId === undefined) {
+        return;
+    }
+    const valid = Token.isUnresolved(catalogId)
+        ? Tokenization.reverseString(catalogId).length === 1
+        : /^[0-9]{12}$/.test(catalogId);
+    if (!valid) {
+        throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id or a single token, not text mixed with a token`);
     }
 }
 
@@ -178,6 +210,7 @@ export function validateLocation(location: string): void {
 /** @internal */
 export function validateProps(props: IcebergTableProps): void {
     validateTableName(props.tableName);
+    validateCatalogId(props.catalogId);
     if (props.columns.length === 0) {
         throw new Error('IcebergTable requires at least one column');
     }
