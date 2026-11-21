@@ -160,6 +160,9 @@ export interface GrantContext {
 
 /**
  * The grant resources of the table `tableName` in `database`, stored under `bucket`/`key`.
+ * With `catalogId` set, the catalog, database and table ARNs all carry that account and the
+ * database ARN is built from `database.databaseName`; otherwise they use the stack's account
+ * and the database's own ARN.
  *
  * @internal
  */
@@ -167,6 +170,7 @@ export function grantContext(
     stack: Stack,
     database: IDatabase,
     tableName: string,
+    catalogId: string | undefined,
     location: { bucket: string; key: string },
     encryptionKey: IKey | undefined,
 ): GrantContext {
@@ -175,11 +179,20 @@ export function grantContext(
         catalogArn: stack.formatArn({
             service: 'glue',
             resource: 'catalog',
+            account: catalogId,
         }),
-        databaseArn: database.databaseArn,
+        databaseArn: catalogId === undefined
+            ? database.databaseArn
+            : stack.formatArn({
+                service: 'glue',
+                resource: 'database',
+                resourceName: database.databaseName,
+                account: catalogId,
+            }),
         tableArn: stack.formatArn({
             service: 'glue',
             resource: 'table',
+            account: catalogId,
             resourceName: `${database.databaseName}/${tableName}`,
         }),
         bucketArn,

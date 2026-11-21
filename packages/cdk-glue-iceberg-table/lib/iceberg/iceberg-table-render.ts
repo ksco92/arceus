@@ -106,6 +106,7 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
     const {
         database,
         tableName,
+        catalogId,
         columns,
         location,
         encryptionKey,
@@ -123,7 +124,13 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         database,
         encryptionKey,
         removalPolicy,
-        tableName: primitive('tableName', tableName, 'string'),
+        tableName: primitive('tableName', tableName, 'string', {
+            tokens: true,
+        }),
+        catalogId: primitive('catalogId', catalogId, 'string', {
+            optional: true,
+            tokens: true,
+        }),
         location: primitive('location', location, 'string', {
             tokens: true,
         }),
@@ -161,10 +168,17 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
 
 /** @internal */
 export function validateTableName(tableName: string): void {
-    if (!tableName.match(/^[a-z0-9_]+$/)) {
+    if (!Token.isUnresolved(tableName) && !tableName.match(/^[a-z0-9_]+$/)) {
         throw new Error(
             `tableName '${tableName}' must contain only lowercase letters, digits, and underscores`,
         );
+    }
+}
+
+/** @internal */
+export function validateCatalogId(catalogId: string | undefined): void {
+    if (catalogId !== undefined && !Token.isUnresolved(catalogId) && !catalogId.match(/^[0-9]{12}$/)) {
+        throw new Error(`catalogId '${catalogId}' must be a 12-digit AWS account id`);
     }
 }
 
@@ -178,6 +192,7 @@ export function validateLocation(location: string): void {
 /** @internal */
 export function validateProps(props: IcebergTableProps): void {
     validateTableName(props.tableName);
+    validateCatalogId(props.catalogId);
     if (props.columns.length === 0) {
         throw new Error('IcebergTable requires at least one column');
     }

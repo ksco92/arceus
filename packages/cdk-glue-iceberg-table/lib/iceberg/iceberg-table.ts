@@ -2,7 +2,6 @@ import {
     Resource,
     Stack,
     RemovalPolicy,
-    Token,
 } from 'aws-cdk-lib';
 import {
     CfnTable,
@@ -49,6 +48,7 @@ import {
     validateProps,
     validateLocation,
     validateSortOrder,
+    validateCatalogId,
     validateTableName,
 } from './iceberg-table-render';
 import {
@@ -73,8 +73,18 @@ export interface IcebergTableProps {
     /** Glue database that will hold the table. */
     readonly database: IDatabase;
 
-    /** Table name (lower-case, no spaces — Glue and Athena will fold it). */
+    /**
+     * Table name (lower-case, no spaces — Glue and Athena will fold it). A literal is
+     * checked; a token (a `CfnParameter`, a cross-stack reference) is used as given.
+     */
     readonly tableName: string;
+
+    /**
+     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a token.
+     * Reaches the table's `CatalogId` and the catalog, database and table ARNs the grants name.
+     * @default - the stack's account
+     */
+    readonly catalogId?: string;
 
     /** Top-level columns. Must contain at least one column. */
     readonly columns: IcebergColumn[];
@@ -196,6 +206,9 @@ export class IcebergTable extends Resource implements IIcebergTable {
     /** Table name as it appears in Glue / Athena. */
     public readonly tableName: string;
 
+    /** Account id of the Glue Data Catalog holding the table, after defaulting. */
+    public readonly catalogId: string;
+
     /** Glue database holding the table. */
     public readonly database: IDatabase;
 
@@ -226,6 +239,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
 
         this.database = props.database;
         this.tableName = props.tableName;
+        this.catalogId = props.catalogId ?? Stack.of(this).account;
         this.location = normalizeLocation(props.location);
         this.encryptionKey = props.encryptionKey;
         this.dataFormat = props.dataFormat ?? IcebergDataFormat.PARQUET;
@@ -235,6 +249,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
             Stack.of(this),
             this.database,
             this.tableName,
+            props.catalogId,
             parseS3Uri(this.location),
             this.encryptionKey,
         );
@@ -258,7 +273,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
         }
 
         this.resource = new CfnTable(this, 'Resource', {
-            catalogId: Stack.of(this).account,
+            catalogId: this.catalogId,
             databaseName: props.database.databaseName,
             name: this.tableName,
             openTableFormatInput: {
@@ -314,6 +329,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
             database,
             encryptionKey,
             tableName: importedName,
+            catalogId: importedCatalogId,
         } = attrs;
         const importedLocation = primitive('location', attrs.location, 'string', {
             tokens: true,
@@ -321,12 +337,15 @@ export class IcebergTable extends Resource implements IIcebergTable {
         const tableName = primitive('tableName', importedName, 'string', {
             tokens: true,
         });
-        if (!Token.isUnresolved(tableName)) {
-            validateTableName(tableName);
-        }
+        const catalogId = primitive('catalogId', importedCatalogId, 'string', {
+            optional: true,
+            tokens: true,
+        });
+        validateTableName(tableName);
+        validateCatalogId(catalogId);
         validateLocation(importedLocation);
         const location = normalizeLocation(importedLocation);
-        const context = grantContext(Stack.of(scope), database, tableName, parseS3Uri(location), encryptionKey);
+        const context = grantContext(Stack.of(scope), database, tableName, catalogId, parseS3Uri(location), encryptionKey);
 
         class Imported extends Resource implements IIcebergTable {
             public readonly tableArn = context.tableArn;
@@ -377,6 +396,12 @@ export interface IcebergTableAttributes {
 
     /** S3 URI where the table's data + metadata live. */
     readonly location: string;
+
+    /**
+     * Account id of the Glue Data Catalog that holds the table: 12 digits, or a token.
+     * @default - the stack's account
+     */
+    readonly catalogId?: string;
 
     /** KMS key the table's objects are encrypted with; grants add the actions of `IcebergTableProps.encryptionKey` on the whole key. */
     readonly encryptionKey?: IKey;

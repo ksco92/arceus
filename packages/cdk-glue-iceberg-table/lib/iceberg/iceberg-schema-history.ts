@@ -5,6 +5,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+    Token,
+} from 'aws-cdk-lib';
+import {
     CfnTable,
 } from 'aws-cdk-lib/aws-glue';
 import {
@@ -256,6 +259,12 @@ export function checkSchemaHistory(
     columns: IcebergColumn[],
     partitionSpec: CfnTable.IcebergPartitionSpecProperty | undefined,
 ): void {
+    if (Token.isUnresolved(tableName)) {
+        throw new Error(
+            'schemaHistoryFile needs a literal tableName: records are keyed by table name and read at synth. '
+            + 'Set tableName to a literal string or remove schemaHistoryFile',
+        );
+    }
     const resolved = path.resolve(file);
     const record = readHistoryFile(resolved).tables.find((table) => table.tableName === tableName);
     const current = recordOf(tableName, columns, partitionSpec);

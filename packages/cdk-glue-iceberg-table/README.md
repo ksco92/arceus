@@ -447,8 +447,8 @@ partitions](#evolving-schema-and-partitions).
 
 Every string you pass is a literal string, not a token, and an
 enum-typed one must be a member of its enum; the exceptions are
-`location`, `comment`, table property values, and the `tableName` of
-an imported table.
+`location`, `comment`, table property values, `tableName` and
+`catalogId`.
 
 The resulting Iceberg `metadata.json` for this table contains every
 feature you set:
@@ -677,9 +677,33 @@ const existing = IcebergTable.fromIcebergTableAttributes(this, 'Orders', {
     tableName: 'orders',
     location: 's3://my-bucket/analytics/orders/',
     encryptionKey: bucketKey, // optional; grants then cover the key
+    catalogId: '111122223333', // optional; see below
 });
 existing.grantRead(role);
 ```
+
+### Catalog account and tokenized table names
+
+`catalogId` on `IcebergTable` and on the import attributes is the
+account id of the Glue Data Catalog that holds the table. It is 12
+digits or a token (`Stack.of(this).account`, `Aws.ACCOUNT_ID`, a
+`CfnParameter`), and defaults to the stack's account. It sets the
+table's `CatalogId` and the account in the catalog, database and table
+ARNs of `tableArn` and of every grant; with `catalogId` set, the
+database ARN is built from `database.databaseName` and that account,
+whatever account the `IDatabase` itself names. `IcebergTable` exposes
+the resolved value as `catalogId`. The construct does not set up
+cross-account access: the resource policy of the catalog, the Lake
+Formation permissions and the IAM permissions of the deploying role in
+that account are yours.
+
+`tableName` may be a token, such as a `CfnParameter` or a cross-stack
+reference. A literal is checked against `^[a-z0-9_]+$`; a token is
+rendered as given in the template and in the table ARN, so its
+deploy-time value is the deployer's responsibility. A value of `*`
+would make every grant on the table cover every table in the
+database. A table with a token `tableName` cannot set
+`schemaHistoryFile`, because a record is looked up by name at synth.
 
 ### Evolving schema and partitions
 

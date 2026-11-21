@@ -1,5 +1,6 @@
 import {
     App,
+    CfnParameter,
     Lazy,
     RemovalPolicy,
     Stack,
@@ -2880,6 +2881,7 @@ describe('IcebergTable — rendered values are the validated values', () => {
         DeletionPolicy: string;
         Properties: {
             Name: string;
+            CatalogId: string;
             OpenTableFormatInput: { IcebergInput: { Version: string; IcebergTableInput: SynthedInput } };
         };
     }
@@ -3322,6 +3324,12 @@ describe('IcebergTable — rendered values are the validated values', () => {
             (r: SynthedTable) => r.Properties.Name,
         ],
         [
+            'catalogId',
+            '111111111111',
+            '222222222222',
+            (r: SynthedTable) => r.Properties.CatalogId,
+        ],
+        [
             'location',
             's3://my-bucket/snap/',
             'http://nope',
@@ -3697,12 +3705,6 @@ describe('IcebergTable — rendered values are the validated values', () => {
                 ],
             }),
         ],
-        [
-            'tableName',
-            (tableName) => synthInput({
-                tableName,
-            }),
-        ],
     ];
 
     describe.each(LITERAL_FIELDS)('%s', (_label, build) => {
@@ -3715,6 +3717,18 @@ describe('IcebergTable — rendered values are the validated values', () => {
                 produce: () => 'x',
             }))).toThrow(/must be a literal string, not a token/);
         });
+    });
+
+    it.each(OBJECTS)('rejects a tableName that is %s', (_kind, value) => {
+        expect(() => synthInput({
+            tableName: value as unknown as string,
+        })).toThrow(/tableName must be a string, got object/);
+    });
+
+    it.each(OBJECTS)('rejects a catalogId that is %s', (_kind, value) => {
+        expect(() => synthInput({
+            catalogId: value as unknown as string,
+        })).toThrow(/catalogId must be a string, got object/);
     });
 
     it.each(OBJECTS)('rejects a location that is %s', (_kind, value) => {
@@ -4117,5 +4131,144 @@ describe('IcebergTable.fromIcebergTableAttributes — boundary checks', () => {
             })}/p/`,
         });
         expect(stack.resolve(table.tableArn)).toBeDefined();
+    });
+});
+
+describe('IcebergTable — catalogId and tokenized tableName', () => {
+    const props = (database: Database, overrides: Partial<IcebergTableProps> = {}): IcebergTableProps => ({
+        database,
+        tableName: 'simple',
+        formatVersion: IcebergFormatVersion.V2,
+        columns: MINIMAL_COLUMNS,
+        location: 's3://my-bucket/simple/',
+        ...overrides,
+    });
+
+    it('renders a literal catalogId in the template and the table ARN', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const table = new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: '999999999999',
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            CatalogId: '999999999999',
+        });
+        expect(table.catalogId).toBe('999999999999');
+        expect(JSON.stringify(stack.resolve(table.tableArn))).toContain(':glue:us-east-1:999999999999:table/');
+    });
+
+    it('defaults catalogId to the stack account when omitted', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const table = new IcebergTable(stack, 'Tbl', props(database));
+        expect(table.catalogId).toBe('123456789012');
+        expect(JSON.stringify(stack.resolve(table.tableArn))).toContain(':glue:us-east-1:123456789012:table/');
+    });
+
+    it('renders a CfnParameter catalogId as a Ref in the template and the table ARN', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const parameter = new CfnParameter(stack, 'Catalog');
+        const table = new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: parameter.valueAsString,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            CatalogId: {
+                Ref: 'Catalog',
+            },
+        });
+        expect(stack.resolve(table.tableArn)['Fn::Join'][1]).toContainEqual({
+            Ref: 'Catalog',
+        });
+    });
+
+    it('accepts the stack account token of an environment-agnostic stack as catalogId', () => {
+        const stack = new Stack(new App(), 'Agnostic');
+        const database = new Database(stack, 'Db', {
+            databaseName: 'test_db',
+        });
+        new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: stack.account,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            CatalogId: {
+                Ref: 'AWS::AccountId',
+            },
+        });
+    });
+
+    it.each([
+        '',
+        '12345678901',
+        '1234567890123',
+        'abcdefghijkl',
+        '12345678901a',
+        '123456789012\n',
+    ])('rejects the literal catalogId %j', (catalogId) => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId,
+        }))).toThrow(/must be a 12-digit AWS account id/);
+    });
+
+    it('rejects a catalogId that is not a string', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
+            catalogId: 123456789012 as unknown as string,
+        }))).toThrow('catalogId must be a string, got number');
+    });
+
+    it('renders a CfnParameter tableName as a Ref in the template Name and the table ARN', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const parameter = new CfnParameter(stack, 'TableNameParam', {
+            default: 'from_parameter',
+        });
+        const table = new IcebergTable(stack, 'Tbl', props(database, {
+            tableName: parameter.valueAsString,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            Name: {
+                Ref: 'TableNameParam',
+            },
+        });
+        expect(stack.resolve(table.tableArn)['Fn::Join'][1]).toContainEqual({
+            Ref: 'TableNameParam',
+        });
+    });
+
+    it('still rejects an invalid literal tableName', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
+            tableName: 'Bad-Name',
+        }))).toThrow(/tableName.*lowercase/);
+    });
+
+    it('accepts a literal catalogId and a token tableName on an imported table', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        const parameter = new CfnParameter(stack, 'ImportedName');
+        const imported = IcebergTable.fromIcebergTableAttributes(stack, 'Imported', {
+            database,
+            tableName: parameter.valueAsString,
+            catalogId: '999999999999',
+            location: 's3://my-bucket/simple/',
+        });
+        const joined = stack.resolve(imported.tableArn)['Fn::Join'][1];
+        expect(joined).toContainEqual({
+            Ref: 'ImportedName',
+        });
+        expect(JSON.stringify(joined)).toContain(':glue:us-east-1:999999999999:table/');
     });
 });

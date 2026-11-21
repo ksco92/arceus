@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
     App,
+    CfnParameter,
     Lazy,
     Stack,
 } from 'aws-cdk-lib';
@@ -1205,6 +1206,15 @@ describe('IcebergTable schemaHistoryFile', () => {
             'long',
             'long',
         ]);
+    });
+
+    it('rejects a schemaHistoryFile together with a token tableName', () => {
+        const file = writeHistory('empty.json', emptyHistory());
+        const stack = new Stack(new App(), 'S');
+        expect(() => new IcebergTable(stack, 'T', {
+            ...(tableProps(file) as unknown as IcebergTableProps),
+            tableName: new CfnParameter(stack, 'Name').valueAsString,
+        })).toThrow('schemaHistoryFile needs a literal tableName');
     });
 
     it('checks against the schemaHistoryFile it read once', () => {

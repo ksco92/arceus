@@ -63,13 +63,14 @@ export interface IcebergSurfaceStackProps extends StackProps {
  *   - `transforms_test` — every partition transform (identity, year,
  *     month, day, hour, bucket(N), truncate(W)) on one table.
  *   - `sorted_test` — multi-field write order with mixed directions
- *     and null orderings.
+ *     and null orderings; its name comes from a `CfnParameter`.
  *   - `nested_test` — list, struct, and map columns inserted and
  *     queried via Spark SQL.
  *   - `creation_order_test` — nested columns declared with ids out of
  *     creation order, to read back the ids Glue assigns at CREATE.
  *   - `grants_test` — read by `ReaderRole` (`grantRead`) and written by
- *     `ReadWriterRole` (`grantReadWrite` on an imported handle).
+ *     `ReadWriterRole` (`grantReadWrite` on an imported handle), both
+ *     with `catalogId` set to the stack account.
  */
 export class IcebergSurfaceStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergSurfaceStackProps) {
@@ -195,7 +196,10 @@ export class IcebergSurfaceStack extends Stack {
 
         const sortedTable = new IcebergTable(this, 'SortedTable', {
             database: importedDatabase,
-            tableName: 'sorted_test',
+            tableName: new CfnParameter(this, 'SortedTableName', {
+                default: 'sorted_test',
+                description: 'Name of the sorted table.',
+            }).valueAsString,
             formatVersion: IcebergFormatVersion.V2,
             comment: 'Exercises sortOrder with multiple fields, mixed direction + null ordering.',
             columns: [
@@ -372,6 +376,7 @@ export class IcebergSurfaceStack extends Stack {
 
         const grantsTable = new IcebergTable(this, 'GrantsTable', {
             database: importedDatabase,
+            catalogId: this.account,
             tableName: 'grants_test',
             formatVersion: IcebergFormatVersion.V2,
             comment: 'Read and written by roles whose table permissions come from the construct grants.',
@@ -446,6 +451,7 @@ export class IcebergSurfaceStack extends Stack {
 
         const importedGrantsTable = IcebergTable.fromIcebergTableAttributes(this, 'ImportedGrantsTable', {
             database: importedDatabase,
+            catalogId: this.account,
             tableName: grantsTable.tableName,
             location: grantsTable.location,
             encryptionKey: dataLakeKey,

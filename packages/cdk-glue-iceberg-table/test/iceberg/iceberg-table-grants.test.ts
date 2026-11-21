@@ -1,5 +1,6 @@
 import {
     App,
+    CfnParameter,
     Stack,
 } from 'aws-cdk-lib';
 import {
@@ -8,6 +9,7 @@ import {
 import {
     CfnDatabase,
     Database,
+    IDatabase,
 } from 'aws-cdk-lib/aws-glue';
 import {
     Grant,
@@ -78,18 +80,28 @@ function fixture(): Fixture {
     };
 }
 
-function table(f: Fixture, source: Source, encryptionKey?: IKey, location = 's3://my-bucket/path/simple/'): IIcebergTable {
+function table(
+    f: Fixture,
+    source: Source,
+    encryptionKey?: IKey,
+    location = 's3://my-bucket/path/simple/',
+    overrides: { catalogId?: string; tableName?: string; database?: IDatabase } = {},
+): IIcebergTable {
+    const database = overrides.database ?? f.database;
+    const tableName = overrides.tableName ?? 'simple';
     if (source === 'imported') {
         return IcebergTable.fromIcebergTableAttributes(f.stack, 'Imported', {
-            database: f.database,
-            tableName: 'simple',
+            database,
+            tableName,
+            catalogId: overrides.catalogId,
             location,
             encryptionKey,
         });
     }
     return new IcebergTable(f.stack, 'Tbl', {
-        database: f.database,
-        tableName: 'simple',
+        database,
+        tableName,
+        catalogId: overrides.catalogId,
         formatVersion: IcebergFormatVersion.V2,
         columns: [
             {
@@ -432,5 +444,157 @@ describe('IcebergTable grants read each caller value once', () => {
             ...baseStatements(f, 'grantRead'),
             ...added,
         ]);
+    });
+});
+
+describe('IcebergTable grants in a foreign catalog', () => {
+    const FOREIGN = '999999999999';
+
+    function merge(head: unknown[], tail: string): unknown[] {
+        const last = head[head.length - 1];
+        return typeof last === 'string' ? [
+            ...head.slice(0, -1),
+            last + tail,
+        ] : [
+            ...head,
+            tail,
+        ];
+    }
+
+    function glueResources(f: Fixture, account: unknown, tableName: unknown = 'simple'): unknown[] {
+        const head = typeof account === 'string' ? [
+            `:glue:us-east-1:${account}`,
+        ] : [
+            ':glue:us-east-1:',
+            account,
+        ];
+        const name = typeof tableName === 'string' ? [
+            `/${tableName}`,
+        ] : [
+            '/',
+            tableName,
+        ];
+        return [
+            join('arn:', PARTITION, ...merge(head, ':catalog')),
+            join('arn:', PARTITION, ...merge(head, ':database/'), databaseRef(f)),
+            join('arn:', PARTITION, ...merge(head, ':table/'), databaseRef(f), ...name),
+        ];
+    }
+
+    function expected(f: Fixture, method: GrantMethod, resources: unknown[]): Statement[] {
+        const [
+            glue,
+            ...rest
+        ] = baseStatements(f, method);
+        return [
+            {
+                ...glue,
+                Resource: resources,
+            },
+            ...rest,
+        ];
+    }
+
+    it.each(CASES)('%s on a %s table names the catalog, database and table in catalogId', (method, source) => {
+        const f = fixture();
+        const t = table(f, source, undefined, undefined, {
+            catalogId: FOREIGN,
+        });
+        grant(t, method, f.role);
+        expect(statements(f)).toEqual(expected(f, method, [
+            join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:catalog`),
+            join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:database/`, databaseRef(f)),
+            join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/`, databaseRef(f), '/simple'),
+        ]));
+    });
+
+    it.each(CASES)('%s on a %s table with a token catalogId renders the token in every Glue ARN', (method, source) => {
+        const f = fixture();
+        const parameter = new CfnParameter(f.stack, 'Catalog');
+        grant(table(f, source, undefined, undefined, {
+            catalogId: parameter.valueAsString,
+        }), method, f.role);
+        expect(statements(f)).toEqual(expected(f, method, glueResources(f, {
+            Ref: 'Catalog',
+        })));
+    });
+
+    it.each(CASES)('%s on a %s table with a token tableName renders the token in the table ARN', (method, source) => {
+        const f = fixture();
+        const parameter = new CfnParameter(f.stack, 'Name');
+        grant(table(f, source, undefined, undefined, {
+            tableName: parameter.valueAsString,
+        }), method, f.role);
+        expect(statements(f)).toEqual(expected(f, method, glueResources(f, '123456789012', {
+            Ref: 'Name',
+        })));
+    });
+
+    it.each(CASES)('%s on a %s table builds the database ARN from catalogId, not from the database own ARN', (method, source) => {
+        const f = fixture();
+        const other = Database.fromDatabaseArn(f.stack, 'OtherDatabase', 'arn:aws:glue:us-east-1:555555555555:database/other_db');
+        grant(table(f, source, undefined, undefined, {
+            catalogId: FOREIGN,
+            database: other,
+        }), method, f.role);
+        const [
+            glue,
+        ] = statements(f);
+        expect(glue.Resource).toEqual([
+            join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:catalog`),
+            join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:database/other_db`),
+            join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/other_db/simple`),
+        ]);
+    });
+
+    it.each(CASES)('%s on a %s table with catalogId equal to the stack account matches the default', (method, source) => {
+        const f = fixture();
+        grant(table(f, source, undefined, undefined, {
+            catalogId: '123456789012',
+        }), method, f.role);
+        expect(statements(f)).toEqual(baseStatements(f, method));
+    });
+
+    it.each([
+        'constructed',
+        'imported',
+    ] as Source[])('a %s table exposes a tableArn in catalogId', (source) => {
+        const f = fixture();
+        const t = table(f, source, undefined, undefined, {
+            catalogId: FOREIGN,
+        });
+        expect(f.stack.resolve(t.tableArn)).toEqual(join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/`, databaseRef(f), '/simple'));
+    });
+
+    it('reads the attrs.catalogId once', () => {
+        const f = fixture();
+        const t = IcebergTable.fromIcebergTableAttributes(f.stack, 'Imported', withGetter({
+            database: f.database,
+            tableName: 'simple',
+            location: 's3://my-bucket/path/simple/',
+        }, 'catalogId', FOREIGN, '111111111111') as IcebergTableAttributes);
+        expect(f.stack.resolve(t.tableArn)).toEqual(join('arn:', PARTITION, `:glue:us-east-1:${FOREIGN}:table/`, databaseRef(f), '/simple'));
+    });
+
+    it.each([
+        '12345',
+        '1234567890123',
+        'abcdefghijkl',
+        '',
+    ])('rejects the literal catalogId %j on an imported table', (catalogId) => {
+        const f = fixture();
+        expect(() => table(f, 'imported', undefined, undefined, {
+            catalogId,
+        })).toThrow(/catalogId '.*' must be a 12-digit AWS account id/);
+    });
+
+    it('rejects a catalogId that is not a string on an imported table', () => {
+        const f = fixture();
+        expect(() => IcebergTable.fromIcebergTableAttributes(f.stack, 'Imported', {
+            database: f.database,
+            tableName: 'simple',
+            location: 's3://my-bucket/x/',
+            catalogId: 123456789012 as unknown as string,
+        })).toThrow('catalogId must be a string, got number');
     });
 });
