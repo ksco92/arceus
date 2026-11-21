@@ -37,7 +37,14 @@ It takes 5, never 3: files written before the drop hold the `note` values under 
 reader selects a column from a file by id, so a new column declared with 3 would be read
 from those values. (4 is `placed_at`'s.) In the integration suite's own table, Glue stored
 the columns as `1,2,3,5` after the column with id 4 was dropped and a new one declared with
-5 (`scripts/integration-test-evolution.sh`: `assert_columns` under `VERIFY step 12`).
+5 (`scripts/integration-test-evolution.sh`: `assert_columns` under `VERIFY step 12`). In
+the suite's `reused_id_test` table, where a new string column took a dropped string column's
+id, Glue accepted the update and Spark and Athena read the dropped column's value, in the
+row written before the drop, as the new column's value
+(`scripts/integration-test-evolution.sh`:
+`athena_expect "d of the row written before the drop reads c's value"` under
+`ATHENA step 3`; `scripts/spark/verify_evolution.py`: `row written before c was dropped`
+in `phase_3`).
 
 ## Rename a column
 

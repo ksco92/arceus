@@ -264,18 +264,25 @@ without `DESTROY=1` it leaves the stack deployed.
 `IcebergEvolutionStack` through twelve `cdk deploy`s and verifies the
 underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
 checks (`scripts/spark/verify_evolution.py`) between deploys. After each
-step (and its Spark phase, where there is one), Athena reads the table the step changed: every row
+step (and its Spark phase, where there is one), Athena reads `evolution_test` or `nested_evolution_test`, whichever the step changed: every row
 loaded so far, under the step's column names, with the values Spark
 inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`.
 
-The stack owns two tables. `evolution_test` changes in steps 1 to 6 and
+The stack owns five tables. `evolution_test` changes in steps 1 to 6 and
 9 to 12. `nested_evolution_test` is created in step 1 and loaded with
 one row; steps 7 and 8 evolve it. Its baseline columns
 are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
 value id 7) and `addr(4)` (struct: `line1(8)`, `city(9)`). The table
 below describes `evolution_test` except where a row names the nested
 table.
+
+`reused_id_test` drops a column in step 2 and gives its id to a new
+column in step 3; Spark and Athena read it after step 3.
+`partition_id_test` adds a partition field in step 2 and another in
+step 3; the script reads its `metadata.json` after each.
+`parameter_name_test` takes its name from a parameter from step 9;
+Athena reads it after step 9.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
