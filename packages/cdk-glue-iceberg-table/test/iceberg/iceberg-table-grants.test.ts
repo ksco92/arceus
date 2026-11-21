@@ -332,6 +332,16 @@ describe('IcebergTable grants', () => {
         })).toThrow('lakeFormationDataAccess must be a boolean, got string');
     });
 
+    it('attaches no statement when an option is rejected', () => {
+        const f = fixture();
+        const t = table(f, 'constructed', f.key);
+        expect(() => t.grantReadWrite(f.role, {
+            catalogEncryptionKey: Key.fromKeyArn(f.stack, 'CatalogKey', CATALOG_KEY_ARN),
+            lakeFormationDataAccess: 'yes' as unknown as boolean,
+        })).toThrow('lakeFormationDataAccess must be a boolean, got string');
+        expect(statements(f)).toEqual([]);
+    });
+
     it('leaves the key policy of an in-stack encryptionKey unchanged', () => {
         const f = fixture();
         table(f, 'constructed', f.key).grantReadWrite(f.role);
