@@ -1497,4 +1497,237 @@ describe('IcebergTable schemaHistoryFile', () => {
             + 'give tables in different databases different history files',
         );
     });
+
+    describe('a table with no record', () => {
+        function struct(...fields: Array<[string, number, IcebergType?]>): IcebergType {
+            return IcebergType.struct(fields.map(([
+                name,
+                id,
+                type,
+            ]) => ({
+                name,
+                id,
+                type: type ?? IcebergType.STRING,
+            })));
+        }
+
+        function synthNew(file: string, columns: IcebergColumn[]): void {
+            app([
+                {
+                    tableName: 'orders',
+                    file,
+                    schema: {
+                        columns,
+                    },
+                },
+            ]).synth();
+        }
+
+        function failure(columns: IcebergColumn[], file = writeHistory('h.json', emptyHistory())): string {
+            try {
+                synthNew(file, columns);
+            } catch (error) {
+                return (error as Error).message.replace(file, '<file>');
+            }
+            return '';
+        }
+
+        function declaredLines(columns: IcebergColumn[]): string[] {
+            return failure(columns).split('\n').slice(1, -1);
+        }
+
+        const listMapStruct = (ids: number[]): IcebergColumn[] => [
+            column('id', ids[0], IcebergType.LONG),
+            column('tags', ids[1], IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: ids[2],
+            })),
+            column('attrs', ids[3], IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: ids[4],
+                value: IcebergType.STRING,
+                valueId: ids[5],
+            })),
+            column('addr', ids[6], struct([
+                'line1',
+                ids[7],
+            ], [
+                'city',
+                ids[8],
+            ])),
+        ];
+        const OUT_OF_ORDER = listMapStruct([
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+        ]);
+        const ORDERED = listMapStruct([
+            1,
+            2,
+            5,
+            3,
+            6,
+            7,
+            4,
+            8,
+            9,
+        ]);
+
+        it('passes when the ids are in creation order', () => {
+            expect(failure(ORDERED)).toBe('');
+        });
+
+        it('fails list, map and struct columns whose ids are not in creation order, with the full message', () => {
+            expect(failure(OUT_OF_ORDER)).toBe(
+                "table 'orders' has no record in <file>, so it is a new table and Glue assigns its field ids in "
+                + 'creation order, ignoring the declared ones. These fields declare other ids:\n'
+                + "  - 'attrs' declares id 4; Glue assigns id 3\n"
+                + "  - 'addr' declares id 7; Glue assigns id 4\n"
+                + "  - 'tags.element' declares id 3; Glue assigns id 5\n"
+                + "  - 'attrs.key' declares id 5; Glue assigns id 6\n"
+                + "  - 'attrs.value' declares id 6; Glue assigns id 7\n"
+                + 'Declare the ids Glue assigns (IcebergTable.creationOrderFieldIds(columns) returns them). '
+                + 'For a table that already exists in Glue, see "Adopting a table that exists in Glue" in the README.',
+            );
+        });
+
+        it('passes the same columns when the file records the table', () => {
+            const file = writeHistory('h.json', IcebergSchemaHistory.append(emptyHistory(), 'orders', {
+                columns: OUT_OF_ORDER,
+            }));
+            expect(() => synthNew(file, OUT_OF_ORDER)).not.toThrow();
+        });
+
+        const deep = (inner: number): IcebergColumn[] => [
+            column('a', 1, struct([
+                'b',
+                3,
+                struct([
+                    'c',
+                    inner,
+                ]),
+            ])),
+            column('z', 2),
+        ];
+        const mapped = (keyField: number, valueField: number): IcebergColumn[] => [
+            column('m', 1, IcebergType.map({
+                key: struct([
+                    'k',
+                    keyField,
+                ]),
+                keyId: 2,
+                value: struct([
+                    'v',
+                    valueField,
+                ]),
+                valueId: 3,
+            })),
+        ];
+
+        it.each([
+            [
+                'only the fields that differ',
+                [
+                    column('a', 1),
+                    column('b', 3),
+                    column('c', 2),
+                ],
+                [
+                    "  - 'b' declares id 3; Glue assigns id 2",
+                    "  - 'c' declares id 2; Glue assigns id 3",
+                ],
+            ],
+            [
+                'a field two struct levels deep',
+                deep(9),
+                [
+                    "  - 'a.b.c' declares id 9; Glue assigns id 4",
+                ],
+            ],
+            [
+                'the fields of a map with a struct key and a struct value',
+                mapped(5, 4),
+                [
+                    "  - 'm.key.k' declares id 5; Glue assigns id 4",
+                    "  - 'm.value.v' declares id 4; Glue assigns id 5",
+                ],
+            ],
+            [
+                'a nested id when the top-level ids are in creation order',
+                [
+                    column('a', 1, IcebergType.list({
+                        element: IcebergType.STRING,
+                        elementId: 5,
+                    })),
+                    column('b', 2),
+                    column('c', 3),
+                ],
+                [
+                    "  - 'a.element' declares id 5; Glue assigns id 4",
+                ],
+            ],
+        ])('names %s', (_name, columns, expected) => {
+            expect(declaredLines(columns)).toEqual(expected);
+        });
+
+        it('passes nested and map fields declared in creation order', () => {
+            expect(failure(deep(4))).toBe('');
+            expect(failure(mapped(4, 5))).toBe('');
+        });
+
+        it('records a creation-order table, then synthesizes a later out-of-order addition to it', () => {
+            const file = writeHistory('h.json', emptyHistory());
+            const schema = (columns: IcebergColumn[]): Array<{ tableName: string; file: string; schema: IcebergTableSchema }> => [
+                {
+                    tableName: 'orders',
+                    file,
+                    schema: {
+                        columns,
+                    },
+                },
+            ];
+            IcebergSchemaHistory.updateFromCloudAssembly(app(schema(ORDERED)).synth().directory);
+            expect(IcebergSchemaHistory.fromJson(fs.readFileSync(file, 'utf-8')).tables.map((t) => t.tableName)).toEqual([
+                'orders',
+            ]);
+
+            expect(() => app(schema([
+                ...ORDERED,
+                column('added', 20),
+            ])).synth()).not.toThrow();
+        });
+
+        it('adopts an evolved table through a record written from the definition declaring its ids', () => {
+            const evolved: IcebergTableSchema = {
+                columns: [
+                    column('id', 1, IcebergType.LONG, true),
+                    column('region', 7),
+                    column('note', 2),
+                ],
+                partitionSpec: [
+                    partition('region', IcebergPartitionTransform.IDENTITY, 1000),
+                ],
+            };
+            const file = writeHistory('h.json', emptyHistory());
+            const unrecorded = (): void => {
+                app([
+                    {
+                        tableName: 'orders',
+                        file,
+                        schema: evolved,
+                    },
+                ]).synth();
+            };
+            expect(unrecorded).toThrow("'region' declares id 7; Glue assigns id 2");
+
+            fs.writeFileSync(file, IcebergSchemaHistory.toJson(IcebergSchemaHistory.append(emptyHistory(), 'orders', evolved)));
+            expect(unrecorded).not.toThrow();
+        });
+    });
 });

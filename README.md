@@ -777,8 +777,11 @@ new IcebergTable(this, 'Orders', {
 
 A relative path resolves against the working directory, which is the
 directory holding `cdk.json` when the `cdk` CLI runs the app. Create
-the file once with the content `{"tables": []}`. Records are keyed by
-table name, so give each Glue database its own file.
+the file once with the content `{"tables": []}`; if a table already
+exists in Glue, read
+[Adopting a table that exists in Glue](#adopting-a-table-that-exists-in-glue)
+first. Records are keyed by table name, so give each Glue database its
+own file.
 
 Every synth (`cdk synth`, `cdk diff`, `cdk deploy`, and the CI job
 that runs one) then compares each table with its record and fails,
@@ -797,8 +800,13 @@ listing every problem, when the definition:
   transform.
 
 Fields are identified by id, so a rename passes. A table with no
-record passes. Synth never writes the file; record a change once it
-passes synth, and commit the file with the change:
+record is a new table: synth fails unless its ids are the ones Glue
+assigns at creation (the rule is under
+[Using `IcebergTable`](#using-icebergtable)), listing each field with
+its declared id and the id Glue assigns, so the first record of a table
+is written from a creation-order schema. A table with a record is not
+held to creation order. Synth never writes the file; record a change
+once it passes synth, and commit the file with the change:
 
 ```bash
 cdk synth --quiet
@@ -823,6 +831,42 @@ two recorded changes: drop it, then add it with a new id.
 the same checks on one table record without the prop, and
 `IcebergSchemaHistory.append`, `toJson` and `fromJson` record a
 definition in, write and read the file format.
+
+#### Adopting a table that exists in Glue
+
+Glue ignores the ids a table declares when it creates the table and
+stores them as given from the first update of any kind. Before
+recording anything, make the declared ids, top-level and nested, equal
+the ids in the table's current `metadata.json`, whose location is the
+table's `metadata_location` parameter (`aws glue get-table`). If those
+ids are in creation order, declare them and write no record by hand:
+that covers a table created in creation order and a table created out
+of order and never updated, which holds creation-order ids whatever it
+declared. Otherwise write the record from the definition that now
+declares the table's ids; `IcebergSchemaHistory.append` and `toJson`
+do not run the creation-order check:
+
+```typescript
+const history = IcebergSchemaHistory.append({ tables: [] }, 'orders', { columns, partitionSpec });
+fs.writeFileSync('analytics.schema-history.json', IcebergSchemaHistory.toJson(history));
+```
+
+From a Python app (`partition_spec` is optional, and the history is
+passed on to the next `append` for another table):
+
+```python
+history = IcebergSchemaHistory.append({"tables": []}, "orders", columns=columns, partition_spec=partition_spec)
+with open("analytics.schema-history.json", "w") as f:
+    f.write(IcebergSchemaHistory.to_json(tables=history.tables))
+```
+
+Remove a table's record from the file before the table is dropped and
+recreated: Glue assigns fresh ids at the new CREATE, so the new table
+declares creation-order ids.
+
+Upgrading from a version before 0.18.0: an app that sets
+`schemaHistoryFile` and has a table with no record whose ids are not in
+creation order now fails synth; follow the steps above.
 
 ### Inserting and querying
 
@@ -906,7 +950,7 @@ section.)
 
 ## Known limitations
 
-- **Creation order is not checked.** The construct cannot tell at synth whether a table is new or already deployed, so it accepts a new table whose ids are not in creation order (the rule is under [Using `IcebergTable`](#using-icebergtable)). When the first update of such a table changes the id of a column an identity partition is sourced from, Glue rejects the update with `Cannot create identity partition sourced from different field in schema` and the CloudFormation rollback fails the same way, leaving the stack in `UPDATE_ROLLBACK_FAILED`.
+- **Creation order is checked only with a schema history file.** Without the file the construct does not detect ids that Glue will reassign at creation; with it, a table with no record is checked ([rule](#checking-changes-against-a-schema-history)). When the first update of such a table changes the id of a column an identity partition is sourced from, Glue rejects the update with `Cannot create identity partition sourced from different field in schema` and the CloudFormation rollback fails the same way, leaving the stack in `UPDATE_ROLLBACK_FAILED`.
 - **Field-id reuse across deploys is detected only with a schema history file.** This applies to nested ids (struct field, list element, map key and value) as well as column ids. If you drop a column with `id = 5` and then add a different column with `id = 5` in a later deploy, Glue accepts the UPDATE and Iceberg's metadata silently violates the "never reuse a retired id" invariant. Readers projecting old snapshots will surface deleted data under the new field's name. The construct enforces uniqueness **within one deploy** (`duplicate field id N` validator) and never reads the live table state; across deploys, only a [schema history file](#checking-changes-against-a-schema-history) catches reuse. Without it, treat dropped ids as retired forever.
 - **Partition field-id reuse across deploys is detected only with a schema history file.** The same live-state blindness applies to partition `fieldId`s: the construct validates them within one deploy (integer >= 1000, unique in the spec), and only a [schema history file](#checking-changes-against-a-schema-history) tells it that the id you pinned already appeared in an earlier spec of the deployed table. The invariant partition ids must uphold is stricter than the column one — unique across the table's **entire spec history**, so a changed field (different transform or source column) must take a fresh id rather than keep its old one. Violate it and strict engines (Spark, Trino) reject the table with `Conflicting partition fields` while Athena keeps answering, masking the break until Spark runtime. Without the history file, treat every id that has ever appeared in any spec as retired, and allocate new fields the next never-used id. A partition change needs a new source column or transform; Glue ignores a `fieldId`-only change.
 - **`last-partition-id` is written by Glue, not by the construct.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The repo's integration test asserts the counter keeps up with the highest supplied field id after a partition evolution, but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter — if you mix CDK-managed and engine-managed partition evolution, verify the counter in `metadata.json` before trusting engine-side changes.
@@ -914,7 +958,7 @@ section.)
 - **Removing the last identifier from a table created with identifiers before 0.11.0 can bring the old ids back.** That table's history holds an unmarked schema with ids, and Glue reuses it when the rendered fields match it again. Change a column `doc` in the same deploy that removes the last identifier.
 - **The schema history check covers only the changes it lists.** It does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), whose ids the file never records, or a deploy whose definition was not recorded in the file. It does not check sort order or identifier field changes or report an added required field, top level or nested, and it treats a field moved into another struct under its id as a rename. It reports the format v3 promotions `unknown` to any type and `date` to `timestamp` or `timestamp_ns` as type changes.
 - **CREATE-only metadata operation.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that. Subsequent deploys use Glue's normal `UpdateTable` path, which writes new Iceberg metadata in-place.
-- **Format version is immutable after CREATE.** Glue ignores a V2 to V3 `formatVersion` change, though `properties.format-version` then reads `3`. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it. An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
+- **Format version is immutable after CREATE.** Glue ignores a V2 to V3 `formatVersion` change, though `properties.format-version` then reads `3`. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it (remove its [schema history record](#adopting-a-table-that-exists-in-glue) first). An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
 - **`merge-on-read` requires v2 or later.** The construct rejects `write.{delete,update,merge}.mode = merge-on-read` on a v1 table at synth time.
 - **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property. Revisit when that schema gains the two properties.
 - **Nanosecond timestamps are catalog-only for Spark 4.1.1 with Iceberg 1.11.0.** In [`TypeToSparkType`](https://github.com/apache/iceberg/blob/apache-iceberg-1.11.0/spark/v4.1/spark/src/main/java/org/apache/iceberg/spark/TypeToSparkType.java) at the `apache-iceberg-1.11.0` tag, `primitive()` has no case for the `TIMESTAMP_NANO` type id, so a table with a `timestamp_ns` or `timestamptz_ns` column reaches the `Cannot convert unsupported type to Spark` error. The integration suite asserts these columns from `metadata.json` only.

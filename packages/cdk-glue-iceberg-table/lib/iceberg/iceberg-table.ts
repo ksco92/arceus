@@ -232,10 +232,9 @@ export interface IcebergTableProps {
     readonly removalPolicy?: RemovalPolicy;
 
     /**
-     * Path of the committed schema history file of the table's database, relative to
-     * the working directory. Synth fails if the file is missing or malformed, or if the
-     * definition is an unsafe change from the table's record in it. See the README
-     * section "Checking changes against a schema history".
+     * Path of the committed schema history file of the table's database, relative to the
+     * working directory; the README section "Checking changes against a schema history"
+     * lists what synth checks against it.
      * @default - no history check
      */
     readonly schemaHistoryFile?: string;
