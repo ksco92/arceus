@@ -79,6 +79,7 @@ arceus/
 │       ├── smoke.py                    # PySpark INSERT + count against the Glue catalog
 │       ├── verify_dml.py               # PySpark engine steps for the DML harness, and the read of its Athena rows
 │       ├── verify_evolution.py         # PySpark engine steps for the evolution harness
+│       ├── verify_grants.py            # PySpark reads and writes under the surface harness's grantee roles
 │       ├── verify_surface.py           # PySpark engine steps for the surface harness
 │       └── verify_v3_dml.py            # PySpark engine steps for the v3 DML harness
 ├── e2e-consumer/                       # Standalone CDK app consuming the PUBLISHED package

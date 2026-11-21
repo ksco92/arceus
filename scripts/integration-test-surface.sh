@@ -303,7 +303,7 @@ assert_prefix_listing ReaderRole
 expect_denied "ReaderRole glue:UpdateTable" 'AccessDeniedException.*glue:UpdateTable' \
     aws glue update-table --region "$AWS_REGION" --database-name "$DATABASE" \
         --table-input '{"Name":"grants_test"}' --version-id 999999
-expect_denied "ReaderRole S3 write under grants_test" 'AccessDenied' \
+expect_denied "ReaderRole S3 write under grants_test" 'AccessDenied.*s3:PutObject' \
     aws s3 cp - "s3://${BUCKET}/${DATABASE}/grants_test/data/denied.txt" --region "$AWS_REGION" <<< "denied"
 unset_assumed_role
 
