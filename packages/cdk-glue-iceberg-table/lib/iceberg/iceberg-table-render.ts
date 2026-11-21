@@ -120,7 +120,6 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         tableProperties,
         comment,
         removalPolicy,
-        schemaHistoryFile,
     } = props;
     return {
         database,
@@ -143,9 +142,6 @@ export function snapshotProps(props: IcebergTableProps): IcebergTableProps {
         comment: primitive('comment', comment, 'string', {
             optional: true,
             tokens: true,
-        }),
-        schemaHistoryFile: primitive('schemaHistoryFile', schemaHistoryFile, 'string', {
-            optional: true,
         }),
         ...snapshotSchema(columns, partitionSpec),
         sortOrder: sortOrder === undefined ? undefined : ownArray('sortOrder', sortOrder).map(snapshotSortField),
