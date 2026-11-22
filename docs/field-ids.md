@@ -46,6 +46,21 @@ row written before the drop, as the new column's value
 `ATHENA step 3`; `scripts/spark/verify_evolution.py`: `row written before c was dropped`
 in `phase_3`).
 
+## Which ids the table has used
+
+A dropped column is gone from `columns`, and its id with it. The table keeps the number:
+`last-column-id` in its `metadata.json` is "the highest assigned column ID for the table"
+([table metadata fields](https://iceberg.apache.org/spec/#table-metadata-fields)), and a
+drop does not lower it (`scripts/integration-test-evolution.sh`: `last-column-id stays at 4`
+under `VERIFY step 4`). Give a new column or nested field an id above it. The Glue table's
+`metadata_location` parameter is the file's S3 path:
+
+```bash
+aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
+    --query 'Table.Parameters.metadata_location' --output text)" - \
+    | python3 -c "import json, sys; print(json.load(sys.stdin)['last-column-id'])"
+```
+
 ## Rename a column
 
 We rename `amount` to `total` and keep its id:
