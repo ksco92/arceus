@@ -63,7 +63,7 @@ jobs:
       # a packaging break surfaces on the PR, not at release time.
       - name: Build Python distribution with jsii-pacmak
         run: npm run package:python --workspace cdk-glue-iceberg-table
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - name: Install the built wheel and run the README Python examples
