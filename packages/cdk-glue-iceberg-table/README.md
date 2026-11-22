@@ -8,10 +8,10 @@
 [![downloads](https://img.shields.io/npm/dw/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](https://github.com/ksco92/arceus/blob/main/LICENSE)
 
-**`cdk-glue-iceberg-table` is an AWS CDK L2 construct that creates
-Apache Iceberg tables in the AWS Glue Data Catalog and changes their
-schema and partition spec in place through `cdk deploy`.** You declare
-a table's columns and partition fields in your
+**`cdk-glue-iceberg-table` is an AWS CDK L2 construct to create and
+evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and
+partition changes that survive CloudFormation updates, via cdk
+deploy.** You declare a table's columns and partition fields in your
 CDK app. Adding, renaming or dropping a column, or changing the
 partition spec, is an edit to that declaration: it lands as a reviewed
 diff in a pull request and applies through `cdk deploy`.
@@ -45,7 +45,7 @@ rest is under [Known limitations](#known-limitations).
 bumps the minor version and gets a note in
 [UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md).
 The package has one maintainer. Its source is public, and the template
-it emits is a plain `AWS::Glue::Table` in the shape shown under [Why a
+it emits is a plain `AWS::Glue::Table` in the shape described under [Why a
 raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong). It was
 proposed upstream as an `IcebergTable` for `@aws-cdk/aws-glue-alpha`
 ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988)); the
@@ -183,10 +183,10 @@ you choose them:
    numbers a new table this way whatever ids it declares; if the
    declared ids differ, the first update Glue accepts renumbers the
    fields to them, and data files written before it read under the
-   wrong field. The
-   construct cannot tell a first deploy from a later one, so it does
-   not check creation order; `IcebergTable.creationOrderFieldIds(columns)`
-   returns the ids to declare ([creation order](#creation-order)).
+   wrong field. The construct cannot tell a first deploy from a later
+   one, so it does not check creation order;
+   `IcebergTable.creationOrderFieldIds(columns)` returns the ids to
+   declare ([creation order](#creation-order)).
 2. **A column keeps its id for life, and a dropped column's id is
    retired.** A rename keeps the `id` and changes the `name`; a new
    column takes an id above the table's `last-column-id`, the highest
@@ -276,11 +276,11 @@ reading and Spark and Trino reject the table ([rule
 ### Identifiers, sort order and table properties
 
 A changed `identifierFieldNames` flows through `cdk deploy` like a
-column change: the construct writes `(PK) ` at the start of each
-identifier column's comment ([Identifier fields](#identifier-fields)),
-which makes every identifier change a field change. The exception is a
-table created with identifiers before 0.11.0; read [Known
-limitations](#known-limitations) before removing its last identifier.
+column change. The exception is a table created with identifiers
+before 0.11.0; read [Known limitations](#known-limitations) before
+removing its last identifier. The construct marks each identifier
+column by writing `(PK) ` at the start of its comment ([Identifier
+fields](#identifier-fields)).
 
 A changed `sortOrder` also flows through `cdk deploy`. Glue adds it to
 `sort-orders` under the next `order-id` and points
@@ -292,7 +292,7 @@ same `current-schema-id`, partition spec and sort order.
 
 - **Dropping a column that a partition field still sources from breaks Athena.** The Iceberg spec requires a `void` intermediate, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, and Athena queries against the result fail with `Type cannot be null`. Remove the partition field first and keep the column in the schema; drop the column only once nothing partitions by it.
 - **Glue ignores a V2 to V3 `formatVersion` change; the format version is fixed at CREATE.** `properties.format-version` then reads `3` all the same. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it.
-- **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one. That includes the in-place upgrade of a v2 table with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`, which the v3 suite runs through Spark: setting `formatVersion` to `V3` afterwards makes the declaration match the table, and no suite runs the deploy that follows.
+- **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one. That includes the in-place upgrade of a v2 table with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`, which the v3 suite runs through Spark: setting `formatVersion` to `V3` afterwards makes the declaration match the table.
 - **A rolled-back deploy leaves its schema in the table's history.** When a deploy that adds a column updates the table and then fails on another resource, the stack ends in `UPDATE_ROLLBACK_COMPLETE` and `current-schema-id` is back to its earlier value, so the column is gone and the rows read as before. The schema that held the column stays in `schemas`, and `last-column-id` stays at the column's id. A clean redeploy of the same change makes that schema current again without adding a schema. Treat an id from a rolled-back deploy as used: give it only to the column that deploy added.
 
 ### Changes that replace or remove the table
