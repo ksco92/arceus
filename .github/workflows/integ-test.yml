@@ -196,7 +196,7 @@ jobs:
           bash scripts/integration-test-v3-dml.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           JOB_STATUS: ${{ job.status }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
