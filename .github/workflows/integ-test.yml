@@ -165,7 +165,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .spark/downloads
           key: spark-${{ hashFiles('scripts/spark/install-spark.sh', 'scripts/spark/spark-env.sh') }}
