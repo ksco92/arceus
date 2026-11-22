@@ -30,22 +30,40 @@ diff in a pull request and applies through `cdk deploy`.
   [jsii](https://aws.github.io/jsii/). Iceberg format versions 1, 2
   and 3; Athena cannot query v3 tables.
 
-**What it leaves to you.** The construct keeps no record of earlier
-deploys, so it cannot check the field ids you declare against the ids
-the table has used. Three [field id rules](#the-field-id-rules) are
-yours to follow, and Glue accepts a deploy that numbers a new table
-out of creation order or gives a dropped column's id to a new column
-of the same type. The rest is under [Known
-limitations](#known-limitations).
+**What it leaves to you.** You choose every Iceberg field id, and the
+construct keeps no record of earlier deploys, so it cannot check the
+ids you declare against the ids the table has used. Glue accepts two
+mistakes without an error. Give a dropped column's id to a new column
+of the same type, and Spark and Athena read the dropped column's
+values, in rows written before the drop, as the new column's. Number a
+new table out of creation order, and Glue ignores the declared ids at
+creation and renumbers the fields to them on the first update it
+accepts. Three [field id rules](#the-field-id-rules) prevent both. The
+rest is under [Known limitations](#known-limitations).
 
-**Status:** pre-1.0. A breaking change bumps the minor version and
-gets a note in `UPGRADING.md`. Every pull request compiles and synthesizes
-a consumer app against a published version and against the pull
-request's own `npm pack` tarball. Integration suites deploy v2 and v3
-tables to a real AWS account and read them back through Spark, and
-the v2 tables through Athena, weekly against `main` and on every pull
-request that changes the construct, the demo stacks or the suites,
-before it merges. The README on GitHub describes `main`, which can be
+**Status:** pre-1.0, with a 1.0 release planned. A breaking change
+bumps the minor version and gets a note in
+[UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md).
+The package has one maintainer. Its source is public, and the template
+it emits is a plain `AWS::Glue::Table` in the shape described under [Why a
+raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong). It was
+proposed upstream as an `IcebergTable` for `@aws-cdk/aws-glue-alpha`
+([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988)); the
+aws-cdk repository's stale-PR automation closed that pull request in
+September 2026 after three weeks in merge conflicts, and this package
+does not depend on it.
+
+**How it is tested.**
+
+- Integration suites deploy v2 and v3 tables to a real AWS account and
+  read them back through Spark, and the v2 tables through Athena. They
+  run weekly against `main` and, before merge, on every pull request
+  that changes the construct, the demo stacks or the suites.
+- Every pull request compiles and synthesizes a consumer app against a
+  published version and against the pull request's own `npm pack`
+  tarball.
+
+**Versions.** The README on GitHub describes `main`, which can be
 ahead of the latest release; [CHANGELOG.md](https://github.com/ksco92/arceus/blob/main/CHANGELOG.md)
 lists what is unreleased, and the npm page shows the README of the
 released version. API reference: [Construct
@@ -160,16 +178,19 @@ The `id` and `fieldId` numbers in the examples are Iceberg field ids.
 Data files store values under these ids, not under column names, and
 you choose them:
 
-1. **A new table numbers its columns 1, 2, 3 and so on in the order
-   declared, then their nested fields.** Glue numbers a new table this
-   way whatever ids it declares; if the declared ids differ, the
-   first update Glue accepts renumbers the fields to them. The
-   construct cannot tell a first deploy from a later one, so it does
-   not check creation order; `IcebergTable.creationOrderFieldIds(columns)`
-   returns the ids to declare ([creation order](#creation-order)).
+1. **Declare a new table's ids in creation order: columns 1, 2, 3 and
+   so on in the order declared, then their nested fields.** Glue
+   numbers a new table this way whatever ids it declares; if the
+   declared ids differ, the first update Glue accepts renumbers the
+   fields to them, and data files written before it read under the
+   wrong field. The construct cannot tell a first deploy from a later
+   one, so it does not check creation order;
+   `IcebergTable.creationOrderFieldIds(columns)` returns the ids to
+   declare ([creation order](#creation-order)).
 2. **A column keeps its id for life, and a dropped column's id is
    retired.** A rename keeps the `id` and changes the `name`; a new
-   column takes an id the table has never used. Give a dropped
+   column takes an id above the table's `last-column-id`, the highest
+   id it has assigned ([how to read it](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#which-ids-the-table-has-used)). Give a dropped
    column's id to a new column of the same type and Glue accepts the
    deploy; Spark and Athena then read the dropped column's value, in a
    row written before the drop, as the new column's value.
@@ -205,7 +226,9 @@ The construct passes the new schema to Glue's `UpdateTable`, which
 writes a new `metadata.json` with a new `schema-id`. Existing data
 files stay readable while the ids follow [rule 2](#the-field-id-rules).
 Adds, renames (same `id`, new `name`) and drops all go through `cdk
-deploy` alone.
+deploy` alone. On a v3 table the suites also deploy two type
+promotions, `unknown` to `string` and `date` to `timestamp`; no suite
+deploys any other type change.
 
 ### Nested fields
 
@@ -252,10 +275,12 @@ reading and Spark and Trino reject the table ([rule
 
 ### Identifiers, sort order and table properties
 
-On a table whose earlier schemas carry the `(PK) ` marker
-([Identifier fields](#identifier-fields)), a changed
-`identifierFieldNames` flows through `cdk deploy` like a column
-change.
+A changed `identifierFieldNames` flows through `cdk deploy` like a
+column change. The exception is a table created with identifiers
+before 0.11.0; read [Known limitations](#known-limitations) before
+removing its last identifier. The construct marks each identifier
+column by writing `(PK) ` at the start of its comment ([Identifier
+fields](#identifier-fields)).
 
 A changed `sortOrder` also flows through `cdk deploy`. Glue adds it to
 `sort-orders` under the next `order-id` and points
@@ -266,8 +291,8 @@ same `current-schema-id`, partition spec and sort order.
 ### Changes that need care
 
 - **Dropping a column that a partition field still sources from breaks Athena.** The Iceberg spec requires a `void` intermediate, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, and Athena queries against the result fail with `Type cannot be null`. Remove the partition field first and keep the column in the schema; drop the column only once nothing partitions by it.
-- **Glue ignores a V2 to V3 `formatVersion` change; the format version is fixed at CREATE.** `properties.format-version` then reads `3` all the same. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it. An engine can upgrade a v2 table to v3 in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`; after that, set `formatVersion` to `V3` so the next deploy declares the version the table already has.
-- **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one.
+- **Glue ignores a V2 to V3 `formatVersion` change; the format version is fixed at CREATE.** `properties.format-version` then reads `3` all the same. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it.
+- **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one. That includes the in-place upgrade of a v2 table with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`, which the v3 suite runs through Spark: setting `formatVersion` to `V3` afterwards makes the declaration match the table.
 - **A rolled-back deploy leaves its schema in the table's history.** When a deploy that adds a column updates the table and then fails on another resource, the stack ends in `UPDATE_ROLLBACK_COMPLETE` and `current-schema-id` is back to its earlier value, so the column is gone and the rows read as before. The schema that held the column stays in `schemas`, and `last-column-id` stays at the column's id. A clean redeploy of the same change makes that schema current again without adding a schema. Treat an id from a rolled-back deploy as used: give it only to the column that deploy added.
 
 ### Changes that replace or remove the table
@@ -301,12 +326,12 @@ two sentences, not observed).
 
 ### How it compares
 
-| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Prevents the silent-corruption footguns | Typed API + synth-time validation |
+| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two broken template shapes | Typed API + synth-time validation |
 | --- | --- | --- | --- | --- |
-| Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ you own both footguns | ❌ |
+| Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ both are yours to avoid | ❌ |
 | CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
 | Spark SQL DDL, or Athena SQL DDL, at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
-| **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ the two [footguns](#why-a-raw-cfntable-goes-wrong) by construction; ⚠️ [field-id reuse](#the-field-id-rules) is not checked | ✅ |
+| **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ [both](#why-a-raw-cfntable-goes-wrong) by construction; ⚠️ [field-id reuse](#the-field-id-rules) is not checked | ✅ |
 
 ### Why a raw CfnTable goes wrong
 
@@ -365,11 +390,6 @@ The construct never emits `tableInput`; the table-level comment goes
 into `tableProperties['comment']`, which lives inside
 `icebergTableInput.properties`.
 
-The construct was proposed upstream as an `IcebergTable` for
-`@aws-cdk/aws-glue-alpha` ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988));
-the aws-cdk repository's stale-PR automation closed that pull request
-in September 2026 after three weeks in merge conflicts.
-
 ### What the construct rests on
 
 The construct depends on these behaviours of Glue, which AWS does not
@@ -385,6 +405,8 @@ behaviours](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md)
 lists each one with the integration-suite assertion that checks it.
 Two more are relied on and asserted by no suite: the canonical
 `decimal(P, S)` spacing, and Glue deduping identical partition specs.
+
+### What the integration suites run
 
 The demo app in the [`arceus`](https://github.com/ksco92/arceus) repo
 registers its tables with Lake Formation, and its v2 integration suites
@@ -933,7 +955,7 @@ update or is rejected; the construct only emits the safe shape. See
 ### What is the difference between cdk-glue-iceberg-table and a raw CfnTable?
 
 A raw `CfnTable` makes you hand-write the `OpenTableFormatInput` JSON
-and own both footguns; this construct gives a typed API with
+and avoid both broken shapes yourself; this construct gives a typed API with
 synth-time validation, field ids you declare, and `grantRead` /
 `grantWrite`. See [How it compares](#how-it-compares).
 
@@ -944,9 +966,10 @@ Pass a `partitionSpec` of `IcebergPartitionTransform` entries. See
 
 ### Does it work with Athena and Lake Formation?
 
-Yes for v2 tables registered with Lake Formation, no for v3; [what
-the suites run](#what-the-construct-rests-on), [engine
-matrix](#format-version-3).
+Yes for v2 tables: the integration suites query tables registered with
+Lake Formation through Athena and Spark ([what the suites
+run](#what-the-integration-suites-run)). Athena cannot query v3 tables
+([engine matrix](#format-version-3)).
 
 ### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
 
