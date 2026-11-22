@@ -47,8 +47,8 @@ The version is a minor bump when any pending line is `(minor)` or
 to bump *minor*; the `0.x` → `1.0.0` jump is the "graduate to stable"
 milestone and never happens without the owner's say.
 
-`.github/workflows/publish.yml` only publishes when the version on
-`main` differs from the version on the npm registry. After it succeeds
+`.github/workflows/publish.yml` publishes to each of npm and PyPI when
+the version on `main` differs from that registry's version. After it succeeds
 on both registries, the release's merge commit is tagged `v<version>`
 and a GitHub release is created from that changelog section. Then
 `e2e-consumer/`, which consumes the **published** npm package, moves to
