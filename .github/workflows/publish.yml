@@ -128,3 +128,32 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: python-dist/
+
+  github-release:
+    needs: [build, publish-npm, publish-pypi]
+    if: >-
+      !cancelled() && needs.build.result == 'success'
+      && (needs.publish-npm.result == 'success' || needs.publish-npm.result == 'skipped')
+      && (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Create the GitHub release from the changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./packages/cdk-glue-iceberg-table/package.json').version")
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "::notice::Release v$version already exists, nothing to create."
+            exit 0
+          fi
+          notes="$RUNNER_TEMP/notes.md"
+          awk -v heading="## $version" '/^## / { in_section = ($0 == heading); next } in_section' CHANGELOG.md > "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "::error::CHANGELOG.md has no section '## $version' with release notes."
+            exit 1
+          fi
+          gh release create "v$version" --target "$GITHUB_SHA" --title "v$version" --notes-file "$notes"

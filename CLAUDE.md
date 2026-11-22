@@ -48,9 +48,11 @@ to bump *minor*; the `0.x` → `1.0.0` jump is the "graduate to stable"
 milestone and never happens without the owner's say.
 
 `.github/workflows/publish.yml` publishes to each of npm and PyPI when
-the version on `main` differs from that registry's version. After it succeeds
-on both registries, the release's merge commit is tagged `v<version>`
-and a GitHub release is created from that changelog section. Then
+the version on `main` differs from that registry's version. Its
+`github-release` job creates a GitHub release from that changelog
+section, with the tag `v<version>` on the commit the run built unless
+the tag exists; it runs only when the run published to at least one
+registry and every publish job that ran succeeded. Then
 `e2e-consumer/`, which consumes the **published** npm package, moves to
 the new version: while the package is pre-1.0 a `^0.y.z` range does not
 cross a minor, so bump both the range in `e2e-consumer/package.json`
