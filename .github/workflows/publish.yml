@@ -30,7 +30,7 @@ jobs:
       npm: ${{ steps.versions.outputs.npm }}
       pypi: ${{ steps.versions.outputs.pypi }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compare package.json version against npm and PyPI
         id: versions
         working-directory: packages/cdk-glue-iceberg-table
@@ -60,12 +60,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - run: npm ci
@@ -99,7 +99,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24 # keep in step with .nvmrc
           registry-url: https://registry.npmjs.org
@@ -140,7 +140,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Create the GitHub release from the changelog section
         env:
           GH_TOKEN: ${{ github.token }}
