@@ -30,7 +30,7 @@ jobs:
       npm: ${{ steps.versions.outputs.npm }}
       pypi: ${{ steps.versions.outputs.pypi }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compare package.json version against npm and PyPI
         id: versions
         working-directory: packages/cdk-glue-iceberg-table
@@ -60,12 +60,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.x'
       - run: npm ci
@@ -78,13 +78,13 @@ jobs:
       - name: Build Python distribution with jsii-pacmak
         run: npm run package:python --workspace cdk-glue-iceberg-table
       - name: Upload npm tarball
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-dist
           path: packages/cdk-glue-iceberg-table/*.tgz
           if-no-files-found: error
       - name: Upload Python distribution
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-dist
           path: packages/cdk-glue-iceberg-table/dist/jsii/python/
@@ -103,8 +103,8 @@ jobs:
         with:
           node-version: 24 # keep in step with .nvmrc
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm >= 11.5.1; the npm bundled with
-      # setup-node is older.
+      # Trusted publishing needs npm >= 11.5.1; the bundled npm differs
+      # between releases of one Node major.
       - run: npm install -g npm@12.2.3
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

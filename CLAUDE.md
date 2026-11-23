@@ -101,7 +101,7 @@ own files are in it. A change to
 `packages/cdk-glue-iceberg-table/package.json` is outside the set only when
 its sole edited line is `"version"`; any other change to it is in the set.
 
-The workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
+Of the Spark toolchain, the workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
 The workflow is gated — it does not fire on every PR because it runs
 real `cdk deploy`s against a sandbox AWS account and takes about 20 min
