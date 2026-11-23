@@ -149,7 +149,7 @@ jobs:
           # For PRs triggered by label/comment, GITHUB_REF points at
           # `main`; check out the head SHA the gate resolved.
           ref: ${{ needs.gate.outputs.head_sha || github.ref }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
