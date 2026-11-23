@@ -61,8 +61,8 @@ version being reviewed, so a stale pin silently weakens the guarantee.
 
 Only the latest release line is maintained. If an older version ever
 needs a fix, it is made on a branch cut from that version's tag, and
-`publish.yml` is never dispatched from that branch: it publishes
-whatever version it is given as npm's `latest`.
+`publish.yml` is never dispatched from that branch. How such a fix is
+published is the owner's decision, made before the work starts.
 
 ## No AI authorship signals
 
