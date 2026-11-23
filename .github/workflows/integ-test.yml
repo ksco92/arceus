@@ -144,12 +144,12 @@ jobs:
       DESTROY: '1'
       ATHENA_WORKGROUP: primary
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # For PRs triggered by label/comment, GITHUB_REF points at
           # `main`; check out the head SHA the gate resolved.
           ref: ${{ needs.gate.outputs.head_sha || github.ref }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -161,11 +161,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .spark/downloads
           key: spark-${{ hashFiles('scripts/spark/install-spark.sh', 'scripts/spark/spark-env.sh') }}
@@ -196,7 +196,7 @@ jobs:
           bash scripts/integration-test-v3-dml.sh 2>&1 | tee -a /tmp/integ-test.log
       - name: Comment status on PR
         if: always() && needs.gate.outputs.pr_number != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           JOB_STATUS: ${{ job.status }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
