@@ -144,7 +144,7 @@ jobs:
       DESTROY: '1'
       ATHENA_WORKGROUP: primary
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # For PRs triggered by label/comment, GITHUB_REF points at
           # `main`; check out the head SHA the gate resolved.
