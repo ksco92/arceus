@@ -7,6 +7,7 @@ TABLE = "glue.sample_database.evolution_test"
 NESTED = "glue.sample_database.nested_evolution_test"
 REUSED = "glue.sample_database.reused_id_test"
 REUSED_PARTITION = "glue.sample_database.reused_partition_id_test"
+UPGRADED = ("glue.sample_database.engine_upgrade_test", "glue.sample_database.engine_upgrade_v2_test")
 CONFLICT = (
     "ValidationException: Conflicting partition fields:"
     " ['1000: id_bucket: bucket[4](1)', '1000: id_bucket: bucket[8](1)']"
@@ -24,6 +25,9 @@ def phase_1(spark: SparkSession) -> None:
         f"""INSERT INTO {NESTED} VALUES
         (100, array('t1', 't2'), map('k1', 'v1', 'k2', 'v2'), named_struct('line1', 'L1', 'city', 'C1'))"""
     )
+    for table in UPGRADED:
+        spark.sql(f"INSERT INTO {table} VALUES (1, 'written at v2')")
+        spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES ('format-version' = '3')")
 
 
 def phase_2(spark: SparkSession) -> None:
@@ -36,6 +40,11 @@ def phase_2(spark: SparkSession) -> None:
         assert CONFLICT in str(error), f"{REUSED_PARTITION} read: expected {CONFLICT}, got {error}"
     else:
         raise AssertionError(f"{REUSED_PARTITION} read succeeded; expected {CONFLICT}")
+    for table in UPGRADED:
+        spark.sql(f"INSERT INTO {table} VALUES (2, 'written after the deploy')")
+        rows = spark.sql(f"SELECT * FROM {table} ORDER BY id").collect()
+        expected = [(1, "written at v2"), (2, "written after the deploy")]
+        assert rows == expected, f"{table} rows after the deploy: expected {expected}, got {rows}"
 
 
 def phase_3(spark: SparkSession) -> None:

@@ -49,6 +49,12 @@ REUSED_PARTITION_TABLE="reused_partition_id_test"
 STORAGE_TABLE="storage_columns_test"
 UNMARKED_TABLE="unmarked_identifier_test"
 UNMARKED_DOC_TABLE="unmarked_identifier_doc_test"
+ENGINE_COLUMN_TABLE="engine_column_test"
+ENGINE_DECLARED_TABLE="engine_column_declared_test"
+ENGINE_OTHER_ID_TABLE="engine_column_other_id_test"
+UPGRADE_TABLE="engine_upgrade_test"
+UPGRADE_V2_TABLE="engine_upgrade_v2_test"
+REPLACED_TABLE="parameter_name_replaced_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -157,6 +163,18 @@ TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
 # Athena's reason ends in a space.
 HIVE_FORMAT="HIVE_UNSUPPORTED_FORMAT: Unable to create input format "
 
+# Glue VersionId and the number of the metadata file metadata_location names.
+version_and_file() {
+    aws glue get-table --database-name "$DATABASE" --name "$1" --region "$AWS_REGION" \
+        --query '[Table.VersionId,Table.Parameters.metadata_location]' --output text \
+        | sed -E 's|[[:space:]].*/([0-9]+)-[^/]*$| \1|'
+}
+
+name_table_keys() {
+    aws s3 ls "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${NAME_TABLE}/" --recursive --region "$AWS_REGION" \
+        | awk '{print $4}' | sort
+}
+
 storage_table() {
     aws glue get-table --database-name "$DATABASE" --name "$STORAGE_TABLE" --region "$AWS_REGION" \
         --query "$1" --output text
@@ -169,11 +187,12 @@ rows_10_to_14() {
 
 deploy_step() {
     local step="$1"
+    shift
     header "STEP $step — cdk deploy"
     npx cdk deploy "$STACK" \
         --require-approval=never \
         --region "$AWS_REGION" \
-        --context "evolutionStep=$step" 2>&1 | tail -3
+        --context "evolutionStep=$step" "$@" 2>&1 | tail -3
 }
 
 ################################################
@@ -188,7 +207,8 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE" \
     "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE" \
     "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE" "$STORAGE_TABLE" \
-    "$UNMARKED_TABLE" "$UNMARKED_DOC_TABLE"; do
+    "$UNMARKED_TABLE" "$UNMARKED_DOC_TABLE" "$ENGINE_COLUMN_TABLE" "$ENGINE_DECLARED_TABLE" \
+    "$ENGINE_OTHER_ID_TABLE" "$UPGRADE_TABLE" "$UPGRADE_V2_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -230,12 +250,19 @@ run_athena "INSERT INTO ${RENUMBER_TABLE} VALUES ('A', 'B')" >/dev/null
 for seeded in "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE"; do
     run_athena "INSERT INTO ${seeded} VALUES (1, 'x', 'v1')" >/dev/null
 done
+for altered in "$ENGINE_COLUMN_TABLE" "$ENGINE_DECLARED_TABLE" "$ENGINE_OTHER_ID_TABLE"; do
+    run_athena "INSERT INTO ${altered} VALUES (1, 'v1')" >/dev/null
+    run_athena "ALTER TABLE ${altered} ADD COLUMNS (w string)" >/dev/null
+    run_athena "INSERT INTO ${altered} VALUES (2, 'v2', 'w2')" >/dev/null
+done
+assert_meta columns "1:id,2:v,3:w" "$ENGINE_COLUMN_TABLE"
 
 ################################################
 ################################################
 # Step 2: ADD column `region` (id 4). Partition spec unchanged.
 
 FORMAT_UUID=$(table_column_names "$FORMAT_TABLE" | grep ^table-uuid | cut -d' ' -f2)
+ENGINE_COLUMN_BEFORE=$(version_and_file "$ENGINE_COLUMN_TABLE")
 
 deploy_step 2
 
@@ -257,10 +284,21 @@ assert_meta table-uuid "$FORMAT_UUID" "$FORMAT_TABLE"
 assert_meta commit-retries 5 "$DECIMAL_TABLE"
 assert_meta schemas-count 1 "$DECIMAL_TABLE"
 
+header "VERIFY step 2 (tables an engine changed after step 1)"
+assert_same "${ENGINE_COLUMN_TABLE} Glue version and metadata file after a deploy that leaves its declaration unchanged" \
+    "$ENGINE_COLUMN_BEFORE" "$(version_and_file "$ENGINE_COLUMN_TABLE")"
+assert_meta columns "1:id,2:v,3:w" "$ENGINE_DECLARED_TABLE"
+assert_meta schemas-count 2 "$ENGINE_DECLARED_TABLE"
+assert_meta columns "1:id,2:v,4:w" "$ENGINE_OTHER_ID_TABLE"
+assert_meta format-version 3 "$UPGRADE_TABLE"
+assert_meta properties-format-version 3 "$UPGRADE_TABLE"
+assert_meta format-version 3 "$UPGRADE_V2_TABLE"
+assert_meta properties-format-version 2 "$UPGRADE_V2_TABLE"
+
 header "VERIFY step 2 (storage_columns_test)"
 assert_same "${STORAGE_TABLE} Glue parameter count after its first update" 0 "$(storage_table 'length(Table.Parameters)')"
 
-header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails)"
+header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails, upgraded tables written)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
 
 header "ATHENA step 2"
@@ -276,6 +314,10 @@ athena_expect "${DROP_SOURCE_LATER_TABLE} after its partition field on cat is re
     "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "id|cat|v" "1|x|v1"
 athena_expect "${REUSED_PARTITION_TABLE} after bucket[8] takes field id 1000 from bucket[4]" \
     "SELECT * FROM ${REUSED_PARTITION_TABLE}" "id|cat|v" "1|x|v1"
+athena_expect "SELECT * on ${ENGINE_DECLARED_TABLE} after w is declared under id 3" \
+    "SELECT * FROM ${ENGINE_DECLARED_TABLE} ORDER BY id" "id|v|w" "1|v1|NULL" "2|v2|w2"
+athena_expect "SELECT * on ${ENGINE_OTHER_ID_TABLE} after w is declared under id 4" \
+    "SELECT * FROM ${ENGINE_OTHER_ID_TABLE} ORDER BY id" "id|v|w" "1|v1|NULL" "2|v2|NULL"
 athena_expect_failure "SELECT * on ${STORAGE_TABLE} after its first update" \
     "SELECT * FROM ${STORAGE_TABLE}" "$HIVE_FORMAT"
 athena_expect_failure "count(*) on ${STORAGE_TABLE} after its first update" \
@@ -305,6 +347,9 @@ assert_meta identifier-field-ids 1 "$UNMARKED_TABLE"
 assert_meta schema-id 2 "$UNMARKED_DOC_TABLE"
 assert_meta identifier-field-ids "" "$UNMARKED_DOC_TABLE"
 
+header "VERIFY step 3 (engine_column_test, w not declared)"
+assert_meta columns "1:id,2:v" "$ENGINE_COLUMN_TABLE"
+
 header "SPARK step 3 (rename preserved data, d of reused_id_test reads c's value)"
 spark_submit "$VERIFY_PROGRAM" --phase 3
 
@@ -312,6 +357,8 @@ header "ATHENA step 3"
 athena_expect "renamed column keeps its values" "$ROWS" "customer_id|contact_email|signed_up_at|region" \
     "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
 athena_expect "d of the row written before the drop reads c's value" "SELECT * FROM ${REUSED_TABLE}" "a|d" "1|c1"
+athena_expect "SELECT * on ${ENGINE_COLUMN_TABLE} after a deploy that does not declare w" \
+    "SELECT * FROM ${ENGINE_COLUMN_TABLE} ORDER BY id" "id|v" "1|v1" "2|v2"
 athena_expect_failure "${DROP_SOURCE_LATER_TABLE} after cat is dropped" \
     "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "$TYPE_NULL"
 athena_expect_failure "count(*) on ${DROP_SOURCE_LATER_TABLE} after cat is dropped" \
@@ -429,10 +476,7 @@ assert_meta commit-retries 5
 assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without commit-retries)"
 
 header "VERIFY step 9 (parameter_name_test)"
-assert_same "${NAME_TABLE} Glue version and metadata file" "1 00001" "$(aws glue get-table \
-    --database-name "$DATABASE" --name "$NAME_TABLE" --region "$AWS_REGION" \
-    --query '[Table.VersionId,Table.Parameters.metadata_location]' --output text \
-    | sed -E 's|[[:space:]].*/([0-9]+)-[^/]*$| \1|')"
+assert_same "${NAME_TABLE} Glue version and metadata file" "1 00001" "$(version_and_file "$NAME_TABLE")"
 
 header "ATHENA step 9"
 rows_10_to_14 "rows unchanged"
@@ -440,20 +484,42 @@ athena_expect "${NAME_TABLE} row written at step 1" "SELECT * FROM ${NAME_TABLE}
 
 ################################################
 ################################################
-# Step 10: CHANGE the sort order from customer_id to signed_up_at DESC.
+# Step 10: CHANGE the sort order from customer_id to signed_up_at DESC, and
+# the ParameterNameTableName parameter, which replaces parameter_name_test
+# with parameter_name_replaced_test at the same location. Later deploys
+# keep the parameter's value.
 
 assert_meta sort-orders "1:identity(1)/asc/nulls-last"
 BEFORE=$(listing_without "default-sort-order-id|sort-orders")
+NAME_UUID=$(table_column_names "$NAME_TABLE" | grep ^table-uuid | cut -d' ' -f2)
+NAME_KEYS=$(name_table_keys)
 
-deploy_step 10
+deploy_step 10 --parameters "ParameterNameTableName=${REPLACED_TABLE}"
 
 header "VERIFY step 10 (sort order change)"
 assert_meta default-sort-order-id 2
 assert_meta sort-orders "1:identity(1)/asc/nulls-last;2:identity(3)/desc/nulls-first"
 assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without "default-sort-order-id|sort-orders")"
 
+header "VERIFY step 10 (parameter_name_replaced_test)"
+assert_same "${REPLACED_TABLE} Glue version and metadata file" "0 00000" "$(version_and_file "$REPLACED_TABLE")"
+REPLACED_UUID=$(table_column_names "$REPLACED_TABLE" | grep ^table-uuid | cut -d' ' -f2)
+if [ "$REPLACED_UUID" != "$NAME_UUID" ]; then
+    green "  ${REPLACED_TABLE} table-uuid differs from ${NAME_TABLE}'s ✓"
+else
+    red "  ${REPLACED_TABLE} has ${NAME_TABLE}'s table-uuid ${NAME_UUID}"; exit 1
+fi
+assert_same "${NAME_TABLE} deleted by CloudFormation" DELETE_COMPLETE "$(aws cloudformation describe-stack-events \
+    --stack-name "$STACK" --region "$AWS_REGION" --output text \
+    --query "StackEvents[?ResourceType=='AWS::Glue::Table' && PhysicalResourceId=='${NAME_TABLE}'].ResourceStatus | [0]")"
+assert_same "objects under ${NAME_TABLE}/: the earlier ones and the metadata file of ${REPLACED_TABLE}" \
+    "$(printf '%s\n' "$NAME_KEYS" "$(aws glue get-table --database-name "$DATABASE" --name "$REPLACED_TABLE" \
+        --region "$AWS_REGION" --query Table.Parameters.metadata_location --output text | sed 's|^s3://[^/]*/||')" | sort)" \
+    "$(name_table_keys)"
+
 header "ATHENA step 10"
 rows_10_to_14 "rows unchanged"
+athena_expect "SELECT * on ${REPLACED_TABLE}, after ${NAME_TABLE} held a row" "SELECT * FROM ${REPLACED_TABLE}" "id|v"
 
 ################################################
 ################################################
