@@ -14,6 +14,13 @@ lib/
 bin/arceus.ts
 # Feature flags and the `app:` declaration.
 cdk.json
+# What `npm ci` installs: the lockfile fixes the `aws-cdk-lib` and `aws-cdk` versions.
+package.json
+package-lock.json unless-version-only
+# The Node version the job installs.
+.nvmrc
+# Compiler options ts-node applies to the `app:` entry.
+tsconfig.json
 # Every file under scripts/ is run or sourced by the integration job.
 scripts/
 # The gate's own rules and code.
