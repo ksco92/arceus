@@ -93,7 +93,7 @@ arceus/
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
 │   ├── field-ids.md                    # What field ids are and the rule for not reusing them
-│   ├── glue-behaviours.md              # Glue behaviours the construct relies on, with the assertion for each
+│   ├── glue-behaviours.md              # Glue behaviours the integration suites assert, with the assertion for each
 │   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test workflow
 ├── cdk.json                            # CDK app config (app: bin/arceus.ts)
 ├── tsconfig.json                       # Demo-app tsconfig (used by ESLint and ts-node)
@@ -328,12 +328,11 @@ first field and 1000 on its second and never changes; the script reads its `meta
 sources in step 2; `drop_source_later_test` removes that partition field
 in step 2 and drops the column in step 3. `reused_partition_id_test`
 gives partition field id 1000 to `bucket[8]` in step 2, after
-`bucket[4]` held it. Athena writes a row to each of the three after
-step 1 and reads them after step 2, and `drop_source_later_test` again
-after step 3; a read of either drop table once its column is gone must
-fail with `Type cannot be null`. The Spark phase of step 2 expects a
-read of `reused_partition_id_test` to fail with `Conflicting partition
-fields`.
+`bucket[4]` held it. Athena writes a row to each of the three after step
+1 and queries them after step 2, and `drop_source_later_test` again
+after step 3; the queries of a drop table whose column is gone must
+fail, and so must the Spark phase's read of `reused_partition_id_test`
+in step 2.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
