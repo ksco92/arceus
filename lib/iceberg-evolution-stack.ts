@@ -27,11 +27,15 @@ import {
     IcebergSortDirection,
     IcebergSortField,
     IcebergTable,
+    IcebergTableProps,
     IcebergType,
 } from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
 const LAST_COMMENT_CHANGE_STEP = 6;
 const LAST_STEP = 12;
+const COMMIT_RETRIES = {
+    'commit.retry.num-retries': '5',
+};
 
 /**
  * Props for `IcebergEvolutionStack`. The stack itself is parameterized
@@ -61,17 +65,12 @@ export interface IcebergEvolutionStackProps extends StackProps {
 }
 
 /**
- * Stack that owns Iceberg tables that change based on a
- * `--context evolutionStep=N` value: `evolution_test` (primitive
- * columns, partitions, identifiers; steps 1 to 6; a table property,
- * the sort order and a rolled-back column add; steps 9 to 12),
- * `nested_evolution_test` (list, map and struct columns; evolved at
- * steps 7 and 8), and `reused_id_test`, `partition_id_test`,
- * `parameter_name_test`, `renumber_test`, `format_version_test`,
- * `decimal_test` and `create_partition_id_test`, one Glue observation
- * each. Step 11 adds a wait condition that fails to create after the
- * table update, so its deploy rolls back. Used as the target of
- * `scripts/integration-test-evolution.sh`.
+ * Stack whose Iceberg tables change with `--context evolutionStep=N`, the
+ * target of `scripts/integration-test-evolution.sh`: `evolution_test` and
+ * `nested_evolution_test` evolve across the steps, plus one small table per
+ * Glue behaviour the script asserts (`CONTRIBUTING.md` describes each).
+ * Step 11 adds a wait condition that fails to create after the table
+ * update, so its deploy rolls back.
  */
 export class IcebergEvolutionStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergEvolutionStackProps) {
@@ -94,48 +93,42 @@ export class IcebergEvolutionStack extends Stack {
             `arn:${this.partition}:glue:${this.region}:${this.account}:database/${props.importedDatabaseName}`,
         );
 
+        const icebergTable = (
+            tableId: string,
+            name: string,
+            tableProps: Omit<IcebergTableProps, 'database' | 'tableName' | 'formatVersion' | 'location'>
+                & Partial<Pick<IcebergTableProps, 'tableName' | 'formatVersion'>>,
+        ) => new IcebergTable(this, tableId, {
+            database: importedDatabase,
+            tableName: name,
+            formatVersion: IcebergFormatVersion.V2,
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/${name}/`,
+            removalPolicy: RemovalPolicy.DESTROY,
+            ...tableProps,
+        });
+
         const columns: IcebergColumn[] = buildColumns(step);
         const partitionSpec: IcebergPartitionField[] = buildPartitionSpec(step);
 
-        const table = new IcebergTable(this, 'EvolutionTable', {
-            database: importedDatabase,
-            tableName: 'evolution_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const table = icebergTable('EvolutionTable', 'evolution_test', {
             comment: `Integration-test target — evolution step ${Math.min(step, LAST_COMMENT_CHANGE_STEP)}.`,
             columns,
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/evolution_test/`,
             partitionSpec,
             identifierFieldNames: buildIdentifierFieldNames(step),
             sortOrder: buildSortOrder(step),
-            tableProperties: step >= 9 ? {
-                'commit.retry.num-retries': '5',
-            } : undefined,
-            removalPolicy: RemovalPolicy.DESTROY,
+            tableProperties: step >= 9 ? COMMIT_RETRIES : undefined,
         });
 
-        const nestedTable = new IcebergTable(this, 'NestedEvolutionTable', {
-            database: importedDatabase,
-            tableName: 'nested_evolution_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const nestedTable = icebergTable('NestedEvolutionTable', 'nested_evolution_test', {
             comment: 'Integration-test target — nested column evolution.',
             columns: buildNestedColumns(step),
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/nested_evolution_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const reusedIdTable = new IcebergTable(this, 'ReusedIdTable', {
-            database: importedDatabase,
-            tableName: 'reused_id_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const reusedIdTable = icebergTable('ReusedIdTable', 'reused_id_test', {
             columns: buildReusedIdColumns(step),
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/reused_id_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const partitionIdTable = new IcebergTable(this, 'PartitionIdTable', {
-            database: importedDatabase,
-            tableName: 'partition_id_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const partitionIdTable = icebergTable('PartitionIdTable', 'partition_id_test', {
             columns: [
                 {
                     name: 'id',
@@ -159,16 +152,12 @@ export class IcebergEvolutionStack extends Stack {
                 },
             ],
             partitionSpec: buildPartitionIdSpec(step),
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/partition_id_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const parameterNameTable = new IcebergTable(this, 'ParameterNameTable', {
-            database: importedDatabase,
+        const parameterNameTable = icebergTable('ParameterNameTable', 'parameter_name_test', {
             tableName: step >= 9 ? new CfnParameter(this, 'ParameterNameTableName', {
                 default: 'parameter_name_test',
             }).valueAsString : 'parameter_name_test',
-            formatVersion: IcebergFormatVersion.V2,
             columns: [
                 {
                     name: 'id',
@@ -181,14 +170,9 @@ export class IcebergEvolutionStack extends Stack {
                     id: 2,
                 },
             ],
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/parameter_name_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const renumberTable = new IcebergTable(this, 'RenumberTable', {
-            database: importedDatabase,
-            tableName: 'renumber_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const renumberTable = icebergTable('RenumberTable', 'renumber_test', {
             columns: [
                 {
                     name: 'a',
@@ -201,16 +185,10 @@ export class IcebergEvolutionStack extends Stack {
                     id: 1,
                 },
             ],
-            tableProperties: step >= 2 ? {
-                'commit.retry.num-retries': '5',
-            } : undefined,
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/renumber_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
+            tableProperties: step >= 2 ? COMMIT_RETRIES : undefined,
         });
 
-        const formatVersionTable = new IcebergTable(this, 'FormatVersionTable', {
-            database: importedDatabase,
-            tableName: 'format_version_test',
+        const formatVersionTable = icebergTable('FormatVersionTable', 'format_version_test', {
             formatVersion: step >= 2 ? IcebergFormatVersion.V3 : IcebergFormatVersion.V2,
             columns: [
                 {
@@ -224,37 +202,20 @@ export class IcebergEvolutionStack extends Stack {
                     id: 2,
                 },
             ],
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/format_version_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const decimalTable = new IcebergTable(this, 'DecimalTable', {
-            database: importedDatabase,
-            tableName: 'decimal_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const decimalTable = icebergTable('DecimalTable', 'decimal_test', {
             columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
                 {
                     name: 'amount',
                     type: IcebergType.decimal(10, 2),
-                    id: 2,
+                    id: 1,
                 },
             ],
-            tableProperties: step >= 2 ? {
-                'commit.retry.num-retries': '5',
-            } : undefined,
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/decimal_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
+            tableProperties: step >= 2 ? COMMIT_RETRIES : undefined,
         });
 
-        const createPartitionIdTable = new IcebergTable(this, 'CreatePartitionIdTable', {
-            database: importedDatabase,
-            tableName: 'create_partition_id_test',
-            formatVersion: IcebergFormatVersion.V2,
+        const createPartitionIdTable = icebergTable('CreatePartitionIdTable', 'create_partition_id_test', {
             columns: [
                 {
                     name: 'id',
@@ -271,61 +232,29 @@ export class IcebergEvolutionStack extends Stack {
                 {
                     sourceColumn: 'ts',
                     transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
+                    fieldId: 1005,
                 },
                 {
                     sourceColumn: 'id',
                     transform: IcebergPartitionTransform.bucket(4),
-                    fieldId: 1005,
+                    fieldId: 1000,
                 },
             ],
-            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/create_partition_id_test/`,
-            removalPolicy: RemovalPolicy.DESTROY,
         });
 
-        const grants: Array<[string, IcebergTable]> = [
-            [
-                'EvolutionTablePermission',
-                table,
-            ],
-            [
-                'NestedEvolutionTablePermission',
-                nestedTable,
-            ],
-            [
-                'ReusedIdTablePermission',
-                reusedIdTable,
-            ],
-            [
-                'PartitionIdTablePermission',
-                partitionIdTable,
-            ],
-            [
-                'ParameterNameTablePermission',
-                parameterNameTable,
-            ],
-            [
-                'RenumberTablePermission',
-                renumberTable,
-            ],
-            [
-                'FormatVersionTablePermission',
-                formatVersionTable,
-            ],
-            [
-                'DecimalTablePermission',
-                decimalTable,
-            ],
-            [
-                'CreatePartitionIdTablePermission',
-                createPartitionIdTable,
-            ],
+        const grants: IcebergTable[] = [
+            table,
+            nestedTable,
+            reusedIdTable,
+            partitionIdTable,
+            parameterNameTable,
+            renumberTable,
+            formatVersionTable,
+            decimalTable,
+            createPartitionIdTable,
         ];
-        grants.forEach(([
-            permissionId,
-            target,
-        ]) => {
-            const permission = new CfnPermissions(this, permissionId, {
+        grants.forEach((target) => {
+            const permission = new CfnPermissions(this, `${target.node.id}Permission`, {
                 permissions: [
                     'SELECT',
                     'INSERT',
