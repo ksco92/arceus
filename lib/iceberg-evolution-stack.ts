@@ -200,18 +200,7 @@ export class IcebergEvolutionStack extends Stack {
             tableName: step >= 9 ? new CfnParameter(this, 'ParameterNameTableName', {
                 default: 'parameter_name_test',
             }).valueAsString : 'parameter_name_test',
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-                {
-                    name: 'v',
-                    type: IcebergType.STRING,
-                    id: 2,
-                },
-            ],
+            columns: ID_V_COLUMNS,
         });
 
         const renumberTable = icebergTable('RenumberTable', 'renumber_test', {
@@ -232,18 +221,7 @@ export class IcebergEvolutionStack extends Stack {
 
         const formatVersionTable = icebergTable('FormatVersionTable', 'format_version_test', {
             formatVersion: step >= 2 ? IcebergFormatVersion.V3 : IcebergFormatVersion.V2,
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-                {
-                    name: 'v',
-                    type: IcebergType.STRING,
-                    id: 2,
-                },
-            ],
+            columns: ID_V_COLUMNS,
         });
 
         const decimalTable = icebergTable('DecimalTable', 'decimal_test', {
