@@ -494,10 +494,9 @@ unknown, variant, geometry or geography.
 The construct writes `(PK) ` at the start of each identifier column's
 `doc`, which is shown as the column comment (`(PK) ` alone when the
 column has no `doc`). Glue's `UpdateTable` reuses an earlier schema
-whose fields (name, type, `required`, `doc`) match the request,
-together with that schema's `identifier-field-ids`; the marker makes
-every identifier change a field change. A `doc` you write must not
-start with `(PK) `.
+whose fields, `doc` included, match the request, together with that
+schema's `identifier-field-ids`; the marker makes every identifier
+change a field change. A `doc` you write must not start with `(PK) `.
 
 ### Table properties
 

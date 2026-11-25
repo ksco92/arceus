@@ -303,7 +303,7 @@ Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`; the paragraphs below name the other tables
 Athena reads.
 
-The stack owns twelve tables. `evolution_test` changes in steps 1 to 6 and
+The stack owns fifteen tables. `evolution_test` changes in steps 1 to 6 and
 9 to 12. `nested_evolution_test` is created in step 1 and loaded with
 one row; steps 7 and 8 evolve it. Its baseline columns
 are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
@@ -333,6 +333,15 @@ gives partition field id 1000 to `bucket[8]` in step 2, after
 after step 3; the queries of a drop table whose column is gone must
 fail, and so must the Spark phase's read of `reused_partition_id_test`
 in step 2.
+`storage_columns_test` is a raw `CfnTable` with its columns under
+`storageDescriptor.columns`; it gains a column in step 2. The script
+reads its Glue `table_type` after steps 1 and 2, and Athena queries it
+after both; the queries after step 2 must fail.
+`unmarked_identifier_test` and `unmarked_identifier_doc_test` are
+created with an identifier and an override that removes the `(PK) `
+marker, get the marker in step 2 and lose the identifier in step 3, the
+second with a `doc` added to its other column; the script reads their
+`metadata.json` after step 3.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
@@ -348,7 +357,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 8 | `nested_evolution_test`: **ADD** struct field `addr.zip(11)` between `line1` and `city` | `addr` = `line1(8)`, `zip(11)`, `city(9)` | none | ids 100 and 101 read by name with `addr.zip` NULL, then INSERT of id 102 with a zip, all three rows read |
 | 9 | **CHANGE** table property `commit.retry.num-retries` to `5`; every other field the script reads from `metadata.json` asserted unchanged | unchanged | unchanged | none |
 | 10 | **CHANGE** `sortOrder` from `customer_id` to `signed_up_at` descending, nulls first; `default-sort-order-id` 2 and order 1 still in `sort-orders` asserted | unchanged | unchanged | none |
-| 11 | **ADD** column `country(5)` plus a wait condition that fails to create after the table update; `cdk deploy` must exit non-zero with the stack in `UPDATE_ROLLBACK_COMPLETE`, then the earlier `current-schema-id`, `last-column-id` 5 and one more entry in `schemas` asserted | unchanged after the rollback | unchanged | none |
+| 11 | **ADD** column `country(5)` plus `table_input_test`, a raw `CfnTable` with `tableInput` beside `openTableFormatInput` that fails to create after the table update, its failure reason asserted; `cdk deploy` must exit non-zero with the stack in `UPDATE_ROLLBACK_COMPLETE`, then the earlier `current-schema-id`, `last-column-id` 5 and one more entry in `schemas` asserted | unchanged after the rollback | unchanged | none |
 | 12 | The step 11 change again, without the failing resource; the schema step 11 added becomes current | + `country(5)` | unchanged | none |
 
 The construct passes each new column list + partition spec to Glue
