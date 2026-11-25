@@ -286,14 +286,13 @@ export class IcebergEvolutionStack extends Stack {
             ],
         });
 
-        /// Step 1 strips the `(PK) ` marker; step 2 restores it; step 3 drops the identifier.
+        const unmarkedIdentifiers = step >= 3 ? [] : [
+            'id',
+        ];
         const unmarkedIdentifierTable = icebergTable('UnmarkedIdentifierTable', 'unmarked_identifier_test', {
             columns: ID_V_IDENTIFIER_COLUMNS,
-            identifierFieldNames: step >= 3 ? [] : [
-                'id',
-            ],
+            identifierFieldNames: unmarkedIdentifiers,
         });
-        /// As above, and step 3 also gives `v` a `doc`.
         const unmarkedIdentifierDocTable = icebergTable('UnmarkedIdentifierDocTable', 'unmarked_identifier_doc_test', {
             columns: step >= 3 ? [
                 ID_V_IDENTIFIER_COLUMNS[0],
@@ -302,9 +301,7 @@ export class IcebergEvolutionStack extends Stack {
                     doc: 'Value.',
                 },
             ] : ID_V_IDENTIFIER_COLUMNS,
-            identifierFieldNames: step >= 3 ? [] : [
-                'id',
-            ],
+            identifierFieldNames: unmarkedIdentifiers,
         });
         if (step === 1) {
             [
@@ -356,7 +353,6 @@ export class IcebergEvolutionStack extends Stack {
         };
         grants.forEach((target) => grant(target.node.id, target.tableName, target.resource));
 
-        /// The schema sits under `storageDescriptor.columns` beside `openTableFormatInput`.
         const storageColumnsTable = new CfnTable(this, 'StorageColumnsTable', {
             catalogId: this.account,
             databaseName: importedDatabase.databaseName,
@@ -386,11 +382,10 @@ export class IcebergEvolutionStack extends Stack {
                 },
             },
         });
-        storageColumnsTable.applyRemovalPolicy(RemovalPolicy.DESTROY);
         grant('StorageColumnsTable', 'storage_columns_test', storageColumnsTable);
 
         if (step === 11) {
-            /// `tableInput` beside `openTableFormatInput`: the create fails after the table update.
+            /// `tableInput` beside `icebergTableInput`: the create fails after the table update.
             const tableInputTable = new CfnTable(this, 'TableInputTable', {
                 catalogId: this.account,
                 databaseName: importedDatabase.databaseName,
@@ -419,7 +414,6 @@ export class IcebergEvolutionStack extends Stack {
                     },
                 },
             });
-            tableInputTable.applyRemovalPolicy(RemovalPolicy.DESTROY);
             tableInputTable.addResourceDependency(table.resource);
         }
 

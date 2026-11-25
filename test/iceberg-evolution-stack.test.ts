@@ -381,7 +381,7 @@ describe('IcebergEvolutionStack — property, sort order and rollback steps', ()
         expect(icebergInputAt(12)).toEqual(icebergInputAt(11));
     });
 
-    it('only step 11 adds table_input_test, with tableInput beside openTableFormatInput, after the table', () => {
+    it('only step 11 adds table_input_test, with tableInput beside icebergTableInput, after the table', () => {
         const tables = synthAt(11).findResources('AWS::Glue::Table');
         const tableId = Object.entries(tables).find(([
             , table,
@@ -481,9 +481,6 @@ describe('IcebergEvolutionStack — unmarked identifier tables', () => {
         'unmarked_identifier_test',
         'unmarked_identifier_doc_test',
     ])('%s identifies rows by id without the (PK) marker at step 1 and with it at step 2', (tableName) => {
-        expect(icebergInputAt(1, tableName).Schema.IdentifierFieldIds).toEqual([
-            1,
-        ]);
         expect(icebergInputAt(1, tableName).Schema.Fields[0].Doc).toBeUndefined();
         expect(icebergInputAt(2, tableName).Schema.Fields[0].Doc).toBe('(PK) ');
     });

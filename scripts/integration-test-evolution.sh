@@ -154,6 +154,7 @@ ROW_14="14|e@example.com|2026-03-05 09:00:00.000000 UTC"
 ROW_100="100|t1|t2|v1|v2|L1|C1"
 ROW_101="101|u1|u2|w1|w2|M1|D1"
 TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
+# Athena's reason ends in a space.
 HIVE_FORMAT="HIVE_UNSUPPORTED_FORMAT: Unable to create input format "
 
 storage_table() {
