@@ -50,19 +50,6 @@ const ID_CAT_V_COLUMNS: IcebergColumn[] = [
         id: 3,
     },
 ];
-const ID_V_IDENTIFIER_COLUMNS: IcebergColumn[] = [
-    {
-        name: 'id',
-        type: IcebergType.LONG,
-        required: true,
-        id: 1,
-    },
-    {
-        name: 'v',
-        type: IcebergType.STRING,
-        id: 2,
-    },
-];
 const ID_V_COLUMNS: IcebergColumn[] = [
     {
         name: 'id',
@@ -74,6 +61,13 @@ const ID_V_COLUMNS: IcebergColumn[] = [
         type: IcebergType.STRING,
         id: 2,
     },
+];
+const ID_V_IDENTIFIER_COLUMNS: IcebergColumn[] = [
+    {
+        ...ID_V_COLUMNS[0],
+        required: true,
+    },
+    ID_V_COLUMNS[1],
 ];
 const COMMIT_RETRIES = {
     'commit.retry.num-retries': '5',
