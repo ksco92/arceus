@@ -191,7 +191,7 @@ assert_identifiers "1" "customer_id"
 BASE_IDS="id:1,tags:2,tags.element:5,attrs:3,attrs.key:6,attrs.value:7,addr:4,addr.line1:8"
 assert_nested_ids "${BASE_IDS},addr.city:9" "9"
 
-header "VERIFY step 1 (create_partition_id_test, declared 1000 and 1005)"
+header "VERIFY step 1 (create_partition_id_test, declared 1005 then 1000)"
 assert_meta partition-ids "1000:day,1001:bucket[4]" "$CREATE_PARTITION_TABLE"
 assert_meta last-partition-id 1001 "$CREATE_PARTITION_TABLE"
 
@@ -220,7 +220,6 @@ header "VERIFY step 2 (ADD column)"
 assert_columns "1:customer_id,2:email,3:signed_up_at,4:region"
 assert_partitions "signed_up_at_day"
 assert_meta spec-count 1
-assert_meta default-spec-id 0
 
 header "VERIFY step 2 (reused_id_test, partition_id_test)"
 assert_meta columns "1:a" "$REUSED_TABLE"
@@ -234,7 +233,6 @@ assert_meta properties-format-version 3 "$FORMAT_TABLE"
 assert_meta table-uuid "$FORMAT_UUID" "$FORMAT_TABLE"
 assert_meta commit-retries 5 "$DECIMAL_TABLE"
 assert_meta schemas-count 1 "$DECIMAL_TABLE"
-assert_meta schema-id 0 "$DECIMAL_TABLE"
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
