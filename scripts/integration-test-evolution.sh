@@ -156,9 +156,9 @@ ROW_101="101|u1|u2|w1|w2|M1|D1"
 TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
 HIVE_FORMAT="HIVE_UNSUPPORTED_FORMAT: Unable to create input format "
 
-storage_table_type() {
+storage_table() {
     aws glue get-table --database-name "$DATABASE" --name "$STORAGE_TABLE" --region "$AWS_REGION" \
-        --query Table.Parameters.table_type --output text
+        --query "$1" --output text
 }
 
 rows_10_to_14() {
@@ -211,7 +211,7 @@ assert_meta partition-ids "1000:day,1001:bucket[4]" "$CREATE_PARTITION_TABLE"
 assert_meta last-partition-id 1001 "$CREATE_PARTITION_TABLE"
 
 header "VERIFY step 1 (storage_columns_test)"
-assert_same "${STORAGE_TABLE} table_type" ICEBERG "$(storage_table_type)"
+assert_same "${STORAGE_TABLE} table_type" ICEBERG "$(storage_table Table.Parameters.table_type)"
 
 header "SPARK step 1 (INSERT seed rows, including the nested row)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
@@ -257,7 +257,7 @@ assert_meta commit-retries 5 "$DECIMAL_TABLE"
 assert_meta schemas-count 1 "$DECIMAL_TABLE"
 
 header "VERIFY step 2 (storage_columns_test)"
-assert_same "${STORAGE_TABLE} table_type after its first update" None "$(storage_table_type)"
+assert_same "${STORAGE_TABLE} Glue parameter count after its first update" 0 "$(storage_table 'length(Table.Parameters)')"
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
