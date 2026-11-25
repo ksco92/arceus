@@ -294,13 +294,14 @@ without `DESTROY=1` it leaves the stack deployed.
 
 `scripts/integration-test-evolution.sh` drives the
 `IcebergEvolutionStack` through twelve `cdk deploy`s and verifies the
-underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
-checks (`scripts/spark/verify_evolution.py`) between deploys. After each
-step (and its Spark phase, where there is one), Athena reads `evolution_test` or `nested_evolution_test`, whichever the step changed: every row
-loaded so far, under the step's column names, with the values Spark
-inserted, and after steps 1 and 6 the `(PK) ` column comments from
-`information_schema.columns`. The one-observation tables below have
-their own Athena reads.
+underlying Iceberg `metadata.json` after each, with Spark INSERT /
+SELECT checks (`scripts/spark/verify_evolution.py`) between deploys.
+After each step (and its Spark phase, where there is one), Athena reads
+`evolution_test` or `nested_evolution_test`, whichever the step changed:
+every row loaded so far, under the step's column names, with the values
+Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
+`information_schema.columns`; the paragraphs below name the other tables
+Athena reads.
 
 The stack owns nine tables. `evolution_test` changes in steps 1 to 6 and
 9 to 12. `nested_evolution_test` is created in step 1 and loaded with
