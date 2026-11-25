@@ -33,6 +33,23 @@ import {
 
 const LAST_COMMENT_CHANGE_STEP = 6;
 const LAST_STEP = 12;
+const ID_CAT_V_COLUMNS: IcebergColumn[] = [
+    {
+        name: 'id',
+        type: IcebergType.LONG,
+        id: 1,
+    },
+    {
+        name: 'cat',
+        type: IcebergType.STRING,
+        id: 2,
+    },
+    {
+        name: 'v',
+        type: IcebergType.STRING,
+        id: 3,
+    },
+];
 const COMMIT_RETRIES = {
     'commit.retry.num-retries': '5',
 };
@@ -242,6 +259,20 @@ export class IcebergEvolutionStack extends Stack {
             ],
         });
 
+        const dropSourceTable = icebergTable('DropSourceTable', 'drop_source_test', buildDropSourceTable(step, 2));
+        const dropSourceLaterTable = icebergTable('DropSourceLaterTable', 'drop_source_later_test', buildDropSourceTable(step, 3));
+
+        const reusedPartitionIdTable = icebergTable('ReusedPartitionIdTable', 'reused_partition_id_test', {
+            columns: ID_CAT_V_COLUMNS,
+            partitionSpec: [
+                {
+                    sourceColumn: 'id',
+                    transform: IcebergPartitionTransform.bucket(step >= 2 ? 8 : 4),
+                    fieldId: 1000,
+                },
+            ],
+        });
+
         const grants: IcebergTable[] = [
             table,
             nestedTable,
@@ -252,6 +283,9 @@ export class IcebergEvolutionStack extends Stack {
             formatVersionTable,
             decimalTable,
             createPartitionIdTable,
+            dropSourceTable,
+            dropSourceLaterTable,
+            reusedPartitionIdTable,
         ];
         grants.forEach((target) => {
             const permission = new CfnPermissions(this, `${target.node.id}Permission`, {
@@ -307,11 +341,8 @@ export class IcebergEvolutionStack extends Stack {
 // that data files (which reference fields by id) stay queryable.
 
 function buildColumns(step: number): IcebergColumn[] {
-    /// `region` is dropped in step 4 — note it is intentionally NOT
-    /// a partition source so that the column-drop deploy can succeed
-    /// without first inserting a `void` transform in the partition
-    /// spec (Iceberg requires the latter, and the CFN
-    /// OpenTableFormatInput surface cannot express it).
+    /// `region`, dropped in step 4, is never a partition source;
+    /// `drop_source_test` is the table that drops one.
     const baseline: IcebergColumn[] = [
         {
             name: 'customer_id',
@@ -417,9 +448,7 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
     };
     /// Step 5 changes the transform on `signed_up_at` from `day` to
     /// `month`. A changed transform is a NEW partition field, so it
-    /// takes the next never-used id (1002) — reusing 1000 here would
-    /// reproduce the "Conflicting partition fields" corruption from
-    /// issue #43, and 1001 stays retired with the dropped bucket field.
+    /// takes the next never-used id (1002); 1000 and 1001 stay retired.
     const monthPartition: IcebergPartitionField = {
         sourceColumn: 'signed_up_at',
         transform: IcebergPartitionTransform.MONTH,
@@ -470,6 +499,28 @@ function buildReusedIdColumns(step: number): IcebergColumn[] {
             id: 2,
         },
     ];
+}
+
+/// `cat` loses its partition field at step 2 and the column at `columnDropStep`.
+function buildDropSourceTable(step: number, columnDropStep: number): Pick<IcebergTableProps, 'columns' | 'partitionSpec'> {
+    const catPartition: IcebergPartitionField[] = step >= 2 ? [] : [
+        {
+            sourceColumn: 'cat',
+            transform: IcebergPartitionTransform.IDENTITY,
+            fieldId: 1001,
+        },
+    ];
+    return {
+        columns: ID_CAT_V_COLUMNS.filter((column) => step < columnDropStep || column.name !== 'cat'),
+        partitionSpec: [
+            {
+                sourceColumn: 'id',
+                transform: IcebergPartitionTransform.bucket(4),
+                fieldId: 1000,
+            },
+            ...catPartition,
+        ],
+    };
 }
 
 /// `partition_id_test` adds a field under 1005 at step 2, above the next

@@ -93,7 +93,7 @@ arceus/
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
 │   ├── field-ids.md                    # What field ids are and the rule for not reusing them
-│   ├── glue-behaviours.md              # Glue behaviours the construct relies on, with the assertion for each
+│   ├── glue-behaviours.md              # Glue behaviours the integration suites assert, with the assertion for each
 │   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test workflow
 ├── cdk.json                            # CDK app config (app: bin/arceus.ts)
 ├── tsconfig.json                       # Demo-app tsconfig (used by ESLint and ts-node)
@@ -303,7 +303,7 @@ Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`; the paragraphs below name the other tables
 Athena reads.
 
-The stack owns nine tables. `evolution_test` changes in steps 1 to 6 and
+The stack owns twelve tables. `evolution_test` changes in steps 1 to 6 and
 9 to 12. `nested_evolution_test` is created in step 1 and loaded with
 one row; steps 7 and 8 evolve it. Its baseline columns
 are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
@@ -324,6 +324,15 @@ Athena writes a row to `renumber_test` after step 1 and reads it after
 step 2.
 `create_partition_id_test` declares partition field id 1005 on its
 first field and 1000 on its second and never changes; the script reads its `metadata.json` after step 1.
+`drop_source_test` drops a column together with the partition field it
+sources in step 2; `drop_source_later_test` removes that partition field
+in step 2 and drops the column in step 3. `reused_partition_id_test`
+gives partition field id 1000 to `bucket[8]` in step 2, after
+`bucket[4]` held it. Athena writes a row to each of the three after step
+1 and queries them after step 2, and `drop_source_later_test` again
+after step 3; the queries of a drop table whose column is gone must
+fail, and so must the Spark phase's read of `reused_partition_id_test`
+in step 2.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 

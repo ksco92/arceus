@@ -43,6 +43,9 @@ RENUMBER_TABLE="renumber_test"
 FORMAT_TABLE="format_version_test"
 DECIMAL_TABLE="decimal_test"
 CREATE_PARTITION_TABLE="create_partition_id_test"
+DROP_SOURCE_TABLE="drop_source_test"
+DROP_SOURCE_LATER_TABLE="drop_source_later_test"
+REUSED_PARTITION_TABLE="reused_partition_id_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -147,6 +150,7 @@ ROW_13="13|d@example.com|2026-02-01 09:00:00.000000 UTC"
 ROW_14="14|e@example.com|2026-03-05 09:00:00.000000 UTC"
 ROW_100="100|t1|t2|v1|v2|L1|C1"
 ROW_101="101|u1|u2|w1|w2|M1|D1"
+TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
 
 rows_10_to_14() {
     athena_expect "$1" "$ROWS" "customer_id|contact_email|signed_up_at" \
@@ -172,7 +176,8 @@ npx cdk destroy "$STACK" --force --region "$AWS_REGION" 2>&1 | tail -3 || true
 yellow "  Also clearing the table's S3 prefix so Iceberg starts fresh."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE" \
-    "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE"; do
+    "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE" \
+    "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -207,6 +212,9 @@ athena_expect "nested seed row" "${NESTED_ROWS} FROM ${NESTED_TABLE} ORDER BY id
 run_athena "INSERT INTO ${REUSED_TABLE} VALUES (1, 'c1')" >/dev/null
 run_athena "INSERT INTO ${NAME_TABLE} VALUES (1, 'v1')" >/dev/null
 run_athena "INSERT INTO ${RENUMBER_TABLE} VALUES ('A', 'B')" >/dev/null
+for seeded in "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE"; do
+    run_athena "INSERT INTO ${seeded} VALUES (1, 'x', 'v1')" >/dev/null
+done
 
 ################################################
 ################################################
@@ -234,7 +242,7 @@ assert_meta table-uuid "$FORMAT_UUID" "$FORMAT_TABLE"
 assert_meta commit-retries 5 "$DECIMAL_TABLE"
 assert_meta schemas-count 1 "$DECIMAL_TABLE"
 
-header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region)"
+header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
 
 header "ATHENA step 2"
@@ -242,6 +250,14 @@ athena_expect "old rows read region NULL" "$ROWS" "customer_id|email|signed_up_a
     "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
 athena_expect "a and b of the row written before the first update read each other's values" \
     "SELECT * FROM ${RENUMBER_TABLE}" "a|b" "B|A"
+athena_expect_failure "${DROP_SOURCE_TABLE} after cat and its partition field are dropped together" \
+    "SELECT * FROM ${DROP_SOURCE_TABLE}" "$TYPE_NULL"
+athena_expect_failure "count(*) on ${DROP_SOURCE_TABLE} after cat and its partition field are dropped together" \
+    "SELECT count(*) FROM ${DROP_SOURCE_TABLE}" "$TYPE_NULL"
+athena_expect "${DROP_SOURCE_LATER_TABLE} after its partition field on cat is removed" \
+    "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "id|cat|v" "1|x|v1"
+athena_expect "${REUSED_PARTITION_TABLE} after bucket[8] takes field id 1000 from bucket[4]" \
+    "SELECT * FROM ${REUSED_PARTITION_TABLE}" "id|cat|v" "1|x|v1"
 
 ################################################
 ################################################
@@ -267,14 +283,16 @@ header "ATHENA step 3"
 athena_expect "renamed column keeps its values" "$ROWS" "customer_id|contact_email|signed_up_at|region" \
     "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
 athena_expect "d of the row written before the drop reads c's value" "SELECT * FROM ${REUSED_TABLE}" "a|d" "1|c1"
+athena_expect_failure "${DROP_SOURCE_LATER_TABLE} after cat is dropped" \
+    "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "$TYPE_NULL"
+athena_expect_failure "count(*) on ${DROP_SOURCE_LATER_TABLE} after cat is dropped" \
+    "SELECT count(*) FROM ${DROP_SOURCE_LATER_TABLE}" "$TYPE_NULL"
 
 ################################################
 ################################################
 # Step 4: DROP column `region` (id 4 stays retired) and DROP partition
-# bucket(8)(customer_id). The column `region` is NOT a partition
-# source, and the bucket partition's source column `customer_id` is
-# NOT being dropped, so neither change requires Iceberg's
-# void-transform intermediate.
+# bucket(8)(customer_id). `region` is not a partition source, and
+# `customer_id` stays in the schema.
 
 deploy_step 4
 
