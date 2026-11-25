@@ -72,7 +72,7 @@ function checkPullRequest({files, base, head}) {
     for (const line of unreleased.lines.filter((l) => !LINE.test(l))) {
         problems.push(`Not a changelog line of the form "- (patch|minor|breaking) text": ${line}`);
     }
-    const pending = unreleasedSection(base.changelog)?.lines ?? [];
+    const pending = unreleasedSection(base.changelog).lines;
     const added = unreleased.lines.filter((line) => LINE.test(line) && !pending.includes(line));
     if (added.length === 0 && changesPublishedFile(files, base.manifest, head.manifest)) {
         problems.push(`A published file changed: add a line under "## ${UNRELEASED}" in ${CHANGELOG}.`);
@@ -130,16 +130,10 @@ function check(change) {
         : checkRelease(change);
 }
 
-/** The change between two git revisions of the repository in `cwd`; a missing changelog reads as empty. */
+/** The change between two git revisions of the repository in `cwd`. */
 function readChange(base, head, cwd) {
     const git = (...args) => execFileSync('git', args, {cwd, encoding: 'utf8', stdio: 'pipe'});
-    const show = (revision, path) => {
-        try {
-            return git('show', `${revision}:${path}`);
-        } catch {
-            return '';
-        }
-    };
+    const show = (revision, path) => git('show', `${revision}:${path}`);
     const files = git('diff', '--name-only', '--no-renames', '-z', base, head).split('\0').filter(Boolean);
     const side = (revision) => ({
         changelog: show(revision, CHANGELOG),
