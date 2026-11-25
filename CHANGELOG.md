@@ -4,7 +4,7 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
-- (patch) The README states that Glue numbers a new table's partition fields 1000, 1001 and up in spec order and ignores the declared `fieldId`s, and lists that, the `decimal(P, S)` spacing and the reuse of a partition spec the table holds among the Glue behaviours the integration suites assert.
+- (patch) The README and the `fieldId` doc comment state that Glue numbers a new table's partition fields 1000, 1001 and up in spec order and ignores the declared `fieldId`s; the README also lists the `decimal(P, S)` and partition-spec reuse behaviours among those the suites assert.
 
 ## 0.22.2
 

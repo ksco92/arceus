@@ -18,8 +18,8 @@ export interface IcebergPartitionField {
     readonly name?: string;
 
     /**
-     * Iceberg partition field id. Required: every partition field must
-     * be pinned to a stable integer >= 1000 (the Iceberg spec reserves
+     * Iceberg partition field id. Required: every partition field
+     * declares an integer >= 1000 (the Iceberg spec reserves
      * ids below 1000 for schema columns) that is unique across the
      * table's entire partition-spec history — not just the current
      * spec. Iceberg's strict engines (Spark, Trino) reject a table

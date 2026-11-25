@@ -292,7 +292,7 @@ same `current-schema-id`, partition spec and sort order.
 ### Changes that need care
 
 - **Dropping a column that a partition field still sources from breaks Athena.** The Iceberg spec requires a `void` intermediate, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, and Athena queries against the result fail with `Type cannot be null`. Remove the partition field first and keep the column in the schema; drop the column only once nothing partitions by it.
-- **Glue ignores a V2 to V3 `formatVersion` change; the format version is fixed at CREATE.** `properties.format-version` then reads `3` all the same. Keep `formatVersion` at the table's real version, or destroy + recreate the table to change it.
+- **Glue ignores a V2 to V3 `formatVersion` change.** The table stays format 2, and `properties.format-version` reads `3` all the same. Keep `formatVersion` at the table's real version.
 - **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one. That includes the in-place upgrade of a v2 table with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`, which the v3 suite runs through Spark: setting `formatVersion` to `V3` afterwards makes the declaration match the table.
 - **A rolled-back deploy leaves its schema in the table's history.** When a deploy that adds a column updates the table and then fails on another resource, the stack ends in `UPDATE_ROLLBACK_COMPLETE` and `current-schema-id` is back to its earlier value, so the column is gone and the rows read as before. The schema that held the column stays in `schemas`, and `last-column-id` stays at the column's id. A clean redeploy of the same change makes that schema current again without adding a schema. Treat an id from a rolled-back deploy as used: give it only to the column that deploy added.
 
@@ -402,9 +402,9 @@ Athena read after a dropped column's id is reused; that a `Name`
 changed to a parameter with the same value leaves the table as it was;
 that an update matching an earlier schema makes that schema current
 again, and one matching a partition spec the table holds adds no spec;
-that an update leaving a `decimal(P, S)` column alone adds no schema;
-and how property-only, sort order, identifier and rolled-back updates
-land. [Glue
+that an update leaving the schema of a table with a `decimal(P, S)`
+column alone adds no schema; and how property-only, sort order,
+identifier and rolled-back updates land. [Glue
 behaviours](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md)
 lists each one with the integration-suite assertion that checks it.
 
@@ -470,8 +470,8 @@ IcebergTable.creationOrderFieldIds(columns);
 
 ### Partition fields
 
-Each partition field pins a `fieldId` of 1000 or above (the Iceberg
-spec reserves lower ids for schema columns) and an
+Each partition field declares a `fieldId` of 1000 or above (the
+Iceberg spec reserves lower ids for schema columns) and an
 `IcebergPartitionTransform`, which `cdk synth` validates against the
 source column's type; [Exported types](#exported-types) lists the
 transforms. Number a new table's partition fields 1000, 1001 and up in
@@ -919,7 +919,7 @@ the `cdk_glue_iceberg_table` module):
 
 **Rules the construct does not check.**
 
-- **A new table declared out of creation order gets Glue's ids, not the declared ones** ([creation order](#creation-order)).
+- **At creation Glue numbers a new table's columns and partition fields itself, whatever ids are declared** ([creation order](#creation-order), [partition fields](#partition-fields)).
 - **A reused field id is not detected.** The construct is stateless about field ids; see [The field id rules](#the-field-id-rules).
 - **`merge-on-read` on a v1 table is not caught.** The construct does not check `write.{delete,update,merge}.mode`; set `merge-on-read` only on a v2 or later table.
 
