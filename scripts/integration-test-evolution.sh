@@ -511,7 +511,7 @@ else
 fi
 assert_same "${NAME_TABLE} deleted by CloudFormation" DELETE_COMPLETE "$(aws cloudformation describe-stack-events \
     --stack-name "$STACK" --region "$AWS_REGION" --output text \
-    --query "StackEvents[?ResourceType=='AWS::Glue::Table' && PhysicalResourceId=='${NAME_TABLE}'].ResourceStatus | [0]")"
+    --query "StackEvents[?ResourceType=='AWS::Glue::Table' && PhysicalResourceId=='${NAME_TABLE}' && ResourceStatus=='DELETE_COMPLETE'].ResourceStatus")"
 assert_same "objects under ${NAME_TABLE}/: the earlier ones and the metadata file of ${REPLACED_TABLE}" \
     "$(printf '%s\n' "$NAME_KEYS" "$(aws glue get-table --database-name "$DATABASE" --name "$REPLACED_TABLE" \
         --region "$AWS_REGION" --query Table.Parameters.metadata_location --output text | sed 's|^s3://[^/]*/||')" | sort)" \
