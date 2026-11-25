@@ -38,6 +38,10 @@ describe('trigger set patterns', () => {
         '.github/workflows/integ-gate.yml',
         '.github/integ-trigger-set.txt',
         '.github/scripts/integ-gate.js',
+        'package.json',
+        'package-lock.json',
+        '.nvmrc',
+        'tsconfig.json',
     ])('%s is in the set', (filename) => {
         expect(touches(modified(filename))).toBe(true);
     });
@@ -61,8 +65,10 @@ describe('trigger set patterns', () => {
         'e2e-consumer/lib/consumer-stack.ts',
         'bin/other.ts',
         'cdk.json5',
-        'package.json',
-        'package-lock.json',
+        'e2e-consumer/package-lock.json',
+        'e2e-consumer/tsconfig.json',
+        'e2e-consumer/.nvmrc',
+        'packages/cdk-glue-iceberg-table/tsconfig.dev.json',
     ])('%s is outside the set', (filename) => {
         expect(touches(modified(filename))).toBe(false);
     });
@@ -106,11 +112,19 @@ describe('renames', () => {
     });
 });
 
-describe('package.json version-only exemption', () => {
+describe('version-only exemption', () => {
     const bump = '@@ -1,5 +1,5 @@\n {\n     "name": "cdk-glue-iceberg-table",\n-    "version": "0.14.0",\n+    "version": "0.15.0",\n     "stability": "experimental"\n }';
 
     test('a version-only edit is exempt', () => {
         expect(touches(modified(PACKAGE_JSON, bump))).toBe(false);
+    });
+
+    test('a version-only edit of package-lock.json is exempt', () => {
+        expect(touches(modified('package-lock.json', '@@ -7096,7 +7096,7 @@\n         "packages/cdk-glue-iceberg-table": {\n-            "version": "0.22.1",\n+            "version": "0.22.2",\n             "license": "MIT",'))).toBe(false);
+    });
+
+    test('a dependency bump in package-lock.json is in the set', () => {
+        expect(touches(modified('package-lock.json', '@@ -10,5 +10,5 @@\n-            "version": "2.273.0",\n-            "resolved": "https://registry.npmjs.org/aws-cdk-lib/-/aws-cdk-lib-2.273.0.tgz",\n-            "integrity": "sha512-a",\n+            "version": "2.274.0",\n+            "resolved": "https://registry.npmjs.org/aws-cdk-lib/-/aws-cdk-lib-2.274.0.tgz",\n+            "integrity": "sha512-b",'))).toBe(true);
     });
 
     test('a version edit plus another field is in the set', () => {
@@ -174,6 +188,7 @@ describe('package.json version-only exemption', () => {
     test.each([
         'lib/x.ts',
         'cdk.json',
+        'package.json',
     ])('a version-only patch on %s stays in the set', (filename) => {
         expect(touches(modified(filename, '@@ -1 +1 @@\n-    "version": "0.14.0",\n+    "version": "0.15.0",'))).toBe(true);
     });

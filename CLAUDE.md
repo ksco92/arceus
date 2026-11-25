@@ -100,6 +100,9 @@ file under a listed directory is covered without an edit; the gate's
 own files are in it. A change to
 `packages/cdk-glue-iceberg-table/package.json` is outside the set only when
 its sole edited line is `"version"`; any other change to it is in the set.
+The root `package.json`, `package-lock.json`, `.nvmrc` and `tsconfig.json`
+are in the set; `package-lock.json` is outside it only when its sole
+edited line is `"version"`, as in a release.
 
 Of the Spark toolchain, the workflow caches only the sha512-verified downloads under `.spark/downloads`; an extracted Spark tree is never cached.
 
@@ -131,8 +134,8 @@ Exemption list (no integ-test required):
   next trigger-set PR is the first chance to confirm it still works.
 - `test/` and `packages/cdk-glue-iceberg-table/test/` (unit tests,
   exercised by `npm test` in `ci.yml`).
-- `packages/cdk-glue-iceberg-table/package.json` if the only change is
-  the `version` bump of a release.
+- `packages/cdk-glue-iceberg-table/package.json` and `package-lock.json`
+  if the only change to each is the `version` bump of a release.
 
 When in doubt, run it.
 
