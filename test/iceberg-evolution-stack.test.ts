@@ -480,7 +480,7 @@ describe('IcebergEvolutionStack — unmarked identifier tables', () => {
     it.each([
         'unmarked_identifier_test',
         'unmarked_identifier_doc_test',
-    ])('%s identifies rows by id without the (PK) marker at step 1 and with it at step 2', (tableName) => {
+    ])('%s has no (PK) marker at step 1 and has it at step 2', (tableName) => {
         expect(icebergInputAt(1, tableName).Schema.Fields[0].Doc).toBeUndefined();
         expect(icebergInputAt(2, tableName).Schema.Fields[0].Doc).toBe('(PK) ');
     });
