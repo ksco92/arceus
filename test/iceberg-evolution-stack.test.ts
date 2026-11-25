@@ -531,6 +531,9 @@ describe('IcebergEvolutionStack — wiring', () => {
             'format_version_test',
             'decimal_test',
             'create_partition_id_test',
+            'drop_source_test',
+            'drop_source_later_test',
+            'reused_partition_id_test',
         ]);
         permissions.forEach((permission) => {
             expect([

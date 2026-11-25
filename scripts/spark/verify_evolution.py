@@ -6,6 +6,11 @@ from pyspark.sql import SparkSession
 TABLE = "glue.sample_database.evolution_test"
 NESTED = "glue.sample_database.nested_evolution_test"
 REUSED = "glue.sample_database.reused_id_test"
+REUSED_PARTITION = "glue.sample_database.reused_partition_id_test"
+CONFLICT = (
+    "ValidationException: Conflicting partition fields:"
+    " ['1000: id_bucket: bucket[4](1)', '1000: id_bucket: bucket[8](1)']"
+)
 
 
 def phase_1(spark: SparkSession) -> None:
@@ -25,6 +30,12 @@ def phase_2(spark: SparkSession) -> None:
     rows = spark.sql(f"SELECT customer_id, region FROM {TABLE} ORDER BY customer_id").collect()
     assert rows == [(10, None), (11, None), (12, None)], f"pre-existing rows: expected region NULL for ids 10-12, got {rows}"
     spark.sql(f"INSERT INTO {TABLE} VALUES (13, 'd@example.com', TIMESTAMP '2026-02-01 09:00:00+00:00', 'us-east-1')")
+    try:
+        rows = spark.sql(f"SELECT * FROM {REUSED_PARTITION}").collect()
+    except Exception as error:
+        assert CONFLICT in str(error), f"{REUSED_PARTITION} read: expected {CONFLICT}, got {error}"
+    else:
+        raise AssertionError(f"{REUSED_PARTITION} read: expected {CONFLICT}, got rows {rows}")
 
 
 def phase_3(spark: SparkSession) -> None:
