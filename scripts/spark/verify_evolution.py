@@ -31,11 +31,11 @@ def phase_2(spark: SparkSession) -> None:
     assert rows == [(10, None), (11, None), (12, None)], f"pre-existing rows: expected region NULL for ids 10-12, got {rows}"
     spark.sql(f"INSERT INTO {TABLE} VALUES (13, 'd@example.com', TIMESTAMP '2026-02-01 09:00:00+00:00', 'us-east-1')")
     try:
-        rows = spark.sql(f"SELECT * FROM {REUSED_PARTITION}").collect()
+        spark.sql(f"SELECT * FROM {REUSED_PARTITION}").collect()
     except Exception as error:
         assert CONFLICT in str(error), f"{REUSED_PARTITION} read: expected {CONFLICT}, got {error}"
     else:
-        raise AssertionError(f"{REUSED_PARTITION} read: expected {CONFLICT}, got rows {rows}")
+        raise AssertionError(f"{REUSED_PARTITION} read succeeded; expected {CONFLICT}")
 
 
 def phase_3(spark: SparkSession) -> None:

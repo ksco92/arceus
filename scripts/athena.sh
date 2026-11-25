@@ -77,14 +77,10 @@ athena_expect() {
 
 athena_expect_failure() {
     local label="$1" sql="$2" reason="$3" out
-    if out=$(run_athena "$sql" 2>&1); then
-        printf '\033[31m  Athena: %s succeeded; expected %s ✗\033[0m\n%s\n' "$label" "$reason" "$out" >&2
-        return 1
-    fi
-    if [[ "$out" == *$'ended FAILED\t'"$reason"$'\n'* ]]; then
+    if ! out=$(run_athena "$sql" 2>&1) && [[ "$out" == *$'ended FAILED\t'"$reason"$'\nSQL: '* ]]; then
         printf '\033[32m  Athena: %s fails with %s ✓\033[0m\n' "$label" "$reason"
     else
-        printf '\033[31m  Athena: %s failed without %s ✗\033[0m\n%s\n' "$label" "$reason" "$out" >&2
+        printf '\033[31m  Athena: %s did not fail with %s ✗\033[0m\n%s\n' "$label" "$reason" "$out" >&2
         return 1
     fi
 }

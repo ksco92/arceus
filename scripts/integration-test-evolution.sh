@@ -252,6 +252,8 @@ athena_expect "a and b of the row written before the first update read each othe
     "SELECT * FROM ${RENUMBER_TABLE}" "a|b" "B|A"
 athena_expect_failure "${DROP_SOURCE_TABLE} after cat and its partition field are dropped together" \
     "SELECT * FROM ${DROP_SOURCE_TABLE}" "$TYPE_NULL"
+athena_expect_failure "count(*) on ${DROP_SOURCE_TABLE} after cat and its partition field are dropped together" \
+    "SELECT count(*) FROM ${DROP_SOURCE_TABLE}" "$TYPE_NULL"
 athena_expect "${DROP_SOURCE_LATER_TABLE} after its partition field on cat is removed" \
     "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "id|cat|v" "1|x|v1"
 athena_expect "${REUSED_PARTITION_TABLE} after bucket[8] takes field id 1000 from bucket[4]" \
@@ -283,6 +285,8 @@ athena_expect "renamed column keeps its values" "$ROWS" "customer_id|contact_ema
 athena_expect "d of the row written before the drop reads c's value" "SELECT * FROM ${REUSED_TABLE}" "a|d" "1|c1"
 athena_expect_failure "${DROP_SOURCE_LATER_TABLE} after cat is dropped" \
     "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "$TYPE_NULL"
+athena_expect_failure "count(*) on ${DROP_SOURCE_LATER_TABLE} after cat is dropped" \
+    "SELECT count(*) FROM ${DROP_SOURCE_LATER_TABLE}" "$TYPE_NULL"
 
 ################################################
 ################################################
