@@ -257,7 +257,7 @@ Partition evolution flows the same way, with one extra rule on
 `fieldId`: a changed partition field is a new partition field. To move
 a table from `month(placed_at)` to `day(placed_at)`, drop the month
 entry and add a day entry under a fresh `fieldId`; never recycle the
-month field's id:
+month field's id ([rule 3](#the-field-id-rules)):
 
 ```typescript
 partitionSpec: [
@@ -271,8 +271,7 @@ partitionSpec: [
 ```
 
 Old data files written under the month spec stay readable; new writes
-partition by day. [Rule 3](#the-field-id-rules) says what reads do
-when `bucket(8)` takes the id `bucket(4)` held.
+partition by day.
 
 ### Identifiers, sort order and table properties
 
@@ -473,16 +472,16 @@ IcebergTable.creationOrderFieldIds(columns);
 
 Each partition field declares a `fieldId` and an
 `IcebergPartitionTransform`. The construct requires a `fieldId` of
-1000 or above; `cdk synth` rejects a lower one and validates the
-transform against the source column's type. The [Iceberg
+1000 or above; the [Iceberg
 spec](https://iceberg.apache.org/spec/#partition-evolution) says of
 that number: "In v1, partition field IDs were not tracked, but were
 assigned sequentially starting at 1000 in the reference
-implementation." [Exported types](#exported-types) lists the
-transforms. Number a new table's partition fields 1000, 1001 and up in
-`partitionSpec` order: at creation Glue assigns those ids and ignores
-the declared ones. A field added by a later deploy is stored under the
-`fieldId` it declares.
+implementation." `cdk synth` rejects a lower `fieldId` and validates
+the transform against the source column's type; [Exported
+types](#exported-types) lists the transforms. Number a new table's
+partition fields 1000, 1001 and up in `partitionSpec` order: at
+creation Glue assigns those ids and ignores the declared ones. A field
+added by a later deploy is stored under the `fieldId` it declares.
 
 ### Identifier fields
 

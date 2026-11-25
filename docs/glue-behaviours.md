@@ -1,6 +1,6 @@
 # Glue behaviours the integration suites assert
 
-AWS does not document these behaviours of Glue, Athena and Spark as
+These behaviours of Glue, Athena and Spark are not documented as
 contracts, and the construct relies on some of them; each row holds as
 of the last green run of the Integration test workflow
 (`.github/workflows/integ-test.yml`) and is asserted by the script and

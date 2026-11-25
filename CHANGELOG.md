@@ -5,7 +5,7 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 ## Unreleased
 
 - (patch) The README and the `fieldId` doc comment state that Glue numbers a new table's partition fields 1000, 1001 and up in spec order and ignores the declared `fieldId`s; the README also lists the `decimal(P, S)` and partition-spec reuse behaviours among those the suites assert.
-- (patch) The README no longer advises removing a partition field before dropping its source column, since Athena reads fail either way, describes a reused `fieldId` without Trino, and quotes the Iceberg spec on the 1000 floor; the `fieldId` doc comment drops Trino too.
+- (patch) The README no longer advises removing a partition field before dropping its source column (`SELECT *` and `SELECT count(*)` fail in Athena either way), describes a reused `fieldId` without Trino and quotes the Iceberg spec on field id 1000; the `fieldId` doc comment drops Trino too.
 
 ## 0.22.2
 
