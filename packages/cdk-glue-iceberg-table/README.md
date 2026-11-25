@@ -197,10 +197,11 @@ you choose them:
 3. **A partition field takes a `fieldId` of 1000 or above and keeps it
    only while it stays untouched.** Swap `month` for `day` or point the
    field at another source column, and it becomes a new field that
-   needs a `fieldId` no partition spec of the table has used. Reusing
-   a retired id produces a table that Athena still reads but Spark and
-   Trino reject with `ValidationException: Conflicting partition
-   fields`. At creation Glue numbers the fields itself: see [Partition
+   needs a `fieldId` no partition spec of the table has used. Give a
+   retired id to a new field and Glue accepts the deploy; Athena still
+   reads the table, and a Spark `SELECT` from it fails with
+   `ValidationException: Conflicting partition fields`. At creation
+   Glue numbers the fields itself: see [Partition
    fields](#partition-fields).
 
 The construct checks the ids of one definition (valid and unique) and
@@ -270,9 +271,8 @@ partitionSpec: [
 ```
 
 Old data files written under the month spec stay readable; new writes
-partition by day. With `1000` reused for the day field, Athena keeps
-reading and Spark and Trino reject the table ([rule
-3](#the-field-id-rules)).
+partition by day. [Rule 3](#the-field-id-rules) says what reads do
+when `1000` is reused for the day field.
 
 ### Identifiers, sort order and table properties
 
@@ -291,7 +291,7 @@ same `current-schema-id`, partition spec and sort order.
 
 ### Changes that need care
 
-- **Dropping a column that a partition field still sources from breaks Athena.** The Iceberg spec requires a `void` intermediate, and the CFN `OpenTableFormatInput` cannot express that. The construct accepts the change, and Athena queries against the result fail with `Type cannot be null`. Remove the partition field first and keep the column in the schema; drop the column only once nothing partitions by it.
+- **Dropping a column that a partition field has sourced breaks Athena.** The construct accepts the change. Once the column is gone, a `SELECT` from a table holding rows written before the drop fails in Athena with `GENERIC_INTERNAL_ERROR: Type cannot be null`, whether the partition field was removed in the same deploy or in an earlier one. Keep such a column in the schema.
 - **Glue ignores a V2 to V3 `formatVersion` change.** The table stays format 2, and `properties.format-version` reads `3` all the same. Keep `formatVersion` at the table's real version.
 - **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one. That includes the in-place upgrade of a v2 table with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`, which the v3 suite runs through Spark: setting `formatVersion` to `V3` afterwards makes the declaration match the table.
 - **A rolled-back deploy leaves its schema in the table's history.** When a deploy that adds a column updates the table and then fails on another resource, the stack ends in `UPDATE_ROLLBACK_COMPLETE` and `current-schema-id` is back to its earlier value, so the column is gone and the rows read as before. The schema that held the column stays in `schemas`, and `last-column-id` stays at the column's id. A clean redeploy of the same change makes that schema current again without adding a schema. Treat an id from a rolled-back deploy as used: give it only to the column that deploy added.
@@ -470,11 +470,14 @@ IcebergTable.creationOrderFieldIds(columns);
 
 ### Partition fields
 
-Each partition field declares a `fieldId` of 1000 or above (the
-Iceberg spec reserves lower ids for schema columns) and an
-`IcebergPartitionTransform`, which `cdk synth` validates against the
-source column's type; [Exported types](#exported-types) lists the
-transforms. Number a new table's partition fields 1000, 1001 and up in
+Each partition field declares a `fieldId` and an
+`IcebergPartitionTransform`. The construct's rule is a `fieldId` of
+1000 or above, and `cdk synth` rejects a lower one. The [Iceberg
+spec](https://iceberg.apache.org/spec/#partition-evolution) says: "In
+v1, partition field IDs were not tracked, but were assigned
+sequentially starting at 1000 in the reference implementation."
+`cdk synth` also validates the transform against the source column's
+type; [Exported types](#exported-types) lists the transforms. Number a new table's partition fields 1000, 1001 and up in
 the order the spec lists them: at creation Glue assigns those ids and
 ignores the declared ones. A field added by a later deploy is stored
 under the `fieldId` it declares.

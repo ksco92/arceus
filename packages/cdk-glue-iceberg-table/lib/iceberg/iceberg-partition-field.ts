@@ -18,22 +18,17 @@ export interface IcebergPartitionField {
     readonly name?: string;
 
     /**
-     * Iceberg partition field id. Required: every partition field
-     * declares an integer >= 1000 (the Iceberg spec reserves
-     * ids below 1000 for schema columns) that is unique across the
-     * table's entire partition-spec history — not just the current
-     * spec. Iceberg's strict engines (Spark, Trino) reject a table
-     * whose spec history carries two different partition fields with
-     * the same id.
-     *
-     * The rule is the inverse of the column-id rule: a column keeps
-     * its id forever, but any change to a partition field — a
-     * different transform, a different source column — makes it a NEW
-     * field that needs a fresh, never-before-used id. Only an
-     * untouched field keeps its id across deploys. Once a field is
-     * changed or dropped, its id is retired for good. Number a new
-     * table's fields 1000, 1001 and up in spec order: Glue assigns
-     * those ids at creation and ignores the declared ones.
+     * Iceberg partition field id, 1000 or above (the construct's rule,
+     * checked at synth; the
+     * [Iceberg spec](https://iceberg.apache.org/spec/#partition-evolution)
+     * says v1 ids "were assigned sequentially starting at 1000 in the
+     * reference implementation"), unique across the table's whole
+     * partition-spec history. A changed transform or source column makes a
+     * new field that takes a never-used id; a changed or dropped field's id
+     * stays retired. A Spark read of a table whose history holds two fields
+     * under one id fails with `Conflicting partition fields`. Number a new
+     * table's fields 1000, 1001 and up in spec order: Glue assigns those
+     * ids at creation and ignores the declared ones.
      */
     readonly fieldId: number;
 }
