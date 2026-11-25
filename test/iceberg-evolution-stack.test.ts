@@ -323,10 +323,6 @@ describe('IcebergEvolutionStack — property, sort order and rollback steps', ()
         return rest;
     }
 
-    function rollbackTriggersAt(step: number): Record<string, { DependsOn?: string[] }> {
-        return synthAt(step).findResources('AWS::CloudFormation::WaitCondition');
-    }
-
     it('step 9 adds commit.retry.num-retries and changes nothing else', () => {
         expect(icebergInputAt(8).Properties['commit.retry.num-retries']).toBeUndefined();
         expect(icebergInputAt(9).Properties['commit.retry.num-retries']).toBe('5');
@@ -385,25 +381,20 @@ describe('IcebergEvolutionStack — property, sort order and rollback steps', ()
         expect(icebergInputAt(12)).toEqual(icebergInputAt(11));
     });
 
-    it('only step 11 adds the failing wait condition, after the table', () => {
-        const template = synthAt(11);
-        const tableId = Object.entries(template.findResources('AWS::Glue::Table')).find(([
+    it('only step 11 adds table_input_test, with tableInput beside icebergTableInput, after the table', () => {
+        const tables = synthAt(11).findResources('AWS::Glue::Table');
+        const tableId = Object.entries(tables).find(([
             , table,
         ]) => table.Properties.Name === 'evolution_test')![0];
-        expect(rollbackTriggersAt(11)).toEqual({
-            RollbackTrigger: {
-                Type: 'AWS::CloudFormation::WaitCondition',
-                Properties: {
-                    Handle: 'https://example.com/rollback-trigger',
-                    Timeout: '1',
-                },
-                DependsOn: [
-                    tableId,
-                ],
-            },
+        expect(tables.TableInputTable.Properties.TableInput).toEqual({
+            Name: 'table_input_test',
         });
-        expect(rollbackTriggersAt(10)).toEqual({});
-        expect(rollbackTriggersAt(12)).toEqual({});
+        expect(tables.TableInputTable.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput).toBeDefined();
+        expect(tables.TableInputTable.DependsOn).toEqual([
+            tableId,
+        ]);
+        expect(synthAt(10).findResources('AWS::Glue::Table').TableInputTable).toBeUndefined();
+        expect(synthAt(12).findResources('AWS::Glue::Table').TableInputTable).toBeUndefined();
     });
 });
 
@@ -485,6 +476,16 @@ describe('IcebergEvolutionStack — Glue observation tables', () => {
     });
 });
 
+describe('IcebergEvolutionStack — unmarked identifier tables', () => {
+    it.each([
+        'unmarked_identifier_test',
+        'unmarked_identifier_doc_test',
+    ])('%s has no (PK) marker at step 1 and has it at step 2', (tableName) => {
+        expect(icebergInputAt(1, tableName).Schema.Fields[0].Doc).toBeUndefined();
+        expect(icebergInputAt(2, tableName).Schema.Fields[0].Doc).toBe('(PK) ');
+    });
+});
+
 describe('IcebergEvolutionStack — wiring', () => {
     it('defaults to step 1 when no context is provided', () => {
         const app = new App();
@@ -518,7 +519,7 @@ describe('IcebergEvolutionStack — wiring', () => {
             logicalId,
             table,
         ]) => [
-            table.Properties.Name,
+            table.Properties.Name ?? table.Properties.TableInput.Name,
             logicalId,
         ]));
         expect(permissions.map((permission) => permission.Properties.Resource.TableResource.Name)).toEqual([
@@ -534,6 +535,9 @@ describe('IcebergEvolutionStack — wiring', () => {
             'drop_source_test',
             'drop_source_later_test',
             'reused_partition_id_test',
+            'unmarked_identifier_test',
+            'unmarked_identifier_doc_test',
+            'storage_columns_test',
         ]);
         permissions.forEach((permission) => {
             expect([

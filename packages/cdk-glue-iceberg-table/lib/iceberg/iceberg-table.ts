@@ -170,10 +170,10 @@ export interface IIcebergTable {
  *
  * The construct emits the
  * `OpenTableFormatInput.IcebergInput.IcebergTableInput` shape that
- * survives CloudFormation `Update` (the alternative — placing columns
- * under `tableInput.storageDescriptor.columns` — silently strips
- * `table_type=ICEBERG` from Glue parameters on the first update and
- * leaves the table un-queryable in Athena).
+ * survives CloudFormation `Update`; the README's "Why a raw CfnTable
+ * goes wrong" section describes a table with columns under
+ * `tableInput.storageDescriptor.columns` whose Athena `SELECT *` fails
+ * after an update that adds a column.
  */
 export class IcebergTable extends Resource implements IIcebergTable {
     /** Glue ARN of the table. */

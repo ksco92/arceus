@@ -46,6 +46,9 @@ CREATE_PARTITION_TABLE="create_partition_id_test"
 DROP_SOURCE_TABLE="drop_source_test"
 DROP_SOURCE_LATER_TABLE="drop_source_later_test"
 REUSED_PARTITION_TABLE="reused_partition_id_test"
+STORAGE_TABLE="storage_columns_test"
+UNMARKED_TABLE="unmarked_identifier_test"
+UNMARKED_DOC_TABLE="unmarked_identifier_doc_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -151,6 +154,13 @@ ROW_14="14|e@example.com|2026-03-05 09:00:00.000000 UTC"
 ROW_100="100|t1|t2|v1|v2|L1|C1"
 ROW_101="101|u1|u2|w1|w2|M1|D1"
 TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
+# Athena's reason ends in a space.
+HIVE_FORMAT="HIVE_UNSUPPORTED_FORMAT: Unable to create input format "
+
+storage_table() {
+    aws glue get-table --database-name "$DATABASE" --name "$STORAGE_TABLE" --region "$AWS_REGION" \
+        --query "$1" --output text
+}
 
 rows_10_to_14() {
     athena_expect "$1" "$ROWS" "customer_id|contact_email|signed_up_at" \
@@ -177,7 +187,8 @@ yellow "  Also clearing the table's S3 prefix so Iceberg starts fresh."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE" \
     "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE" \
-    "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE"; do
+    "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE" "$STORAGE_TABLE" \
+    "$UNMARKED_TABLE" "$UNMARKED_DOC_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -200,6 +211,9 @@ header "VERIFY step 1 (create_partition_id_test, declared 1005 then 1000)"
 assert_meta partition-ids "1000:day,1001:bucket[4]" "$CREATE_PARTITION_TABLE"
 assert_meta last-partition-id 1001 "$CREATE_PARTITION_TABLE"
 
+header "VERIFY step 1 (storage_columns_test)"
+assert_same "${STORAGE_TABLE} table_type" ICEBERG "$(storage_table Table.Parameters.table_type)"
+
 header "SPARK step 1 (INSERT seed rows, including the nested row)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
 
@@ -209,6 +223,7 @@ athena_expect "(PK) comment on customer_id" "$COMMENTS" \
     "column_name|comment" "customer_id|(PK) Primary key." "email|NULL" "signed_up_at|NULL"
 athena_expect "nested seed row" "${NESTED_ROWS} FROM ${NESTED_TABLE} ORDER BY id" \
     "id|tag1|tag2|k1|k2|line1|city" "$ROW_100"
+athena_expect "SELECT * on ${STORAGE_TABLE} before its first update" "SELECT * FROM ${STORAGE_TABLE}" "id"
 run_athena "INSERT INTO ${REUSED_TABLE} VALUES (1, 'c1')" >/dev/null
 run_athena "INSERT INTO ${NAME_TABLE} VALUES (1, 'v1')" >/dev/null
 run_athena "INSERT INTO ${RENUMBER_TABLE} VALUES ('A', 'B')" >/dev/null
@@ -242,6 +257,9 @@ assert_meta table-uuid "$FORMAT_UUID" "$FORMAT_TABLE"
 assert_meta commit-retries 5 "$DECIMAL_TABLE"
 assert_meta schemas-count 1 "$DECIMAL_TABLE"
 
+header "VERIFY step 2 (storage_columns_test)"
+assert_same "${STORAGE_TABLE} Glue parameter count after its first update" 0 "$(storage_table 'length(Table.Parameters)')"
+
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
 
@@ -258,6 +276,10 @@ athena_expect "${DROP_SOURCE_LATER_TABLE} after its partition field on cat is re
     "SELECT * FROM ${DROP_SOURCE_LATER_TABLE}" "id|cat|v" "1|x|v1"
 athena_expect "${REUSED_PARTITION_TABLE} after bucket[8] takes field id 1000 from bucket[4]" \
     "SELECT * FROM ${REUSED_PARTITION_TABLE}" "id|cat|v" "1|x|v1"
+athena_expect_failure "SELECT * on ${STORAGE_TABLE} after its first update" \
+    "SELECT * FROM ${STORAGE_TABLE}" "$HIVE_FORMAT"
+athena_expect_failure "count(*) on ${STORAGE_TABLE} after its first update" \
+    "SELECT count(*) FROM ${STORAGE_TABLE}" "$HIVE_FORMAT"
 
 ################################################
 ################################################
@@ -275,6 +297,13 @@ assert_meta columns "1:a,2:d" "$REUSED_TABLE"
 assert_meta last-column-id 2 "$REUSED_TABLE"
 assert_meta partition-ids "1000:day,1001:bucket[4],1005:identity,1003:identity" "$PARTITION_TABLE"
 assert_meta last-partition-id 1005 "$PARTITION_TABLE"
+
+header "VERIFY step 3 (unmarked_identifier_test, unmarked_identifier_doc_test)"
+assert_meta schema-id 0 "$UNMARKED_TABLE"
+assert_meta schemas-count 2 "$UNMARKED_TABLE"
+assert_meta identifier-field-ids 1 "$UNMARKED_TABLE"
+assert_meta schema-id 2 "$UNMARKED_DOC_TABLE"
+assert_meta identifier-field-ids "" "$UNMARKED_DOC_TABLE"
 
 header "SPARK step 3 (rename preserved data, d of reused_id_test reads c's value)"
 spark_submit "$VERIFY_PROGRAM" --phase 3
@@ -428,8 +457,8 @@ rows_10_to_14 "rows unchanged"
 
 ################################################
 ################################################
-# Step 11: ADD column country (id 5) in a deploy whose wait condition,
-# created after the table update, fails. The stack must roll back.
+# Step 11: ADD column country (id 5) in a deploy whose table_input_test,
+# created after the table update, fails to create. The stack must roll back.
 
 SCHEMAS_BEFORE=$(table_column_names | grep ^schemas-count | cut -d' ' -f2)
 BEFORE=$(listing_without "max-schema-id|last-column-id|schemas-count")
@@ -442,11 +471,11 @@ fi
 header "VERIFY step 11 (rolled back)"
 assert_same "stack status" UPDATE_ROLLBACK_COMPLETE "$(aws cloudformation describe-stacks \
     --stack-name "$STACK" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text)"
-assert_same "only RollbackTrigger failed" "$(printf 'RollbackTrigger\t%s' \
-    'Cannot wait on specified Handle URL - handle must originate from within the same stack')" \
+assert_same "only TableInputTable failed" "$(printf 'TableInputTable\t%s' \
+    'Resource handler returned message: "Table metadata is expected only via TableInput or via IcebergTableInput inside OpenTableFormatInput" (HandlerErrorCode: InvalidRequest)')" \
     "$(aws cloudformation describe-stack-events --stack-name "$STACK" --region "$AWS_REGION" \
         --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[LogicalResourceId,ResourceStatusReason]" \
-        --output text)"
+        --output text | sed -E 's/\(RequestToken: [0-9a-f-]+, /(/')"
 assert_same "current schema, columns and orders as before step 11" "$BEFORE" \
     "$(listing_without "max-schema-id|last-column-id|schemas-count")"
 assert_meta last-column-id 5

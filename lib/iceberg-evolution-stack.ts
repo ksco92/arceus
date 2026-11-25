@@ -1,7 +1,6 @@
 import {
     CfnOutput,
     CfnParameter,
-    CfnWaitCondition,
     RemovalPolicy,
     Stack,
     StackProps,
@@ -13,6 +12,7 @@ import {
     CfnPermissions,
 } from 'aws-cdk-lib/aws-lakeformation';
 import {
+    CfnTable,
     Database,
 } from 'aws-cdk-lib/aws-glue';
 import {
@@ -48,6 +48,19 @@ const ID_CAT_V_COLUMNS: IcebergColumn[] = [
         name: 'v',
         type: IcebergType.STRING,
         id: 3,
+    },
+];
+const ID_V_IDENTIFIER_COLUMNS: IcebergColumn[] = [
+    {
+        name: 'id',
+        type: IcebergType.LONG,
+        required: true,
+        id: 1,
+    },
+    {
+        name: 'v',
+        type: IcebergType.STRING,
+        id: 2,
     },
 ];
 const COMMIT_RETRIES = {
@@ -86,8 +99,8 @@ export interface IcebergEvolutionStackProps extends StackProps {
  * target of `scripts/integration-test-evolution.sh`: `evolution_test` and
  * `nested_evolution_test` evolve across the steps, plus one small table per
  * Glue behaviour the script asserts (`CONTRIBUTING.md` describes each).
- * Step 11 adds a wait condition that fails to create after the table
- * update, so its deploy rolls back.
+ * Step 11 adds a table that fails to create after the table update, so its
+ * deploy rolls back.
  */
 export class IcebergEvolutionStack extends Stack {
     constructor(scope: Construct, id: string, props: IcebergEvolutionStackProps) {
@@ -273,6 +286,32 @@ export class IcebergEvolutionStack extends Stack {
             ],
         });
 
+        const unmarkedIdentifiers = step >= 3 ? [] : [
+            'id',
+        ];
+        const unmarkedIdentifierTable = icebergTable('UnmarkedIdentifierTable', 'unmarked_identifier_test', {
+            columns: ID_V_IDENTIFIER_COLUMNS,
+            identifierFieldNames: unmarkedIdentifiers,
+        });
+        const unmarkedIdentifierDocTable = icebergTable('UnmarkedIdentifierDocTable', 'unmarked_identifier_doc_test', {
+            columns: step >= 3 ? [
+                ID_V_IDENTIFIER_COLUMNS[0],
+                {
+                    ...ID_V_IDENTIFIER_COLUMNS[1],
+                    doc: 'Value.',
+                },
+            ] : ID_V_IDENTIFIER_COLUMNS,
+            identifierFieldNames: unmarkedIdentifiers,
+        });
+        if (step === 1) {
+            [
+                unmarkedIdentifierTable,
+                unmarkedIdentifierDocTable,
+            ].forEach((unmarked) => unmarked.resource.addPropertyDeletionOverride(
+                'OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields.0.Doc',
+            ));
+        }
+
         const grants: IcebergTable[] = [
             table,
             nestedTable,
@@ -286,9 +325,11 @@ export class IcebergEvolutionStack extends Stack {
             dropSourceTable,
             dropSourceLaterTable,
             reusedPartitionIdTable,
+            unmarkedIdentifierTable,
+            unmarkedIdentifierDocTable,
         ];
-        grants.forEach((target) => {
-            const permission = new CfnPermissions(this, `${target.node.id}Permission`, {
+        const grant = (id: string, tableName: string, target: CfnTable) => {
+            const permission = new CfnPermissions(this, `${id}Permission`, {
                 permissions: [
                     'SELECT',
                     'INSERT',
@@ -300,7 +341,7 @@ export class IcebergEvolutionStack extends Stack {
                 resource: {
                     tableResource: {
                         catalogId: this.account,
-                        name: target.tableName,
+                        name: tableName,
                         databaseName: importedDatabase.databaseName,
                     },
                 },
@@ -308,16 +349,72 @@ export class IcebergEvolutionStack extends Stack {
                     dataLakePrincipalIdentifier: props.principalArn,
                 },
             });
-            permission.addResourceDependency(target.resource);
+            permission.addResourceDependency(target);
+        };
+        grants.forEach((target) => grant(target.node.id, target.tableName, target.resource));
+
+        const storageColumnsTable = new CfnTable(this, 'StorageColumnsTable', {
+            catalogId: this.account,
+            databaseName: importedDatabase.databaseName,
+            tableInput: {
+                name: 'storage_columns_test',
+                tableType: 'EXTERNAL_TABLE',
+                storageDescriptor: {
+                    location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/storage_columns_test/`,
+                    columns: [
+                        {
+                            name: 'id',
+                            type: 'bigint',
+                        },
+                        ...(step >= 2 ? [
+                            {
+                                name: 'v',
+                                type: 'string',
+                            },
+                        ] : []),
+                    ],
+                },
+            },
+            openTableFormatInput: {
+                icebergInput: {
+                    metadataOperation: 'CREATE',
+                    version: '2',
+                },
+            },
         });
+        grant('StorageColumnsTable', 'storage_columns_test', storageColumnsTable);
 
         if (step === 11) {
-            /// CloudFormation fails the create: the handle is not from this stack.
-            const rollbackTrigger = new CfnWaitCondition(this, 'RollbackTrigger', {
-                handle: 'https://example.com/rollback-trigger',
-                timeout: '1',
+            /// `tableInput` beside `icebergTableInput`: the create fails after the table update.
+            const tableInputTable = new CfnTable(this, 'TableInputTable', {
+                catalogId: this.account,
+                databaseName: importedDatabase.databaseName,
+                tableInput: {
+                    name: 'table_input_test',
+                },
+                openTableFormatInput: {
+                    icebergInput: {
+                        metadataOperation: 'CREATE',
+                        version: '2',
+                        icebergTableInput: {
+                            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/table_input_test/`,
+                            schema: {
+                                type: 'struct',
+                                schemaId: 0,
+                                fields: [
+                                    {
+                                        id: 1,
+                                        name: 'id',
+                                        type: 'long',
+                                        required: false,
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                },
             });
-            rollbackTrigger.addResourceDependency(table.resource);
+            tableInputTable.addResourceDependency(table.resource);
         }
 
         new CfnOutput(this, 'EvolutionStepOutput', {
