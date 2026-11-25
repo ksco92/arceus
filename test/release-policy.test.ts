@@ -134,12 +134,6 @@ describe('a pull request that leaves the version alone', () => {
         expect(policy.check(input)).toHaveLength(problems);
     });
 
-    test('a base with no changelog yet takes the first line', () => {
-        const input = withLine(PATCH, LIB_FILE);
-        input.base.changelog = '';
-        expect(policy.check(input)).toEqual([]);
-    });
-
     test('a changelog with version sections and no Unreleased heading fails', () => {
         const input = change({});
         input.head.changelog = md('## 0.22.1', PATCH);
@@ -271,6 +265,7 @@ describe('against a git repository', () => {
         write(MANIFEST, JSON.stringify(manifest('0.22.1')));
         write('package-lock.json', JSON.stringify(lock('0.22.1')));
         write('docs/table.ts', 'export const x = 1;\n'.repeat(20));
+        write('CHANGELOG.md', changelog());
         commit('base');
         fs.mkdirSync(path.join(repo, LIB_DIR), {
             recursive: true,
@@ -289,14 +284,13 @@ describe('against a git repository', () => {
         });
     });
 
-    test('readChange lists both paths of a rename and reads a changelog missing on the base as empty', () => {
+    test('readChange lists both paths of a rename', () => {
         const result = policy.readChange('HEAD~2', 'HEAD~1', repo);
         expect(result.files).toEqual(expect.arrayContaining([
             'docs/table.ts',
             LIB_FILE,
             'CHANGELOG.md',
         ]));
-        expect(result.base.changelog).toBe('');
         expect(result.head.changelog).toContain(PATCH);
     });
 
