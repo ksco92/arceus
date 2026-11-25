@@ -39,6 +39,10 @@ NESTED_TABLE="nested_evolution_test"
 REUSED_TABLE="reused_id_test"
 PARTITION_TABLE="partition_id_test"
 NAME_TABLE="parameter_name_test"
+RENUMBER_TABLE="renumber_test"
+FORMAT_TABLE="format_version_test"
+DECIMAL_TABLE="decimal_test"
+CREATE_PARTITION_TABLE="create_partition_id_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -66,6 +70,10 @@ print('schema-id', m['current-schema-id'])
 print('max-schema-id', max(s['schema-id'] for s in m['schemas']))
 print('last-column-id', m['last-column-id'])
 print('schemas-count', len(m['schemas']))
+print('spec-count', len(m['partition-specs']))
+print('format-version', m['format-version'])
+print('properties-format-version', m['properties'].get('format-version', 'unset'))
+print('table-uuid', m['table-uuid'])
 print('default-spec-id', m['default-spec-id'])
 print('default-sort-order-id', m['default-sort-order-id'])
 print('sort-orders', ';'.join(str(o['order-id']) + ':' + ','.join(
@@ -163,7 +171,8 @@ header "TEARDOWN any existing IcebergEvolutionStack from a prior run"
 npx cdk destroy "$STACK" --force --region "$AWS_REGION" 2>&1 | tail -3 || true
 yellow "  Also clearing the table's S3 prefix so Iceberg starts fresh."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE"; do
+for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE" \
+    "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -182,6 +191,10 @@ assert_identifiers "1" "customer_id"
 BASE_IDS="id:1,tags:2,tags.element:5,attrs:3,attrs.key:6,attrs.value:7,addr:4,addr.line1:8"
 assert_nested_ids "${BASE_IDS},addr.city:9" "9"
 
+header "VERIFY step 1 (create_partition_id_test, declared 1005 then 1000)"
+assert_meta partition-ids "1000:day,1001:bucket[4]" "$CREATE_PARTITION_TABLE"
+assert_meta last-partition-id 1001 "$CREATE_PARTITION_TABLE"
+
 header "SPARK step 1 (INSERT seed rows, including the nested row)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
 
@@ -193,21 +206,33 @@ athena_expect "nested seed row" "${NESTED_ROWS} FROM ${NESTED_TABLE} ORDER BY id
     "id|tag1|tag2|k1|k2|line1|city" "$ROW_100"
 run_athena "INSERT INTO ${REUSED_TABLE} VALUES (1, 'c1')" >/dev/null
 run_athena "INSERT INTO ${NAME_TABLE} VALUES (1, 'v1')" >/dev/null
+run_athena "INSERT INTO ${RENUMBER_TABLE} VALUES ('A', 'B')" >/dev/null
 
 ################################################
 ################################################
 # Step 2: ADD column `region` (id 4). Partition spec unchanged.
+
+FORMAT_UUID=$(table_column_names "$FORMAT_TABLE" | grep ^table-uuid | cut -d' ' -f2)
 
 deploy_step 2
 
 header "VERIFY step 2 (ADD column)"
 assert_columns "1:customer_id,2:email,3:signed_up_at,4:region"
 assert_partitions "signed_up_at_day"
+assert_meta spec-count 1
 
 header "VERIFY step 2 (reused_id_test, partition_id_test)"
 assert_meta columns "1:a" "$REUSED_TABLE"
 assert_meta partition-ids "1000:day,1001:bucket[4],1005:identity" "$PARTITION_TABLE"
 assert_meta last-partition-id 1005 "$PARTITION_TABLE"
+
+header "VERIFY step 2 (renumber_test, format_version_test, decimal_test)"
+assert_meta columns "2:a,1:b" "$RENUMBER_TABLE"
+assert_meta format-version 2 "$FORMAT_TABLE"
+assert_meta properties-format-version 3 "$FORMAT_TABLE"
+assert_meta table-uuid "$FORMAT_UUID" "$FORMAT_TABLE"
+assert_meta commit-retries 5 "$DECIMAL_TABLE"
+assert_meta schemas-count 1 "$DECIMAL_TABLE"
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
@@ -215,6 +240,8 @@ spark_submit "$VERIFY_PROGRAM" --phase 2
 header "ATHENA step 2"
 athena_expect "old rows read region NULL" "$ROWS" "customer_id|email|signed_up_at|region" \
     "${ROW_10}|NULL" "${ROW_11}|NULL" "${ROW_12}|NULL" "${ROW_13}|us-east-1"
+athena_expect "a and b of the row written before the first update read each other's values" \
+    "SELECT * FROM ${RENUMBER_TABLE}" "a|b" "B|A"
 
 ################################################
 ################################################
@@ -254,6 +281,8 @@ deploy_step 4
 header "VERIFY step 4 (DROP column + DROP partition)"
 assert_columns "1:customer_id,2:contact_email,3:signed_up_at"
 assert_partitions "signed_up_at_day"
+assert_meta spec-count 2
+assert_meta default-spec-id 0
 
 LAST_ID=$(table_column_names | grep ^last-column-id | cut -d' ' -f2)
 if [ "$LAST_ID" = "4" ]; then

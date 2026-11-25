@@ -294,14 +294,16 @@ without `DESTROY=1` it leaves the stack deployed.
 
 `scripts/integration-test-evolution.sh` drives the
 `IcebergEvolutionStack` through twelve `cdk deploy`s and verifies the
-underlying Iceberg `metadata.json` after each, with Spark INSERT / SELECT
-checks (`scripts/spark/verify_evolution.py`) between deploys. After each
-step (and its Spark phase, where there is one), Athena reads `evolution_test` or `nested_evolution_test`, whichever the step changed: every row
-loaded so far, under the step's column names, with the values Spark
-inserted, and after steps 1 and 6 the `(PK) ` column comments from
-`information_schema.columns`.
+underlying Iceberg `metadata.json` after each, with Spark INSERT /
+SELECT checks (`scripts/spark/verify_evolution.py`) between deploys.
+After each step (and its Spark phase, where there is one), Athena reads
+`evolution_test` or `nested_evolution_test`, whichever the step changed:
+every row loaded so far, under the step's column names, with the values
+Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
+`information_schema.columns`; the paragraphs below name the other tables
+Athena reads.
 
-The stack owns five tables. `evolution_test` changes in steps 1 to 6 and
+The stack owns nine tables. `evolution_test` changes in steps 1 to 6 and
 9 to 12. `nested_evolution_test` is created in step 1 and loaded with
 one row; steps 7 and 8 evolve it. Its baseline columns
 are `id(1)`, `tags(2)` (list, element id 5), `attrs(3)` (map, key id 6,
@@ -315,15 +317,22 @@ column in step 3; Spark and Athena read it after step 3.
 step 3; the script reads its `metadata.json` after each.
 `parameter_name_test` takes its name from a parameter from step 9;
 Athena reads it after step 9.
+In step 2, `renumber_test` (declared out of creation order) and
+`decimal_test` get a table property and `format_version_test` goes
+from V2 to V3; the script reads their `metadata.json` after it;
+Athena writes a row to `renumber_test` after step 1 and reads it after
+step 2.
+`create_partition_id_test` declares partition field id 1005 on its
+first field and 1000 on its second and never changes; the script reads its `metadata.json` after step 1.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
 | Step | Change | Columns | Partitions | Spark phase after the deploy |
 | ---: | --- | --- | --- | --- |
 | 1 | Initial deploy | `customer_id(1)`, `email(2)`, `signed_up_at(3)` | `day(signed_up_at)` | seed INSERT of ids 10-12; `nested_evolution_test` created and loaded with id 100 (`tags` = `t1`, `t2`; `attrs` = `k1`→`v1`, `k2`→`v2`; `addr` = `L1`, `C1`) |
-| 2 | **ADD** column `region(4)` | + `region(4)` | unchanged | old rows read with `region` NULL, then INSERT of id 13 with `region` |
+| 2 | **ADD** column `region(4)`; `spec-count` asserted | + `region(4)` | unchanged | old rows read with `region` NULL, then INSERT of id 13 with `region` |
 | 3 | **RENAME** `email` → `contact_email` (id 2 preserved), **ADD** partition `bucket(8)(customer_id)` | rename | + `bucket(8)(customer_id)` | `contact_email` for id 10 is `a@example.com` |
-| 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)` | − `region` | − `customer_id_bucket` | at least 4 rows read |
+| 4 | **DROP** column `region` (id 4 stays retired), **DROP** partition `bucket(8)(customer_id)`; `spec-count` and `default-spec-id` asserted | − `region` | − `customer_id_bucket` | at least 4 rows read |
 | 5 | **CHANGE** the `signed_up_at` transform from day to month under fresh field id 1002; partition-history invariants asserted | unchanged | `month(signed_up_at)` | INSERT of id 14 under the month spec, at least 5 rows read |
 | 6 | **CHANGE** `identifierFieldNames` from `customer_id` to `contact_email`; the current schema's `identifier-field-ids` and the `(PK) ` doc markers asserted | unchanged | unchanged | none |
 | 7 | `nested_evolution_test`: **ADD** top-level column `note(10)` | + `note(10)` | none | id 100 read by name (struct fields, list elements, map entries) with `note` NULL, then INSERT of id 101 with `note`, both rows read |

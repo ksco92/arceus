@@ -18,8 +18,8 @@ export interface IcebergPartitionField {
     readonly name?: string;
 
     /**
-     * Iceberg partition field id. Required: every partition field must
-     * be pinned to a stable integer >= 1000 (the Iceberg spec reserves
+     * Iceberg partition field id. Required: every partition field
+     * declares an integer >= 1000 (the Iceberg spec reserves
      * ids below 1000 for schema columns) that is unique across the
      * table's entire partition-spec history — not just the current
      * spec. Iceberg's strict engines (Spark, Trino) reject a table
@@ -31,7 +31,9 @@ export interface IcebergPartitionField {
      * different transform, a different source column — makes it a NEW
      * field that needs a fresh, never-before-used id. Only an
      * untouched field keeps its id across deploys. Once a field is
-     * changed or dropped, its id is retired for good.
+     * changed or dropped, its id is retired for good. Number a new
+     * table's fields 1000, 1001 and up in spec order: Glue assigns
+     * those ids at creation and ignores the declared ones.
      */
     readonly fieldId: number;
 }
