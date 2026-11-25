@@ -33,6 +33,23 @@ import {
 
 const LAST_COMMENT_CHANGE_STEP = 6;
 const LAST_STEP = 12;
+const ID_CAT_V_COLUMNS: IcebergColumn[] = [
+    {
+        name: 'id',
+        type: IcebergType.LONG,
+        id: 1,
+    },
+    {
+        name: 'cat',
+        type: IcebergType.STRING,
+        id: 2,
+    },
+    {
+        name: 'v',
+        type: IcebergType.STRING,
+        id: 3,
+    },
+];
 const COMMIT_RETRIES = {
     'commit.retry.num-retries': '5',
 };
@@ -246,23 +263,7 @@ export class IcebergEvolutionStack extends Stack {
         const dropSourceLaterTable = icebergTable('DropSourceLaterTable', 'drop_source_later_test', buildDropSourceTable(step, 3));
 
         const reusedPartitionIdTable = icebergTable('ReusedPartitionIdTable', 'reused_partition_id_test', {
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-                {
-                    name: 'cat',
-                    type: IcebergType.STRING,
-                    id: 2,
-                },
-                {
-                    name: 'v',
-                    type: IcebergType.STRING,
-                    id: 3,
-                },
-            ],
+            columns: ID_CAT_V_COLUMNS,
             partitionSpec: [
                 {
                     sourceColumn: 'id',
@@ -447,9 +448,7 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
     };
     /// Step 5 changes the transform on `signed_up_at` from `day` to
     /// `month`. A changed transform is a NEW partition field, so it
-    /// takes the next never-used id (1002) — reusing 1000 here would fail
-    /// Spark reads as `reused_partition_id_test`'s do (issue #43), and 1001
-    /// stays retired with the dropped bucket field.
+    /// takes the next never-used id (1002); 1000 and 1001 stay retired.
     const monthPartition: IcebergPartitionField = {
         sourceColumn: 'signed_up_at',
         transform: IcebergPartitionTransform.MONTH,
@@ -502,17 +501,8 @@ function buildReusedIdColumns(step: number): IcebergColumn[] {
     ];
 }
 
-/// `drop_source_test` (columnDropStep 2) drops `cat` together with its
-/// partition field at step 2; `drop_source_later_test` (3) removes the
-/// field at step 2 and drops `cat` at step 3.
+/// `cat` loses its partition field at step 2 and the column at `columnDropStep`.
 function buildDropSourceTable(step: number, columnDropStep: number): Pick<IcebergTableProps, 'columns' | 'partitionSpec'> {
-    const cat: IcebergColumn[] = step >= columnDropStep ? [] : [
-        {
-            name: 'cat',
-            type: IcebergType.STRING,
-            id: 2,
-        },
-    ];
     const catPartition: IcebergPartitionField[] = step >= 2 ? [] : [
         {
             sourceColumn: 'cat',
@@ -521,19 +511,7 @@ function buildDropSourceTable(step: number, columnDropStep: number): Pick<Iceber
         },
     ];
     return {
-        columns: [
-            {
-                name: 'id',
-                type: IcebergType.LONG,
-                id: 1,
-            },
-            ...cat,
-            {
-                name: 'v',
-                type: IcebergType.STRING,
-                id: 3,
-            },
-        ],
+        columns: ID_CAT_V_COLUMNS.filter((column) => step < columnDropStep || column.name !== 'cat'),
         partitionSpec: [
             {
                 sourceColumn: 'id',
