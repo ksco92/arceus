@@ -120,11 +120,11 @@ describe('version-only exemption', () => {
     });
 
     test('a version-only edit of package-lock.json is exempt', () => {
-        expect(touches(modified('package-lock.json', '@@ -7096,7 +7096,7 @@\n         "packages/cdk-glue-iceberg-table": {\n-            "version": "0.22.1",\n+            "version": "0.22.2",\n             "license": "MIT",'))).toBe(false);
+        expect(touches(modified('package-lock.json', '@@ -7098,3 +7098,3 @@\n         "packages/cdk-glue-iceberg-table": {\n-            "version": "0.22.1",\n+            "version": "0.22.2",\n             "license": "MIT",'))).toBe(false);
     });
 
     test('a dependency bump in package-lock.json is in the set', () => {
-        expect(touches(modified('package-lock.json', '@@ -10,5 +10,5 @@\n-            "version": "2.273.0",\n-            "resolved": "https://registry.npmjs.org/aws-cdk-lib/-/aws-cdk-lib-2.273.0.tgz",\n-            "integrity": "sha512-a",\n+            "version": "2.274.0",\n+            "resolved": "https://registry.npmjs.org/aws-cdk-lib/-/aws-cdk-lib-2.274.0.tgz",\n+            "integrity": "sha512-b",'))).toBe(true);
+        expect(touches(modified('package-lock.json', '@@ -10,3 +10,3 @@\n-            "version": "2.273.0",\n-            "resolved": "https://registry.npmjs.org/aws-cdk-lib/-/aws-cdk-lib-2.273.0.tgz",\n-            "integrity": "sha512-a",\n+            "version": "2.274.0",\n+            "resolved": "https://registry.npmjs.org/aws-cdk-lib/-/aws-cdk-lib-2.274.0.tgz",\n+            "integrity": "sha512-b",'))).toBe(true);
     });
 
     test('a version edit plus another field is in the set', () => {
