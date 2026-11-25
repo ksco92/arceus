@@ -399,12 +399,12 @@ it is given and how it moves `last-partition-id`; what Spark and
 Athena read after a dropped column's id is reused; that a `Name`
 changed to a parameter with the same value leaves the table as it was;
 that an update matching an earlier schema makes that schema current
-again; and how property-only, sort order, identifier and rolled-back
-updates land. [Glue
+again, and one matching a partition spec the table holds adds no spec;
+that an update leaving a `decimal(P, S)` column alone adds no schema;
+and how property-only, sort order, identifier and rolled-back updates
+land. [Glue
 behaviours](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md)
 lists each one with the integration-suite assertion that checks it.
-Two more are relied on and asserted by no suite: the canonical
-`decimal(P, S)` spacing, and Glue deduping identical partition specs.
 
 ### What the integration suites run
 

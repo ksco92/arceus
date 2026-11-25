@@ -4,6 +4,8 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
+- (patch) The README lists the `decimal(P, S)` spacing and the reuse of a partition spec the table holds among the Glue behaviours the integration suites assert.
+
 ## 0.22.2
 
 - (patch) The README now says that GitHub shows `main`, which can be ahead of the latest release, and links this changelog for what is unreleased.
