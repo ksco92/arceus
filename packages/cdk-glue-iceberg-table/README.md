@@ -19,11 +19,9 @@ diff in a pull request and applies through `cdk deploy`.
 - **Plain CloudFormation.** The template holds a plain
   `AWS::Glue::Table`: no custom resource, no Lambda, no SQL to run by
   hand.
-- **The safe shape only.** A raw `AWS::Glue::Table` with its columns
-  under `storageDescriptor` is created without error, and after an
-  update that adds a column, Athena `SELECT *` and `SELECT count(*)`
-  fail with `HIVE_UNSUPPORTED_FORMAT`; the construct cannot emit it
-  ([details](#why-a-raw-cfntable-goes-wrong)).
+- **The safe shape only.** The construct cannot emit the two
+  hand-written `AWS::Glue::Table` shapes that [go
+  wrong](#why-a-raw-cfntable-goes-wrong).
 - **Checked at synth.** Column types and partition transforms are
   typed, and `cdk synth` rejects a transform that does not fit its
   source column's type.
@@ -327,7 +325,7 @@ two sentences, not observed).
 
 ### How it compares
 
-| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two template shapes that go wrong | Typed API + synth-time validation |
+| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two hand-written shapes that go wrong | Typed API + synth-time validation |
 | --- | --- | --- | --- | --- |
 | Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ both are yours to avoid | ❌ |
 | CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
@@ -346,13 +344,12 @@ wrong.
 
 #### Schema under `storageDescriptor.columns`
 
-The table below is created with `table_type` `ICEBERG` in its Glue
-parameters. After an update that adds a column, the table holds only
-the Glue parameters `tableInput` declares, none here, and Athena
-`SELECT *` and `SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
+Glue creates the table the example below declares and gives it the
+parameter `table_type` `ICEBERG`. After an update that adds a column,
+the table holds no Glue parameters, and Athena `SELECT *` and
+`SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
 
 ```typescript
-// DON'T DO THIS
 new CfnTable(this, 'OrdersBad', {
     catalogId: this.account,
     databaseName: 'analytics',
@@ -383,12 +380,11 @@ under `storageDescriptor`.
 
 A table with a `tableInput` that holds only a `name`, beside an
 `openTableFormatInput` that carries `icebergTableInput`, fails to
-create. The CloudFormation event's reason is the resource handler's
-message
-`Table metadata is expected only via TableInput or via IcebergTableInput inside OpenTableFormatInput`.
-The construct never emits `tableInput`; the table-level comment goes
-into `tableProperties['comment']`, which lives inside
-`icebergTableInput.properties`.
+create. The CloudFormation event's reason contains `Table metadata is
+expected only via TableInput or via IcebergTableInput inside
+OpenTableFormatInput`. The construct never emits `tableInput`; the
+table-level comment goes into `tableProperties['comment']`, which
+lives inside `icebergTableInput.properties`.
 
 ### What the construct rests on
 
@@ -956,9 +952,9 @@ declare must follow [The field id rules](#the-field-id-rules). See
 ### Does CloudFormation support Iceberg tables natively?
 
 Yes, through `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`.
-Two hand-written shapes go wrong: one after an update that adds a
-column, one at create. The construct emits neither. See [Why a raw
-CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong).
+Two hand-written variants of it go wrong, and the construct emits
+neither; see [Why a raw CfnTable goes
+wrong](#why-a-raw-cfntable-goes-wrong).
 
 ### What is the difference between cdk-glue-iceberg-table and a raw CfnTable?
 

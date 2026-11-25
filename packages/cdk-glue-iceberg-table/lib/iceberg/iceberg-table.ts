@@ -171,8 +171,9 @@ export interface IIcebergTable {
  * The construct emits the
  * `OpenTableFormatInput.IcebergInput.IcebergTableInput` shape that
  * survives CloudFormation `Update`; the README's "Why a raw CfnTable
- * goes wrong" section shows what columns under
- * `tableInput.storageDescriptor.columns` do instead.
+ * goes wrong" section describes a table with columns under
+ * `tableInput.storageDescriptor.columns` whose Athena `SELECT *` fails
+ * after an update that adds a column.
  */
 export class IcebergTable extends Resource implements IIcebergTable {
     /** Glue ARN of the table. */
