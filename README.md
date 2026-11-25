@@ -200,7 +200,8 @@ you choose them:
    needs a `fieldId` no partition spec of the table has used. Reusing
    a retired id produces a table that Athena still reads but Spark and
    Trino reject with `ValidationException: Conflicting partition
-   fields`.
+   fields`. At creation Glue numbers the fields itself: see [Partition
+   fields](#partition-fields).
 
 The construct checks the ids of one definition (valid and unique) and
 nothing across deploys. Each rule has a worked example on the [field
@@ -393,9 +394,10 @@ into `tableProperties['comment']`, which lives inside
 ### What the construct rests on
 
 The construct depends on these behaviours of Glue, which AWS does not
-document as contracts: that CREATE renumbers fields in creation order;
-that `UpdateTable` stores the column, nested and partition field ids
-it is given and how it moves `last-partition-id`; what Spark and
+document as contracts: that CREATE renumbers fields in creation order
+and partition fields from 1000; that `UpdateTable` stores the column
+and nested ids it is given and the `fieldId` of a partition field it
+adds, and how it moves `last-partition-id`; what Spark and
 Athena read after a dropped column's id is reused; that a `Name`
 changed to a parameter with the same value leaves the table as it was;
 that an update matching an earlier schema makes that schema current
@@ -472,7 +474,10 @@ Each partition field pins a `fieldId` of 1000 or above (the Iceberg
 spec reserves lower ids for schema columns) and an
 `IcebergPartitionTransform`, which `cdk synth` validates against the
 source column's type; [Exported types](#exported-types) lists the
-transforms.
+transforms. Number a new table's partition fields 1000, 1001 and up in
+the order the spec lists them: at creation Glue assigns those ids and
+ignores the declared ones. A field added by a later deploy is stored
+under the `fieldId` it declares.
 
 ### Identifier fields
 

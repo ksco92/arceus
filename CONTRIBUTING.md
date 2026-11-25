@@ -319,9 +319,8 @@ In step 2, `renumber_test` (declared out of creation order) and
 `decimal_test` get a table property and `format_version_test` goes
 from V2 to V3; the script reads their `metadata.json` after it, and
 Athena reads `renumber_test`.
-`create_partition_id_test` is created with partition field ids 1000
-and 1005 and never changes; the script reads its `metadata.json`
-after step 1.
+`create_partition_id_test` declares partition field ids 1000 and 1005
+and never changes; the script reads its `metadata.json` after step 1.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
