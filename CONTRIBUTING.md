@@ -303,7 +303,7 @@ Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`; the paragraphs below describe the other
 tables.
 
-The stack owns fifteen tables, and step 11 declares a sixteenth,
+The stack owns twenty tables, and step 11 declares a twenty-first,
 `table_input_test`, that fails to create. `evolution_test` changes in
 steps 1 to 6 and 9 to 12. `nested_evolution_test` is created in step 1
 and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
@@ -317,7 +317,11 @@ column in step 3; Spark and Athena read it after step 3.
 `partition_id_test` adds a partition field in step 2 and another in
 step 3; the script reads its `metadata.json` after each.
 `parameter_name_test` takes its name from a parameter from step 9;
-Athena reads it after step 9.
+Athena reads it after step 9. Step 10 passes that parameter the value
+`parameter_name_replaced_test`, which replaces the table at the same
+`location`, and later steps keep the value; the script reads the
+replacement's `metadata.json`, the stack's events and the objects under
+the `location`, and Athena reads the replacement after step 10.
 In step 2, `renumber_test` (declared out of creation order) and
 `decimal_test` get a table property and `format_version_test` goes
 from V2 to V3; the script reads their `metadata.json` after it;
@@ -342,6 +346,21 @@ created with an identifier and an override that removes the `(PK) `
 marker, get the marker in step 2 and lose the identifier in step 3, the
 second with a `doc` added to its other column; the script reads their
 `metadata.json` after step 3.
+After step 1, Athena writes a row to `engine_column_test`,
+`engine_column_declared_test` and `engine_column_other_id_test`, adds a
+column `w` with `ALTER TABLE ... ADD COLUMNS`, and writes a row with a
+value in `w`; the script then reads the first's `metadata.json`. Step 2
+declares `w` on the second under the id Athena gave it and on the third
+under another id, and leaves the first unchanged; step 3 changes a
+table property of the first without declaring `w`. After step 2 the
+script reads the first's Glue version and the other two's
+`metadata.json`, and Athena reads the other two; after step 3 the
+script and Athena read the first.
+The Spark phase after step 1 writes a row to `engine_upgrade_test` and
+`engine_upgrade_v2_test` and upgrades both to v3. Step 2 sets the
+first's `formatVersion` to `V3` and changes a table property of the
+second; the script reads their `metadata.json` after it, and the Spark
+phase writes a row to each and reads both rows back.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
@@ -356,7 +375,7 @@ Install the Spark toolchain first (see "Spark toolchain" above); the script need
 | 7 | `nested_evolution_test`: **ADD** top-level column `note(10)` | + `note(10)` | none | id 100 read by name (struct fields, list elements, map entries) with `note` NULL, then INSERT of id 101 with `note`, both rows read |
 | 8 | `nested_evolution_test`: **ADD** struct field `addr.zip(11)` between `line1` and `city` | `addr` = `line1(8)`, `zip(11)`, `city(9)` | none | ids 100 and 101 read by name with `addr.zip` NULL, then INSERT of id 102 with a zip, all three rows read |
 | 9 | **CHANGE** table property `commit.retry.num-retries` to `5`; every other field the script reads from `metadata.json` asserted unchanged | unchanged | unchanged | none |
-| 10 | **CHANGE** `sortOrder` from `customer_id` to `signed_up_at` descending, nulls first; `default-sort-order-id` 2 and order 1 still in `sort-orders` asserted | unchanged | unchanged | none |
+| 10 | **CHANGE** `sortOrder` from `customer_id` to `signed_up_at` descending, nulls first; `default-sort-order-id` 2 and order 1 still in `sort-orders` asserted; `cdk deploy --parameters` renames `parameter_name_test` | unchanged | unchanged | none |
 | 11 | **ADD** column `country(5)` plus `table_input_test`, a raw `CfnTable` with `tableInput` beside `icebergTableInput` that fails to create after the table update, its failure reason asserted; `cdk deploy` must exit non-zero with the stack in `UPDATE_ROLLBACK_COMPLETE`, then the earlier `current-schema-id`, `last-column-id` 5 and one more entry in `schemas` asserted | unchanged after the rollback | unchanged | none |
 | 12 | The step 11 change again, without the failing resource; the schema step 11 added becomes current | + `country(5)` | unchanged | none |
 
