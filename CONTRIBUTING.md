@@ -335,7 +335,7 @@ fail, and so must the Spark phase's read of `reused_partition_id_test`
 in step 2.
 `storage_columns_test` is a raw `CfnTable` with its columns under
 `storageDescriptor.columns`; it gains a column in step 2. The script
-reads its Glue `table_type` after steps 1 and 2, and Athena queries it
+reads its Glue parameters after steps 1 and 2, and Athena queries it
 after both; the queries after step 2 must fail.
 `unmarked_identifier_test` and `unmarked_identifier_doc_test` are
 created with an identifier and an override that removes the `(PK) `

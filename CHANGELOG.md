@@ -6,7 +6,7 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 - (patch) The README and the `fieldId` doc comment state that Glue numbers a new table's partition fields 1000, 1001 and up in spec order and ignores the declared `fieldId`s; the README also lists the `decimal(P, S)` and partition-spec reuse behaviours among those the suites assert.
 - (patch) The README no longer advises removing a partition field before dropping its source column (`SELECT *` and `SELECT count(*)` fail in Athena either way), describes a reused `fieldId` without Trino and quotes the Iceberg spec on field id 1000; the `fieldId` doc comment drops Trino too.
-- (patch) The README's "Identifier fields" section says Glue reuses an earlier schema whose fields, `doc` included, match the request, instead of listing the field attributes it compares.
+- (patch) The README's raw `CfnTable` example drops its `table_type` parameter, names `SELECT *` and `SELECT count(*)` as the Athena reads that fail after its update, quotes the current `tableInput` rejection message, and says schema reuse matches fields with their `doc`.
 
 ## 0.22.2
 

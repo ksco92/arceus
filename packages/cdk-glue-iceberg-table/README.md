@@ -19,10 +19,11 @@ diff in a pull request and applies through `cdk deploy`.
 - **Plain CloudFormation.** The template holds a plain
   `AWS::Glue::Table`: no custom resource, no Lambda, no SQL to run by
   hand.
-- **The safe shape only.** A raw `AWS::Glue::Table` written the way
-  most examples show it is created without error and fails every
-  Athena query after its first update with `HIVE_UNSUPPORTED_FORMAT`;
-  the construct cannot emit it ([details](#why-a-raw-cfntable-goes-wrong)).
+- **The safe shape only.** A raw `AWS::Glue::Table` with its columns
+  under `storageDescriptor` is created without error, and after an
+  update that adds a column, Athena `SELECT *` and `SELECT count(*)`
+  fail with `HIVE_UNSUPPORTED_FORMAT`; the construct cannot emit it
+  ([details](#why-a-raw-cfntable-goes-wrong)).
 - **Checked at synth.** Column types and partition transforms are
   typed, and `cdk synth` rejects a transform that does not fit its
   source column's type.
@@ -326,7 +327,7 @@ two sentences, not observed).
 
 ### How it compares
 
-| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two broken template shapes | Typed API + synth-time validation |
+| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two template shapes that go wrong | Typed API + synth-time validation |
 | --- | --- | --- | --- | --- |
 | Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ both are yours to avoid | ❌ |
 | CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
@@ -340,27 +341,24 @@ Data blog, December 2025](https://aws.amazon.com/blogs/big-data/create-and-updat
 `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`. The
 motivating CDK issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
 [`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)
-documents the only working shape and the silent-corruption traps you
-hit by getting it slightly wrong. This construct implements that
-shape.
+documents the shape this construct implements. The two shapes below go
+wrong.
 
 #### Schema under `storageDescriptor.columns`
 
-The CREATE succeeds but the first UPDATE silently strips
-`table_type=ICEBERG` from the table's Glue parameters, and Athena
-queries after that fail with `HIVE_UNSUPPORTED_FORMAT`.
+The table below is created with `table_type` `ICEBERG` in its Glue
+parameters. After an update that adds a column, the table holds only
+the Glue parameters `tableInput` declares, none here, and Athena
+`SELECT *` and `SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
 
 ```typescript
-// DON'T DO THIS — what most StackOverflow / re:Post examples show
+// DON'T DO THIS
 new CfnTable(this, 'OrdersBad', {
     catalogId: this.account,
     databaseName: 'analytics',
     tableInput: {
         name: 'orders',
         tableType: 'EXTERNAL_TABLE',
-        parameters: {
-            table_type: 'ICEBERG',
-        },
         storageDescriptor: {
             location: 's3://.../orders/',
             columns: [
@@ -381,11 +379,13 @@ new CfnTable(this, 'OrdersBad', {
 under `openTableFormatInput.icebergInput.icebergTableInput`, never
 under `storageDescriptor`.
 
-#### `tableInput` co-present with `openTableFormatInput`
+#### `tableInput` beside `icebergTableInput`
 
-Even setting just `tableInput: { name: 'foo' }` next to
-`openTableFormatInput` returns
-`"Table metadata is expected only via TableInput or via IcebergTableInputProperties inside OpenTableFormatInput"`.
+A table with a `tableInput` that holds only a `name`, beside an
+`openTableFormatInput` that carries `icebergTableInput`, fails to
+create. The CloudFormation event's reason is the resource handler's
+message
+`Table metadata is expected only via TableInput or via IcebergTableInput inside OpenTableFormatInput`.
 The construct never emits `tableInput`; the table-level comment goes
 into `tableProperties['comment']`, which lives inside
 `icebergTableInput.properties`.
@@ -956,16 +956,17 @@ declare must follow [The field id rules](#the-field-id-rules). See
 ### Does CloudFormation support Iceberg tables natively?
 
 Yes, through `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`.
-Written slightly wrong, the raw shape corrupts the table on its first
-update or is rejected; the construct only emits the safe shape. See
-[Why a raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong).
+Two hand-written shapes go wrong: one after an update that adds a
+column, one at create. The construct emits neither. See [Why a raw
+CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong).
 
 ### What is the difference between cdk-glue-iceberg-table and a raw CfnTable?
 
 A raw `CfnTable` makes you hand-write the `OpenTableFormatInput` JSON
-and avoid both broken shapes yourself; this construct gives a typed API with
-synth-time validation, field ids you declare, and `grantRead` /
-`grantWrite`. See [How it compares](#how-it-compares).
+and avoid the two shapes under [Why a raw CfnTable goes
+wrong](#why-a-raw-cfntable-goes-wrong) yourself; this construct gives
+a typed API with synth-time validation, field ids you declare, and
+`grantRead` / `grantWrite`. See [How it compares](#how-it-compares).
 
 ### How do I create a partitioned Iceberg table in CDK?
 
