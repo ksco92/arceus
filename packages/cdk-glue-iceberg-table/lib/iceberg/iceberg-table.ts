@@ -265,8 +265,6 @@ export class IcebergTable extends Resource implements IIcebergTable {
 
         const removalPolicy = props.removalPolicy ?? RemovalPolicy.RETAIN;
         this.resource.applyRemovalPolicy(removalPolicy);
-
-        this.node.defaultChild = this.resource;
     }
 
     /**
