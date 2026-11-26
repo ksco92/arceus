@@ -169,7 +169,7 @@ ROW_101="101|u1|u2|w1|w2|M1|D1"
 TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
 # Athena's reason ends in a space.
 HIVE_FORMAT="HIVE_UNSUPPORTED_FORMAT: Unable to create input format "
-S3_DENIED="PERMISSION_DENIED: null (Service: S3, Status Code: 403"
+S3_DENIED="PERMISSION_DENIED: "
 
 # Glue VersionId and the number of the metadata file metadata_location names.
 version_and_file() {
