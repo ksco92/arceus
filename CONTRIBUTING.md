@@ -93,6 +93,7 @@ arceus/
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
 │   ├── field-ids.md                    # What field ids are and the rule for not reusing them
+│   ├── full-example.md                 # Full-surface TypeScript IcebergTable example and resulting metadata.json
 │   ├── glue-behaviours.md              # Glue behaviours the integration suites assert, with the assertion for each
 │   └── integ-test-setup.md             # AWS-side prerequisites for the integ-test workflow
 ├── cdk.json                            # CDK app config (app: bin/arceus.ts)
@@ -177,9 +178,9 @@ edits and what follows it.
 
 ## Conditions for merging a pull request
 
-A change goes to `main` through a pull request. The maintainer applies these conditions at merge; branch protection does not enforce them today.
+A change goes to `main` through a pull request. The active `Protect main` repository ruleset enforces pull requests, blocks branch deletion and force-pushes, and requires the six status checks (`release-policy`, `build-test`, `e2e-consumer`, `packed-consumer`, `peer-floor`, and `integ-gate`) on `main`.
 
-- The `ci.yml` jobs pass: `release-policy`, `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
+- All five `ci.yml` jobs pass.
 - A PR other than a release that changes the published package adds a changelog line under `## Unreleased` and leaves `version` alone.
 - A breaking change in such a PR also adds a note to `UPGRADING.md` under `## Unreleased`.
 - The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.

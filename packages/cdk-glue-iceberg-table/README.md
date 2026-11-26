@@ -4,69 +4,43 @@
 [![coverage](https://codecov.io/gh/ksco92/arceus/branch/main/graph/badge.svg)](https://codecov.io/gh/ksco92/arceus)
 [![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![PyPI](https://img.shields.io/pypi/v/cdk-glue-iceberg-table.svg)](https://pypi.org/project/cdk-glue-iceberg-table/)
-[![Construct Hub](https://img.shields.io/badge/Construct%20Hub-available-blueviolet)](https://constructs.dev/packages/cdk-glue-iceberg-table)
-[![downloads](https://img.shields.io/npm/dw/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![license](https://img.shields.io/npm/l/cdk-glue-iceberg-table.svg)](https://github.com/ksco92/arceus/blob/main/LICENSE)
 
-**`cdk-glue-iceberg-table` is an AWS CDK L2 construct to create and
-evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and
-partition changes that survive CloudFormation updates, via cdk
-deploy.** You declare a table's columns and partition fields in your
-CDK app. Adding, renaming or dropping a column, or changing the
-partition spec, is an edit to that declaration: it lands as a reviewed
-diff in a pull request and applies through `cdk deploy`.
+**AWS CDK L2 construct to create and evolve Apache Iceberg tables in the AWS Glue Data Catalog — schema and partition changes that survive CloudFormation updates, via cdk deploy.**
 
-- **Plain CloudFormation.** The template holds a plain
-  `AWS::Glue::Table`: no custom resource, no Lambda, no SQL to run by
-  hand.
-- **The safe shape only.** The construct cannot emit the two
-  hand-written `AWS::Glue::Table` shapes that [go
-  wrong](#why-a-raw-cfntable-goes-wrong).
-- **Checked at synth.** Column types and partition transforms are
-  typed, and `cdk synth` rejects a transform that does not fit its
-  source column's type.
-- **TypeScript and Python**, generated from one TypeScript source with
-  [jsii](https://aws.github.io/jsii/). Iceberg format versions 1, 2
-  and 3; Athena cannot query v3 tables.
+Declare columns, partition specs, sort orders, and table properties in TypeScript or Python. Adding, renaming, dropping, or widening columns and evolving partition specs land as pull requests and apply in place through `cdk deploy` as a plain `AWS::Glue::Table`.
 
-**What it leaves to you.** You choose every Iceberg field id, and the
-construct keeps no record of earlier deploys, so it cannot check the
-ids you declare against the ids the table has used. Glue accepts two
-mistakes without an error. Give a dropped column's id to a new column
-of the same type, and Spark and Athena read the dropped column's
-values, in rows written before the drop, as the new column's. Number a
-new table out of creation order, and Glue ignores the declared ids at
-creation and renumbers the fields to them on the first update it
-accepts. Three [field id rules](#the-field-id-rules) prevent both. The
-rest is under [Known limitations](#known-limitations).
+- **Plain CloudFormation:** emits `AWS::Glue::Table` directly with no custom resource, Lambda, or out-of-band DDL.
+- **Safe `OpenTableFormatInput` shape:** puts schema, partitions, sort order, and properties under `icebergTableInput`, avoiding the two broken raw `CfnTable` forms (placing columns under `storageDescriptor.columns`, which breaks Athena after an update, or setting `tableInput` beside `icebergTableInput`, which CloudFormation rejects at creation; see [Why a raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong)).
+- **Synth-time checks:** validates field ids, column types, and transform-to-column compatibility in TypeScript and Python ([jsii](https://aws.github.io/jsii/)) across Iceberg format versions 1, 2, and 3.
 
-**Status:** pre-1.0, with a 1.0 release planned. A breaking change
-bumps the minor version and gets a note in
-[UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md).
-The package has one maintainer. Its source is public, and the template
-it emits is a plain `AWS::Glue::Table` in the shape described under [Why a
-raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong). It was
-proposed upstream as an `IcebergTable` for `@aws-cdk/aws-glue-alpha`
-([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988)); the
-aws-cdk repository's stale-PR automation closed that pull request in
-September 2026 after three weeks in merge conflicts, and this package
-does not depend on it.
+**Status (November 2026):** Pre-1.0 (`0.x`, with 1.0 planned; breaking changes bump the minor version and record upgrade notes in [UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md)). Published on [npm](https://www.npmjs.com/package/cdk-glue-iceberg-table), [PyPI](https://pypi.org/project/cdk-glue-iceberg-table/), and [Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table) by one maintainer; Athena queries v2 tables only, not v3. Originally proposed for `@aws-cdk/aws-glue-alpha` in [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988) (closed stale in September 2026), this package is maintained independently. GitHub `main` may be ahead of the latest registry release (see [CHANGELOG.md](https://github.com/ksco92/arceus/blob/main/CHANGELOG.md)).
 
-**How it is tested.**
+## Contents
 
-- Integration suites deploy v2 and v3 tables to a real AWS account and
-  read them back through Spark, and the v2 tables through Athena. They
-  run weekly against `main` and, before merge, on every pull request
-  that changes the construct, the demo stacks or the suites.
-- Every pull request compiles and synthesizes a consumer app against a
-  published version and against the pull request's own `npm pack`
-  tarball.
-
-**Versions.** The README on GitHub describes `main`, which can be
-ahead of the latest release; [CHANGELOG.md](https://github.com/ksco92/arceus/blob/main/CHANGELOG.md)
-lists what is unreleased, and the npm page shows the README of the
-released version. API reference: [Construct
-Hub](https://constructs.dev/packages/cdk-glue-iceberg-table).
+- [Install](#install)
+- [Quick start](#quick-start)
+  - [The field id rules](#the-field-id-rules)
+- [Evolving a table](#evolving-a-table)
+- [Is this the right tool](#is-this-the-right-tool)
+  - [How it compares](#how-it-compares)
+  - [Why a raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong)
+  - [What the construct rests on](#what-the-construct-rests-on)
+- [Granting access](#granting-access)
+  - [CloudFormation deploying-role permissions](#cloudformation-deploying-role-permissions)
+- [Reference](#reference)
+  - [Format version 3](#format-version-3)
+  - [Columns and field ids](#columns-and-field-ids)
+  - [Partition fields](#partition-fields)
+  - [Identifier fields](#identifier-fields)
+  - [Table properties](#table-properties)
+  - [Adopting an existing table or migrating to raw CfnTable](#adopting-an-existing-table-or-migrating-to-raw-cfntable)
+  - [Preventing field-id reuse in team CI](#preventing-field-id-reuse-in-team-ci)
+  - [Catalog account and tokenized table names](#catalog-account-and-tokenized-table-names)
+  - [Exported types](#exported-types)
+- [Known limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Install
 
@@ -75,24 +49,24 @@ npm install cdk-glue-iceberg-table      # TypeScript / JavaScript
 pip install cdk-glue-iceberg-table      # Python
 ```
 
-Your CDK app must already have the peer dependencies `aws-cdk-lib`
-2.273.0 or newer and `constructs` 10.8.1 or newer:
+Peer dependencies required in your CDK app (`aws-cdk-lib >= 2.273.0`, because `Database` is imported from stable `aws-cdk-lib/aws-glue`, and `constructs >= 10.8.1`):
 
 ```bash
 npm install aws-cdk-lib@^2.273.0 constructs@^10.8.1        # TypeScript / JavaScript
 pip install 'aws-cdk-lib>=2.273.0' 'constructs>=10.8.1'    # Python
 ```
 
-Both languages need Node.js 22.14 or newer (the Python package runs
-under it through jsii); Python needs 3.10 or newer.
-
-Upgrading from an earlier version: see
-[UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md),
-whose notes start at 0.12.0.
+Both languages require Node.js 22.14 or newer (the Python package runs under it through jsii); Python requires 3.10 or newer. Upgrading from an earlier version: see [UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md) (notes start at 0.12.0).
 
 ## Quick start
 
-Both examples go inside a stack's constructor in an existing CDK app.
+Both examples go inside a stack's constructor in an existing CDK app. Required vs defaulted properties:
+
+- `formatVersion` is required (`IcebergFormatVersion.V1`, `V2`, or `V3`).
+- `dataFormat` defaults to `IcebergDataFormat.PARQUET`.
+- `removalPolicy` defaults to `RemovalPolicy.RETAIN`.
+
+Setting `identifierFieldNames` prepends `(PK) ` to each identifier column's Glue comment ([Identifier fields](#identifier-fields)).
 
 ### TypeScript
 
@@ -127,16 +101,11 @@ new IcebergTable(this, 'OrdersTable', {
 });
 ```
 
-`cdk deploy` creates the Glue Data Catalog table and writes the
-Iceberg `metadata.json` under the S3 prefix in `location`.
+`cdk deploy` creates the Glue Data Catalog table and writes Iceberg `metadata.json` under the S3 prefix in `location`. For a full example exercising nested `list`, `struct`, and `map` columns, `decimal`, `sortOrder`, `tableProperties`, and the resulting `metadata.json`, see [docs/full-example.md](https://github.com/ksco92/arceus/blob/main/docs/full-example.md).
 
 ### Python
 
-The same table in Python. Props are `snake_case` and type names are
-the same as in TypeScript. Pass each column and partition field as its
-class (`IcebergColumn`, `IcebergPartitionField`) with `snake_case`
-arguments; a plain dict instead keeps the TypeScript key spelling
-(`sourceColumn`, `fieldId`):
+Props are `snake_case` and type names match TypeScript. Pass each column and partition field as `IcebergColumn` and `IcebergPartitionField` with `snake_case` arguments (a plain dict keeps TypeScript keys such as `sourceColumn` and `fieldId`):
 
 ```python
 from aws_cdk.aws_s3 import Bucket
@@ -173,46 +142,17 @@ IcebergTable(self, "OrdersTable",
 
 ### The field id rules
 
-The `id` and `fieldId` numbers in the examples are Iceberg field ids.
-Data files store values under these ids, not under column names, and
-you choose them:
+`id` and `fieldId` are Iceberg field ids. Data files store values by field id rather than column name. `IcebergTable` validates ids within a single declaration ([Columns and field ids](#columns-and-field-ids), [Partition fields](#partition-fields)), keeps no state across deploys, and leaves cross-deploy id hygiene to you:
 
-1. **Declare a new table's ids in creation order: columns 1, 2, 3 and
-   so on in the order declared, then their nested fields.** Glue
-   numbers a new table this way whatever ids it declares; if the
-   declared ids differ, the first update Glue accepts renumbers the
-   fields to them, and data files written before it read under the
-   wrong field. The construct cannot tell a first deploy from a later
-   one, so it does not check creation order;
-   `IcebergTable.creationOrderFieldIds(columns)` returns the ids to
-   declare ([creation order](#creation-order)).
-2. **A column keeps its id for life, and a dropped column's id is
-   retired.** A rename keeps the `id` and changes the `name`; a new
-   column takes an id above the table's `last-column-id`, the highest
-   id it has assigned ([how to read it](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#which-ids-the-table-has-used)). Give a dropped
-   column's id to a new column of the same type and Glue accepts the
-   deploy; Spark and Athena then read the dropped column's value, in a
-   row written before the drop, as the new column's value.
-3. **A partition field takes a `fieldId` of 1000 or above and keeps it
-   only while it stays untouched.** Swap `month` for `day` or point
-   the field at another source column, and it becomes a new field that
-   needs a `fieldId` no partition spec of the table has used. Give
-   `bucket(8)` of a column the id that `bucket(4)` of that column
-   held, and Athena still reads the table while a Spark `SELECT *`
-   from it fails with `ValidationException: Conflicting partition
-   fields`. At creation Glue numbers the fields itself: see [Partition
-   fields](#partition-fields).
+1. **Declare a new table's ids in creation order (columns 1, 2, 3 in order, then nested fields):** Glue numbers a new table this way regardless of declared ids; if the declared ids differ, the first update Glue accepts renumbers the fields to them, causing pre-update data files to read under the wrong field. Use `IcebergTable.creationOrderFieldIds(columns)` ([Creation order](#creation-order)).
+2. **Keep each column's id for life and retire dropped column ids:** A rename keeps the `id` and changes `name`; a new column takes an id above `last-column-id` ([how to read it](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#which-ids-the-table-has-used)). Giving a dropped column's id to a new column of the same type is accepted by Glue, causing Spark and Athena to read the dropped column's pre-drop values under the new column.
+3. **Use `fieldId >= 1000` and never reuse a changed or dropped partition field's id:** Changing a transform or `sourceColumn` creates a new partition field that needs a `fieldId` no partition spec of the table has used. Reassigning a prior id (such as giving `bucket(8)` the id `bucket(4)` held) is accepted by Glue and readable in Athena, while Spark `SELECT *` fails with `ValidationException: Conflicting partition fields`. At creation Glue numbers partition fields sequentially from 1000 ([Partition fields](#partition-fields)).
 
-The construct checks the ids of one definition (valid and unique) and
-nothing across deploys. Each rule has a worked example on the [field
-ids](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md)
-page.
+See [docs/field-ids.md](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md) for worked examples and [Preventing field-id reuse in team CI](#preventing-field-id-reuse-in-team-ci) for an automated check.
 
 ## Evolving a table
 
-Change the `columns` array or the `partitionSpec` and run `cdk deploy`
-again. To add a column to the quick-start table, give it an id the
-table has never used:
+Edit `columns` or `partitionSpec` and run `cdk deploy` again. To add a column to the quick-start table, give it an id the table has never used:
 
 ```ts
     columns: [
@@ -223,42 +163,25 @@ table has never used:
     ],
 ```
 
-The construct passes the new schema to Glue's `UpdateTable`, which
-writes a new `metadata.json` with a new `schema-id`. Existing data
-files stay readable while the ids follow [rule 2](#the-field-id-rules).
-Adds, renames (same `id`, new `name`) and drops all go through `cdk
-deploy` alone. On a v2 table the suites also deploy type promotions
-(`int` to `long`, `float` to `double`, `decimal(10, 2)` to
-`decimal(12, 2)`) and nullability relaxation (`required: true` to
-`false`), and on a v3 table `unknown` to `string` and `date` to
-`timestamp`; no suite deploys narrowing or incompatible type changes.
+The construct sends the updated schema through Glue `UpdateTable`, which writes a new `metadata.json` and `schema-id`. Adds, renames (same `id`, new `name`), and drops apply in place through `cdk deploy`.
+
+On a v2 table, promoting `int` to `long`, `float` to `double`, `decimal(10, 2)` to `decimal(12, 2)`, and relaxing `required: true` to `required: false` in one update is accepted in place by Glue; field ids are preserved, and Athena reads pre-update rows and inserts widened and `NULL` rows. On a v3 table, Glue accepts `unknown` to `string` and `date` to `timestamp` in place. Narrowing or incompatible type changes are not observed against Glue.
 
 ### Nested fields
 
-Nested fields evolve the same way. Each struct field, list element,
-map key, and map value keeps the id you gave it, so adding a column or
-a struct field anywhere in the schema leaves every other id unchanged.
-A new nested field takes an id no field of the table has ever used:
+Each struct field, list element, map key, and map value keeps its declared id across updates. Adding a nested field anywhere in the schema leaves existing ids unchanged; give each new nested field an unused id:
 
 ```typescript
 type: IcebergType.struct([
     { id: 10, name: 'line1', type: IcebergType.STRING },
-    { id: 16, name: 'line2', type: IcebergType.STRING }, // new field, never-used id
-    { id: 11, name: 'city', type: IcebergType.STRING },
+    { id: 16, name: 'line2', type: IcebergType.STRING }, // new field, unused id
+    { id: 11, name: 'city',  type: IcebergType.STRING },
 ]),
 ```
 
-Such an id is out of creation order, which is expected once a table
-has evolved: creation order applies only to the ids a table is created
-with (see [Creation order](#creation-order)).
-
 ### Change the partition spec
 
-Partition evolution flows the same way, with one extra rule on
-`fieldId`: a changed partition field is a new partition field. To move
-a table from `month(placed_at)` to `day(placed_at)`, drop the month
-entry and add a day entry under a fresh `fieldId`; never recycle the
-month field's id ([rule 3](#the-field-id-rules)):
+To change from `month(placed_at)` to `day(placed_at)`, replace the entry under a fresh `fieldId` ([rule 3](#the-field-id-rules)):
 
 ```typescript
 partitionSpec: [
@@ -271,70 +194,29 @@ partitionSpec: [
 ],
 ```
 
-Old data files written under the month spec stay readable; new writes
-partition by day.
+Old data files written under the month spec stay readable; new writes partition by day.
 
 ### Identifiers, sort order and table properties
 
-A changed `identifierFieldNames` flows through `cdk deploy` like a
-column change. The exception is a table created with identifiers
-before 0.11.0; read [Known limitations](#known-limitations) before
-removing its last identifier. The construct marks each identifier
-column by writing `(PK) ` at the start of its comment ([Identifier
-fields](#identifier-fields)).
-
-A changed `sortOrder` also flows through `cdk deploy`. Glue adds it to
-`sort-orders` under the next `order-id` and points
-`default-sort-order-id` at it; the earlier orders stay in the list.
-A change to `tableProperties` alone writes new metadata that keeps the
-same `current-schema-id`, partition spec and sort order.
+`identifierFieldNames` updates flow through `cdk deploy` (for tables created with identifiers before 0.11.0, check [Known limitations](#known-limitations) before removing the last identifier). `sortOrder` updates append a new entry under the next `order-id` in `sort-orders` and point `default-sort-order-id` at it, keeping earlier orders in the list. Changing `tableProperties` alone writes new metadata while preserving `current-schema-id`, partition spec, and sort order.
 
 ### Changes that need care
 
-- **Dropping a column that a partition field has sourced breaks Athena.** The construct accepts the change. Once the column is gone, `SELECT *` and `SELECT count(*)` from a table holding rows written before the drop fail in Athena with `GENERIC_INTERNAL_ERROR: Type cannot be null`, whether the partition field was removed in the same deploy or in an earlier one. Keep such a column in the schema.
-- **Glue ignores a V2 to V3 `formatVersion` change.** The table stays format 2, and `properties.format-version` reads `3` all the same. Keep `formatVersion` at the table's real version.
-- **A deploy that updates a table without declaring a column Athena added takes it out of the current schema.** On a table with columns `id` (1) and `v` (2) holding one row, Athena `ALTER TABLE ... ADD COLUMNS (w string)` gives `w` id 3, and a second row is written with a value in `w`. After that:
-  - a deploy that changes a table property and does not declare `w` leaves Athena `SELECT *` returning both rows without `w`;
-  - a deploy that leaves the table's declaration unchanged does not update the table: its Glue `VersionId` and `metadata_location` stay as they were;
-  - a deploy that declares `w` under id 3 adds no schema, and `SELECT *` returns the value written to `w`;
-  - a deploy that declares `w` under id 4 is accepted, and `SELECT *` returns `w` as NULL in the second row.
-- **After Spark upgrades a v2 table to v3, a deploy that keeps `V2` and changes a table property leaves a format 3 table with `properties.format-version` `2`.** Spark writes a row to a v2 table and upgrades it in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`. A deploy that changes `formatVersion` to `V3` instead leaves the table at format 3 with `properties.format-version` `3`. After either deploy, Spark writes a second row and reads both rows back. Set `formatVersion` to `V3`, the table's real version.
-- **What a deploy does after any other engine-side `ALTER TABLE` is not observed.** The two bullets above cover Athena's `ADD COLUMNS (w string)` and Spark's `SET TBLPROPERTIES ('format-version' = '3')`.
-- **A rolled-back deploy leaves its schema in the table's history.** When a deploy that adds a column updates the table and then fails on another resource, the stack ends in `UPDATE_ROLLBACK_COMPLETE` and `current-schema-id` is back to its earlier value, so the column is gone and the rows read as before. The schema that held the column stays in `schemas`, and `last-column-id` stays at the column's id. A clean redeploy of the same change makes that schema current again without adding a schema. Treat an id from a rolled-back deploy as used: give it only to the column that deploy added.
+- **Changing `location` on an existing table:** CloudFormation updates `AWS::Glue::Table` in place (`table-uuid` is preserved, and `metadata.json`'s `location` and Glue's `metadata_location` move to the new prefix while pre-move manifests and data files remain under the old prefix). Engines with direct S3 access to both prefixes (such as Spark over `S3FileIO`) read pre-move rows and write new rows under the new prefix. Athena querying through Lake Formation fails both `INSERT` (before a new manifest list exists under the new prefix) and `SELECT *` with `PERMISSION_DENIED` (S3 403), because Lake Formation vends temporary S3 credentials scoped to the table's current `location`, blocking access to pre-move manifests and data files under the old prefix.
+- **Dropping a column that a partition field has sourced breaks Athena:** Glue accepts the update, and subsequent `SELECT *` and `SELECT count(*)` queries in Athena fail with `GENERIC_INTERNAL_ERROR: Type cannot be null` on pre-drop rows, whether the partition field was dropped in the same deploy or earlier. Keep source columns of historical partition fields in `columns`.
+- **Glue ignores a V2 to V3 `formatVersion` change:** The table stays format 2 while `properties.format-version` becomes `3`. Keep `formatVersion` at the table's actual format version.
+- **Engine-side `ALTER TABLE` drift:**
+  - After Athena `ALTER TABLE ... ADD COLUMNS (w string)` adds `w` under id 3 and writes a row with `w`, a deploy with the declaration unchanged leaves Glue `VersionId` and `metadata_location` unchanged; a deploy that updates a table property without declaring `w` removes `w` from the current schema (`SELECT *` omits `w`); declaring `w` under id 3 adds no schema and reads `w`; declaring `w` under id 4 is accepted and reads `w` as `NULL` in that row.
+  - After Spark upgrades a v2 table to v3 via `SET TBLPROPERTIES ('format-version' = '3')`, update `formatVersion` to `IcebergFormatVersion.V3` so `properties.format-version` matches the format 3 table. Outcomes after other engine-side `ALTER TABLE` statements are not observed.
+- **A rolled-back deploy leaves its schema in the table's history:** When a column addition succeeds on the table before another stack resource fails, `UPDATE_ROLLBACK_COMPLETE` restores `current-schema-id`, while the new schema stays in `schemas` and `last-column-id` stays bumped. Treat ids from a rolled-back deploy as used.
 
 ### Changes that replace or remove the table
 
-Changing `tableName`, `database` or `catalogId` to a different value
-replaces the table: the [`AWS::Glue::Table`
-reference](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-glue-table.html)
-lists `Name`, `DatabaseName` and `CatalogId` as "Update requires:
-Replacement". `removalPolicy` sets the table's
-[`UpdateReplacePolicy`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-updatereplacepolicy.html)
-as well as its `DeletionPolicy`, so it applies to a replaced table as
-it does to a removed one: with the default `RETAIN` CloudFormation
-leaves the old table in the catalog, outside the stack; with `DESTROY`
-it deletes the old table's catalog entry. The construct asks Glue to
-create the replacement as a new table and carries nothing over from
-the old one.
+Changing `tableName`, `database`, or `catalogId` replaces the table (`Name`, `DatabaseName`, and `CatalogId` require replacement in [`AWS::Glue::Table`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-glue-table.html)). `removalPolicy` (default `RemovalPolicy.RETAIN`) sets both `DeletionPolicy` and `UpdateReplacePolicy`: under `RETAIN`, CloudFormation leaves the old catalog entry in Glue outside the stack; under `DESTROY`, CloudFormation deletes the old catalog entry. Glue creates the replacement as a new table carrying nothing over from the old one.
 
-When a deploy under `DESTROY` changes the `tableName` of a table
-holding a row and keeps its `location`, Glue creates the replacement
-with a `table-uuid` of its own and a first metadata file, its name
-starting `00000-`, under that `location`, and Athena `SELECT *` from
-the replacement returns no rows. Every object the old table wrote
-stays under the `location`, beside that file. What a replacement under
-`RETAIN` leaves at the old `location` is not observed.
+When a deploy under `RemovalPolicy.DESTROY` changes `tableName` while keeping the same `location`, Glue creates the replacement with a new `table-uuid` and a `00000-` metadata file at that `location`, Athena `SELECT *` returns no rows, and objects written by the old table stay under `location` beside that file. What a same-`location` replacement under `RemovalPolicy.RETAIN` leaves at the old `location` is not observed.
 
-The construct never deletes objects under `location`, but that does
-not make them safe: give a replacement table its own `location`.
-Athena documents that
-[`VACUUM`](https://docs.aws.amazon.com/athena/latest/ug/vacuum-statement.html)
-"Removes orphan files that are older than the time specified in the
-vacuum_max_snapshot_age_seconds table property" and that orphan files
-"are files in the table's data directory that are not part of the
-table state". Whether `VACUUM` on a replacement that shares the old
-`location` treats the old table's files as orphans once they pass that
-age is not observed.
+Give a replacement table its own `location`: `IcebergTable` never deletes S3 objects, and whether Athena [`VACUUM`](https://docs.aws.amazon.com/athena/latest/ug/vacuum-statement.html) on a replacement sharing an old `location` treats the old table's files as orphans past `vacuum_max_snapshot_age_seconds` is not observed.
 
 ## Is this the right tool
 
@@ -342,27 +224,18 @@ age is not observed.
 
 | Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two hand-written shapes that go wrong | Typed API + synth-time validation |
 | --- | --- | --- | --- | --- |
-| Raw `CfnTable` (L1) | ✅ | ⚠️ only if you hand-write the exact `OpenTableFormatInput` shape | ❌ both are yours to avoid | ❌ |
-| CDK custom resource (Lambda + Glue SDK) | ⚠️ via a custom resource you maintain | ⚠️ you write the diff logic | ⚠️ your code's responsibility | ❌ |
-| Spark SQL DDL, or Athena SQL DDL, at job runtime | ❌ imperative, outside the PR | ✅ but outside CloudFormation | n/a | ❌ |
-| **`cdk-glue-iceberg-table`** | ✅ | ✅ via `cdk deploy` | ✅ [both](#why-a-raw-cfntable-goes-wrong) by construction; ⚠️ [field-id reuse](#the-field-id-rules) is not checked | ✅ |
+| Raw `CfnTable` (L1) | Yes | Only if you hand-write the `OpenTableFormatInput` shape | Yours to avoid | No |
+| CDK custom resource (Lambda + Glue SDK) | Custom resource to maintain | Diff logic is yours to write | Your code's responsibility | No |
+| Spark SQL or Athena SQL DDL at job runtime | Imperative, outside CloudFormation | Outside CloudFormation | n/a | No |
+| `cdk-glue-iceberg-table` | Yes | Via `cdk deploy` | Avoids [both](#why-a-raw-cfntable-goes-wrong) by construction; [field-id reuse](#the-field-id-rules) is not checked | Yes |
 
 ### Why a raw CfnTable goes wrong
 
-AWS documents the CloudFormation shape for Iceberg tables ([AWS Big
-Data blog, December 2025](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation)):
-`AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`. The
-motivating CDK issue is [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660);
-[`manmartgarc`'s comment](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)
-documents the shape this construct implements. The two shapes below go
-wrong.
+AWS documents Iceberg tables on `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput` ([AWS Big Data blog](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation), [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)). The two shapes below break or fail.
 
 #### Schema under `storageDescriptor.columns`
 
-Glue creates the table the example below declares and gives it the
-parameter `table_type` `ICEBERG`. After an update that adds a column,
-the table holds no Glue parameters, and Athena `SELECT *` and
-`SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
+Glue creates the table below with parameter `table_type` `ICEBERG`, and Athena `SELECT *` initially returns its header. After an update that adds a column, the table has no Glue parameters and Athena `SELECT *` and `SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
 
 ```typescript
 new CfnTable(this, 'OrdersBad', {
@@ -373,9 +246,7 @@ new CfnTable(this, 'OrdersBad', {
         tableType: 'EXTERNAL_TABLE',
         storageDescriptor: {
             location: 's3://.../orders/',
-            columns: [
-                /* ... */
-            ],
+            columns: [/* ... */],
         },
     },
     openTableFormatInput: {
@@ -387,348 +258,74 @@ new CfnTable(this, 'OrdersBad', {
 });
 ```
 
-`IcebergTable` instead always emits schema/partitions/sort/properties
-under `openTableFormatInput.icebergInput.icebergTableInput`, never
-under `storageDescriptor`.
+`IcebergTable` always emits schema, partitions, sort order, and properties under `openTableFormatInput.icebergInput.icebergTableInput`.
 
 #### `tableInput` beside `icebergTableInput`
 
-A table with a `tableInput` that holds only a `name`, beside an
-`openTableFormatInput` that carries `icebergTableInput`, fails to
-create. The CloudFormation event's reason contains `Table metadata is
-expected only via TableInput or via IcebergTableInput inside
-OpenTableFormatInput`. The construct never emits `tableInput`; the
-table-level comment goes into `tableProperties['comment']`, which
-lives inside `icebergTableInput.properties`.
+Declaring `tableInput` (even holding only `name`) beside `openTableFormatInput.icebergInput.icebergTableInput` fails at creation with `Table metadata is expected only via TableInput or via IcebergTableInput inside OpenTableFormatInput`. `IcebergTable` omits `tableInput` and stores `comment` in `icebergTableInput.properties['comment']`.
 
 ### What the construct rests on
 
-The construct depends on these behaviours of Glue, which AWS does not
-document as contracts: that CREATE renumbers fields in creation order
-and partition fields from 1000; that `UpdateTable` stores the column
-and nested ids it is given and the `fieldId` of a partition field it
-adds, and how it moves `last-partition-id`; what Spark and
-Athena read after a dropped column's id is reused; that a `Name`
-changed to a parameter with the same value leaves the table as it was;
-that an update matching an earlier schema makes that schema current
-again, and one matching a partition spec the table holds adds no spec;
-that an update leaving the schema of a table with a `decimal(P, S)`
-column alone adds no schema; and how property-only, sort order,
-identifier and rolled-back updates land. [Glue
-behaviours](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md)
-lists each one with the integration-suite assertion that checks it,
-along with other behaviours the suites assert.
+`IcebergTable` relies on undocumented AWS Glue behaviors verified on v2 and v3 tables against Spark and Athena; see [docs/glue-behaviours.md](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md) for the observed list.
 
-### What the integration suites run
-
-The demo app in the [`arceus`](https://github.com/ksco92/arceus) repo
-registers its tables with Lake Formation, and its v2 integration suites
-query them through Athena as well as Spark, on the same tables:
-
-- merge-on-read `INSERT`, `UPDATE`, `DELETE` and `MERGE INTO`, time
-  travel (`FOR VERSION AS OF` / `FOR TIMESTAMP AS OF`), `OPTIMIZE ...
-  REWRITE DATA USING BIN_PACK`, and `VACUUM`;
-- a read after every schema, partition, identifier and nested-field
-  evolution step;
-- the `(PK) ` comment on identifier columns, read from
-  `information_schema.columns`;
-- rows written by Spark read through Athena, and rows written by Athena
-  read through Spark;
-- reads and writes through Spark and Athena as roles whose table
-  permissions come from `grantRead` and `grantReadWrite`, and a denied
-  write as the `grantRead` role.
-
-The suites grant the querying principal `SELECT`, `INSERT`, `DELETE`,
-`ALTER` and `DESCRIBE` through Lake Formation. See [Granting access](#granting-access).
-
-## Reference
-
-### Columns and field ids
-
-Every top-level column must declare an `id`: a stable, unique,
-positive integer ([The field id rules](#the-field-id-rules)). Nested
-fields follow the same rule: every struct field takes an `id`, every
-list an `elementId`, and every map a `keyId` and a `valueId`. All ids
-in a schema, top-level and nested, must be distinct integers from 1 to
-2147483447. That ceiling is `Integer.MAX_VALUE - 200`, the largest
-field id the Iceberg spec allows ([reserved field
-ids](https://iceberg.apache.org/spec/#reserved-field-ids)).
-
-#### Creation order
-
-Glue renumbers the fields on CREATE and points the partition spec,
-sort order and identifier fields at the new ids. To number a new
-table, number the top-level columns first, in order, then the nested
-fields of each column in turn (a list's element; a map's key, then its
-value, then the key's nested fields, then the value's; a struct's
-fields, then their nested fields).
-`IcebergTable.creationOrderFieldIds` returns these ids by field path
-and ignores the ids in its input:
+## Granting access
 
 ```typescript
-const columns = [
-    { name: 'id', type: IcebergType.LONG, required: true, id: 1 },
-    { name: 'tags', type: IcebergType.list({ element: IcebergType.STRING, elementId: 4 }), id: 2 },
-    {
-        name: 'attrs',
-        type: IcebergType.map({ key: IcebergType.STRING, keyId: 5, value: IcebergType.STRING, valueId: 6 }),
-        id: 3,
-    },
-];
-IcebergTable.creationOrderFieldIds(columns);
-// { id: 1, tags: 2, attrs: 3, 'tags.element': 4, 'attrs.key': 5, 'attrs.value': 6 }
-```
-
-### Partition fields
-
-Each partition field declares a `fieldId` and an
-`IcebergPartitionTransform`. The construct requires a `fieldId` of
-1000 or above; the [Iceberg
-spec](https://iceberg.apache.org/spec/#partition-evolution) says of
-that number: "In v1, partition field IDs were not tracked, but were
-assigned sequentially starting at 1000 in the reference
-implementation." `cdk synth` rejects a lower `fieldId` and validates
-the transform against the source column's type; [Exported
-types](#exported-types) lists the transforms. Number a new table's
-partition fields 1000, 1001 and up in `partitionSpec` order: at
-creation Glue assigns those ids and ignores the declared ones. A field
-added by a later deploy is stored under the `fieldId` it declares.
-
-### Identifier fields
-
-`identifierFieldNames` lists the columns that together identify a row
-and renders as the schema's `identifier-field-ids`. Each one must be a
-`required: true` column (Glue rejects an optional one), and `cdk synth`
-rejects an identifier column of type float, double, list, map, struct,
-unknown, variant, geometry or geography.
-
-The construct writes `(PK) ` at the start of each identifier column's
-`doc`, which is shown as the column comment (`(PK) ` alone when the
-column has no `doc`). Glue's `UpdateTable` reuses an earlier schema
-whose fields, `doc` included, match the request, together with that
-schema's `identifier-field-ids`; the marker makes every identifier
-change a field change. A `doc` you write must not start with `(PK) `.
-
-### Table properties
-
-`tableProperties` entries are passed to Glue as given, with two
-exceptions. The construct sets `format-version` and
-`write.format.default` itself, and a value you supply for either must
-agree with `formatVersion` or `dataFormat`. `comment` is set in one
-place only.
-
-### A table using most of the surface
-
-```typescript
-import {
-    RemovalPolicy,
-} from 'aws-cdk-lib';
-import {
-    Database,
-} from 'aws-cdk-lib/aws-glue';
-import {
-    IcebergDataFormat,
-    IcebergFormatVersion,
-    IcebergNullOrder,
-    IcebergPartitionTransform,
-    IcebergSortDirection,
-    IcebergTable,
-    IcebergType,
-} from 'cdk-glue-iceberg-table';
-
-new IcebergTable(this, 'OrdersTable', {
-    database: db,
-    tableName: 'orders',
-    comment: 'Demo Iceberg orders table — exercises partitions, sort order, and merge-on-read.',
-    columns: [
-        {
-            name: 'order_id',
-            type: IcebergType.LONG,
-            required: true,
-            id: 1,
-        },
-        {
-            name: 'customer_id',
-            type: IcebergType.LONG,
-            required: true,
-            id: 2,
-        },
-        {
-            name: 'order_amount',
-            type: IcebergType.decimal(12, 2),
-            required: true,
-            id: 3,
-        },
-        {
-            name: 'currency',
-            type: IcebergType.STRING,
-            required: true,
-            id: 4,
-        },
-        {
-            name: 'placed_at',
-            type: IcebergType.TIMESTAMPTZ,
-            required: true,
-            id: 5,
-        },
-        {
-            name: 'tags',
-            type: IcebergType.list({
-                element: IcebergType.STRING,
-                elementId: 9,
-            }),
-            id: 6,
-        },
-        {
-            name: 'shipping_address',
-            type: IcebergType.struct([
-                {
-                    id: 10,
-                    name: 'line1',
-                    type: IcebergType.STRING,
-                    required: true,
-                },
-                {
-                    id: 11,
-                    name: 'city',
-                    type: IcebergType.STRING,
-                    required: true,
-                },
-                {
-                    id: 12,
-                    name: 'country',
-                    type: IcebergType.STRING,
-                    required: true,
-                },
-                {
-                    id: 13,
-                    name: 'postal_code',
-                    type: IcebergType.STRING,
-                },
-            ]),
-            id: 7,
-        },
-        {
-            name: 'metadata',
-            type: IcebergType.map({
-                key: IcebergType.STRING,
-                keyId: 14,
-                value: IcebergType.STRING,
-                valueId: 15,
-            }),
-            id: 8,
-        },
-    ],
-    location: `s3://${bucket.bucketName}/analytics/orders/`,
-    partitionSpec: [
-        {
-            sourceColumn: 'placed_at',
-            transform: IcebergPartitionTransform.DAY,
-            fieldId: 1000,
-        },
-        {
-            sourceColumn: 'customer_id',
-            transform: IcebergPartitionTransform.bucket(16),
-            fieldId: 1001,
-        },
-    ],
-    sortOrder: [
-        {
-            sourceColumn: 'placed_at',
-            direction: IcebergSortDirection.ASC,
-            nullOrder: IcebergNullOrder.NULLS_LAST,
-        },
-        {
-            sourceColumn: 'order_id',
-            direction: IcebergSortDirection.ASC,
-        },
-    ],
-    identifierFieldNames: [
-        'order_id',
-    ],
-    dataFormat: IcebergDataFormat.PARQUET,
-    formatVersion: IcebergFormatVersion.V2,
-    tableProperties: {
-        'write.parquet.compression-codec': 'zstd',
-        'write.delete.mode': 'merge-on-read',
-        'write.update.mode': 'merge-on-read',
-        'write.merge.mode': 'merge-on-read',
-        'write.target-file-size-bytes': '134217728',
-        'history.expire.min-snapshots-to-keep': '5',
-        'gc.enabled': 'true',
-    },
-    removalPolicy: RemovalPolicy.DESTROY,
+const table = new IcebergTable(this, 'Orders', {
+    // ...
+    encryptionKey: bucketKey,        // KMS key encrypting the table's S3 bucket
+});
+table.grantRead(role);
+table.grantWrite(role);
+table.grantReadWrite(role, {
+    catalogEncryptionKey: catalogKey, // Glue Data Catalog SSE-KMS key
+    lakeFormationDataAccess: true,    // Athena / Lake Formation registered locations
 });
 ```
 
-For the default `removalPolicy`, see [Changes that replace or remove
-the table](#changes-that-replace-or-remove-the-table).
+Each method emits these IAM statements and no others:
 
-The resulting `metadata.json`:
+| Statement | `grantRead` | `grantWrite` | `grantReadWrite` | Resource |
+| --- | --- | --- | --- | --- |
+| Glue | `glue:BatchGetPartition`, `glue:GetDatabase`, `glue:GetPartition`, `glue:GetPartitions`, `glue:GetTable`, `glue:GetTables`, `glue:GetTableVersion`, `glue:GetTableVersions` | `glue:BatchCreatePartition`, `glue:BatchDeletePartition`, `glue:CreatePartition`, `glue:DeletePartition`, `glue:UpdatePartition`, `glue:UpdateTable` | both lists | catalog, database, and table ARNs in the stack account or [`catalogId`](#catalog-account-and-tokenized-table-names) |
+| S3 list | `s3:ListBucket` | none | `s3:ListBucket` | bucket ARN with condition `StringLike` `s3:prefix` = `<prefix>*` or `<prefix>` |
+| S3 bucket | `s3:GetBucketLocation` | `s3:ListBucketMultipartUploads` | both | bucket ARN |
+| S3 objects | `s3:GetObject` | `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts` | both lists | `<bucket>/<prefix>*` |
+| Table key (`encryptionKey`) | `kms:Decrypt` | `kms:Decrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:GenerateDataKey` | the key |
+| Catalog key (`catalogEncryptionKey`) | `kms:Decrypt` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | the key |
+| Lake Formation (`lakeFormationDataAccess: true`) | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `*` |
 
-```json
-{
-  "format-version": 2,
-  "table-uuid": "39a948f9-...",
-  "current-schema-id": 0,
-  "schemas": [
-    {
-      "schema-id": 0,
-      "identifier-field-ids": [1],
-      "fields": [
-        { "id": 1, "name": "order_id", "required": true, "type": "long", "doc": "(PK) " },
-        { "id": 2, "name": "customer_id", "required": true, "type": "long" },
-        { "id": 3, "name": "order_amount", "required": true, "type": "decimal(12, 2)" },
-        { "id": 4, "name": "currency", "required": true, "type": "string" },
-        { "id": 5, "name": "placed_at", "required": true, "type": "timestamptz" },
-        { "id": 6, "name": "tags", "required": false,
-          "type": { "type": "list", "element-id": 9, "element": "string", "element-required": false } },
-        { "id": 7, "name": "shipping_address", "required": false,
-          "type": { "type": "struct", "fields": [
-            { "id": 10, "name": "line1", "required": true, "type": "string" },
-            { "id": 11, "name": "city", "required": true, "type": "string" },
-            { "id": 12, "name": "country", "required": true, "type": "string" },
-            { "id": 13, "name": "postal_code", "required": false, "type": "string" }
-          ] } },
-        { "id": 8, "name": "metadata", "required": false,
-          "type": { "type": "map", "key-id": 14, "key": "string", "value-id": 15,
-                    "value-required": false, "value": "string" } }
-      ]
-    }
-  ],
-  "partition-specs": [
-    { "spec-id": 0, "fields": [
-      { "name": "placed_at_day",      "transform": "day",        "source-id": 5, "field-id": 1000 },
-      { "name": "customer_id_bucket", "transform": "bucket[16]", "source-id": 2, "field-id": 1001 }
-    ]}
-  ],
-  "sort-orders": [
-    { "order-id": 1, "fields": [
-      { "transform": "identity", "source-id": 5, "direction": "asc", "null-order": "nulls-last" },
-      { "transform": "identity", "source-id": 1, "direction": "asc", "null-order": "nulls-last" }
-    ]}
-  ],
-  "properties": {
-    "format-version": "2",
-    "write.format.default": "parquet",
-    "write.parquet.compression-codec": "zstd",
-    "write.merge.mode": "merge-on-read",
-    "write.update.mode": "merge-on-read",
-    "write.delete.mode": "merge-on-read",
-    "write.target-file-size-bytes": "134217728",
-    "history.expire.min-snapshots-to-keep": "5",
-    "gc.enabled": "true",
-    "comment": "Demo Iceberg orders table — exercises partitions, sort order, and merge-on-read."
-  }
-}
+KMS grants apply to the whole key (`IKey.grant` adds no encryption-context condition), so a shared bucket or catalog key grants access for everything it encrypts. `lakeformation:GetDataAccess` uses `*` because Lake Formation supports no resource ARN for that action; the construct issues it only when `lakeFormationDataAccess: true` is passed, allowing the principal to call `GetDataAccess` for tables authorized by Lake Formation.
+
+Lake Formation permissions (`AWS::LakeFormation::Permissions`) are declared separately:
+
+```typescript
+import { CfnPermissions } from 'aws-cdk-lib/aws-lakeformation';
+
+new CfnPermissions(this, 'OrdersReader', {
+    dataLakePrincipal: { dataLakePrincipalIdentifier: role.roleArn },
+    resource: {
+        tableResource: {
+            catalogId: this.account,
+            databaseName: table.database.databaseName,
+            name: table.tableName,
+        },
+    },
+    permissions: ['SELECT', 'DESCRIBE'], // add INSERT, DELETE, ALTER for writers
+});
 ```
+
+In Python, use `encryption_key`, `lake_formation_data_access`, and `catalog_encryption_key`.
+
+### CloudFormation deploying-role permissions
+
+The IAM role deploying a stack with `IcebergTable` (in CDK, the CloudFormation execution role passed via `iam:PassRole` on bootstrap roles) needs Glue database and table permissions (`CreateTable`, `UpdateTable`, `DeleteTable`, `GetTable`, `GetDatabase`), S3 read/write on the table `location` prefix (Glue writes `metadata.json` there on create and update) plus KMS permissions on any bucket or catalog encryption keys, and Lake Formation admin or table/data-location permissions if Lake Formation governs the location. See [docs/integ-test-setup.md](https://github.com/ksco92/arceus/blob/main/docs/integ-test-setup.md) for the complete IAM and Lake Formation setup used by the repository's integration stacks.
+
+## Reference
 
 ### Format version 3
 
-Set `formatVersion: IcebergFormatVersion.V3` to create a v3 table. The
-six v3 types (below) are only accepted on a V3 table, at any nesting
-depth: inside a struct, as a list element, or as a map key or value.
-Synth fails on a V1 or V2 table that uses one.
+Set `formatVersion: IcebergFormatVersion.V3` to create a v3 table. The six v3 types below are accepted only on V3 tables at any nesting depth; `cdk synth` rejects them on V1 or V2 tables.
 
 ```typescript
 import {
@@ -783,232 +380,141 @@ IcebergTable(self, "Events",
 )
 ```
 
-This table has a `timestamp_ns` column; see [Known limitations](#known-limitations)
-before reading it from upstream Spark.
-
-The v3 types, with the rules `cdk synth` enforces:
-
 | Type | Factory | Rendered string | Partition and identifier rules |
 | --- | --- | --- | --- |
-| unknown | `IcebergType.UNKNOWN` | `unknown` | Must be optional, as a column, list element, or map value; never a map key. Partition source only with `void`. Not an identifier field. |
-| timestamp with nanoseconds | `IcebergType.TIMESTAMP_NS` | `timestamp_ns` | `identity`, `year`, `month`, `day`, `hour`, `bucket(N)`, `void`; not `truncate(W)`. Allowed as an identifier field. |
-| timestamptz with nanoseconds | `IcebergType.TIMESTAMPTZ_NS` | `timestamptz_ns` | Same as `timestamp_ns`. |
+| unknown | `IcebergType.UNKNOWN` | `unknown` | Optional only (column, list element, or map value; never a map key). Partition source only with `void`. Not an identifier field. |
+| timestamp_ns | `IcebergType.TIMESTAMP_NS` | `timestamp_ns` | `identity`, `year`, `month`, `day`, `hour`, `bucket(N)`, `void`; not `truncate(W)`. Allowed as an identifier field. |
+| timestamptz_ns | `IcebergType.TIMESTAMPTZ_NS` | `timestamptz_ns` | Same as `timestamp_ns`. |
 | variant | `IcebergType.VARIANT` | `variant` | Never a partition or sort source, `void` included. Not an identifier field. |
-| geometry | `IcebergType.geometry(crs?)` | `geometry`, or `geometry(<crs>)` when a CRS is given | Partition source only with `void`. Not an identifier field. |
-| geography | `IcebergType.geography(crs?, algorithm?)` | `geography`, `geography(<crs>)`, or `geography(<crs>, <algorithm>)` when an algorithm is given, such as `geography(OGC:CRS84, spherical)` | Same as `geometry`. |
+| geometry | `IcebergType.geometry(crs?)` | `geometry`, or `geometry(<crs>)` | Partition source only with `void`. Not an identifier field. |
+| geography | `IcebergType.geography(crs?, algorithm?)` | `geography`, `geography(<crs>)`, or `geography(<crs>, <algorithm>)` | Same as `geometry`. Setting `algorithm` without `crs` spells out `OGC:CRS84`. |
 
-A geometry or geography `crs` is an identifier such as `OGC:CRS84` or
-`EPSG:3857`; whitespace, parentheses, braces, and commas are rejected.
-When `algorithm` is set without a `crs`, the rendered string spells out
-`OGC:CRS84`.
+Geometry and geography `crs` values must be non-empty identifiers (such as `OGC:CRS84` or `EPSG:3857`) with no whitespace, parentheses, braces, or commas.
 
 | Engine | v3 tables | Notes |
 | --- | --- | --- |
-| Spark 4.1.1 + Iceberg 1.11.0 (the integration-test runner) | Yes | Reads and writes tables the construct creates, including deletion vectors, row lineage, `variant` and `unknown`, except tables with a `geometry`, `geography` or nanosecond-timestamp column ([Known limitations](#known-limitations)). |
-| AWS Glue 6.0 | Documented | The [AWS Glue versions](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) page lists "Iceberg format version 3 with VARIANT data type, deletion vectors, row lineage tracking, nanosecond timestamps, and geo types". The integration suites run on Glue 6.0's Spark 4.1.1 and Iceberg 1.11.0 (`scripts/spark/spark-env.sh`); the Glue job runtime itself is not exercised. |
-| Amazon EMR Spark 8.1.0 (Spark 4.1.1, Iceberg 1.11.0-amzn-0) | Documented | The [emr-spark-8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) state "Amazon EMR Spark 8.1.0 extends Iceberg v3 spec support for Spark workloads". The integration suites do not run on EMR 8.1. |
-| Athena SQL | No | The [Athena Iceberg page](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states "Athena only creates and operates on Iceberg v2 tables." No v3 table is queried through Athena. |
+| Spark 4.1.1 + Iceberg 1.11.0 | Yes | Supports deletion vectors, row lineage, `variant`, and `unknown`; cannot open `timestamp_ns`, `timestamptz_ns`, `geometry`, or `geography` ([Known limitations](#known-limitations)). |
+| AWS Glue 6.0 | Documented | [AWS Glue release notes](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) list Iceberg v3 (`VARIANT`, deletion vectors, row lineage, nanosecond timestamps, geo types); shares the Spark/Iceberg versions above (`scripts/spark/spark-env.sh`), while the managed Glue job runtime itself is not exercised here. |
+| Amazon EMR Spark 8.1.0 | Documented | [EMR Spark 8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) list Iceberg v3 support; not exercised here. |
+| Athena SQL | No | [Athena Iceberg documentation](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states Athena operates only on Iceberg v2 tables. |
 
-### Granting access
+### Columns and field ids
 
-```typescript
-const table = new IcebergTable(this, 'Orders', {
-    // ...
-    encryptionKey: bucketKey,        // the key the table's bucket encrypts objects with
-});
-table.grantRead(role);
-table.grantWrite(role);
-table.grantReadWrite(role, {
-    catalogEncryptionKey: catalogKey, // the Data Catalog's SSE-KMS key
-    lakeFormationDataAccess: true,    // Athena on a location registered with Lake Formation
-});
-```
+Every top-level column takes an `id`, every struct field takes an `id`, every list takes `elementId`, and every map takes `keyId` and `valueId`. All ids in a schema must be distinct integers from `1` to `2147483447` (`Integer.MAX_VALUE - 200`, the [Iceberg reserved field ids](https://iceberg.apache.org/spec/#reserved-field-ids) ceiling).
 
-Each method issues these statements and no others:
+#### Creation order
 
-| Statement | `grantRead` | `grantWrite` | `grantReadWrite` | Resource |
-| --- | --- | --- | --- | --- |
-| Glue | `glue:BatchGetPartition`, `glue:GetDatabase`, `glue:GetPartition`, `glue:GetPartitions`, `glue:GetTable`, `glue:GetTables`, `glue:GetTableVersion`, `glue:GetTableVersions` | `glue:BatchCreatePartition`, `glue:BatchDeletePartition`, `glue:CreatePartition`, `glue:DeletePartition`, `glue:UpdatePartition`, `glue:UpdateTable` | both lists | the catalog, database and table ARNs, in the stack account or the [`catalogId`](#catalog-account-and-tokenized-table-names) |
-| S3 list | `s3:ListBucket` | none | `s3:ListBucket` | the bucket, with condition `StringLike` `s3:prefix` = `<prefix>*` or `<prefix>` |
-| S3 bucket | `s3:GetBucketLocation` | `s3:ListBucketMultipartUploads` | both | the bucket |
-| S3 objects | `s3:GetObject` | `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`, `s3:ListMultipartUploadParts` | both lists | `<bucket>/<prefix>*` |
-| Table key, when `encryptionKey` is set | `kms:Decrypt` | `kms:Decrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:GenerateDataKey` | the key |
-| Catalog key, when `catalogEncryptionKey` is passed | `kms:Decrypt` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey` | the key |
-| Lake Formation, when `lakeFormationDataAccess` is `true` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `lakeformation:GetDataAccess` | `*` |
-
-The KMS statements are on the whole key: `IKey.grant` adds no
-encryption-context condition, so a key shared with other data (a bucket
-or lake key, the catalog key) is covered for everything it encrypts,
-not only this table.
-
-`lakeformation:GetDataAccess` is the one statement on `*`, because Lake
-Formation supports no resource for it. It is issued only with
-`lakeFormationDataAccess: true`; with it, Lake Formation vends
-credentials for every table the principal holds Lake Formation
-permissions on, which includes tables open to `IAM_ALLOWED_PRINCIPALS`.
-
-Pass `catalogEncryptionKey` when the Data Catalog is encrypted with a
-customer managed key.
-
-Lake Formation permissions themselves (`AWS::LakeFormation::Permissions`)
-are yours to create:
+Glue numbers a new table's top-level columns first in declaration order, then each column's nested fields in turn (list element; map key, map value, key's nested fields, value's nested fields; struct fields, then their nested fields). `IcebergTable.creationOrderFieldIds(columns)` returns this path-to-id map regardless of the ids in `columns`:
 
 ```typescript
-import { CfnPermissions } from 'aws-cdk-lib/aws-lakeformation';
-
-new CfnPermissions(this, 'OrdersReader', {
-    dataLakePrincipal: { dataLakePrincipalIdentifier: role.roleArn },
-    resource: {
-        tableResource: {
-            catalogId: this.account,
-            databaseName: table.database.databaseName,
-            name: table.tableName,
-        },
+const columns = [
+    { name: 'id', type: IcebergType.LONG, required: true, id: 1 },
+    { name: 'tags', type: IcebergType.list({ element: IcebergType.STRING, elementId: 4 }), id: 2 },
+    {
+        name: 'attrs',
+        type: IcebergType.map({ key: IcebergType.STRING, keyId: 5, value: IcebergType.STRING, valueId: 6 }),
+        id: 3,
     },
-    permissions: ['SELECT', 'DESCRIBE'],
-});
+];
+IcebergTable.creationOrderFieldIds(columns);
+// { id: 1, tags: 2, attrs: 3, 'tags.element': 4, 'attrs.key': 5, 'attrs.value': 6 }
 ```
 
-Add `INSERT`, `DELETE` and `ALTER` for a principal that writes.
+### Partition fields
 
-In Python the prop is `encryption_key`, and the grant options are
-the keyword arguments `lake_formation_data_access` and
-`catalog_encryption_key`.
+Each partition field declares a `fieldId` of `1000` or above (matching the [Iceberg spec](https://iceberg.apache.org/spec/#partition-evolution) reference numbering) and an `IcebergPartitionTransform`. `cdk synth` validates `fieldId >= 1000` and transform-to-column compatibility. Number a new table's partition fields `1000`, `1001`, and up in `partitionSpec` order: Glue assigns those ids at creation and ignores declared ones, whereas fields added in later updates keep their declared `fieldId`.
 
-### Importing an existing table
+### Identifier fields
 
-`IcebergTable.fromIcebergTableAttributes` references an existing table
-so you can grant on it. It does not manage the table: CDK knows
-nothing of its schema or properties and changes neither.
+`identifierFieldNames` lists columns that together identify a row and renders as `schema.identifierFieldIds`. `cdk synth` enforces `required: true` on every identifier column and rejects types `float`, `double`, `list`, `map`, `struct`, `unknown`, `variant`, `geometry`, and `geography`.
+
+The construct prepends `(PK) ` to each identifier column's `doc` (`(PK) ` alone when `doc` is omitted), so user-supplied `doc` strings cannot start with `(PK) `. Because Glue's `UpdateTable` reuses an earlier schema whose fields (including `doc`) match the request, the marker ensures every identifier change produces a distinct schema change.
+
+### Table properties
+
+`tableProperties` entries are passed to Glue as given, except `format-version` and `write.format.default`, which are populated from `formatVersion` and `dataFormat` and must agree if repeated in `tableProperties`. Set the table description via either `comment` or `tableProperties['comment']`, not both. For v2 or v3 merge-on-read DML, set `write.delete.mode`, `write.update.mode`, and `write.merge.mode` to `'merge-on-read'` in `tableProperties`.
+
+### Adopting an existing table or migrating to raw CfnTable
+
+Use `IcebergTable.fromIcebergTableAttributes` to reference an existing table for grants (`grantRead`, `grantWrite`, `grantReadWrite`) without managing its schema or properties in CloudFormation:
 
 ```typescript
 const existing = IcebergTable.fromIcebergTableAttributes(this, 'Orders', {
     database: db,
     tableName: 'orders',
     location: 's3://my-bucket/analytics/orders/',
-    encryptionKey: bucketKey, // optional; grants then cover the key
-    catalogId: '111122223333', // optional; see below
+    encryptionKey: bucketKey, // optional
+    catalogId: '111122223333', // optional
 });
 existing.grantRead(role);
 ```
 
+To migrate an existing `IcebergTable` off this construct onto a raw `CfnTable` without replacing the Glue table, use the `table.resource` escape hatch (the underlying `CfnTable` child with construct id `'Resource'`, also exposed as `table.node.defaultChild`). Because `IcebergTable` nests its `CfnTable` under child id `'Resource'`, capture its CloudFormation logical ID from the synthesized template (or `stack.getLogicalId(table.resource)`) before removing `IcebergTable`, declare a `CfnTable` with the matching `openTableFormatInput.icebergInput` properties and `applyRemovalPolicy(...)`, and pass that logical ID to `raw.overrideLogicalId(logicalId)`:
+
+```typescript
+import { RemovalPolicy } from 'aws-cdk-lib';
+import { CfnTable } from 'aws-cdk-lib/aws-glue';
+
+// Capture `logicalId` from the existing stack (`stack.getLogicalId(table.resource)`) before replacing:
+const raw = new CfnTable(this, 'OrdersTable', {
+    catalogId: this.account,
+    databaseName: db.databaseName,
+    name: 'orders',
+    openTableFormatInput: { /* matching icebergInput shape */ },
+});
+raw.applyRemovalPolicy(RemovalPolicy.RETAIN);
+raw.overrideLogicalId(logicalId);
+```
+
+With matching properties, removal policy, and logical ID, the synthesized `AWS::Glue::Table` resource is identical to what `IcebergTable` emits, so `cdk deploy` leaves the Glue table untouched.
+
+### Preventing field-id reuse in team CI
+
+Because `IcebergTable` checks ids within one declaration only, teams can prevent accidental id reuse in CI by comparing each PR's synthesized `AWS::Glue::Table` template (`Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields` and `PartitionSpec.Fields`) against the live table's `metadata.json` (`last-column-id`, historical `schemas`, `last-partition-id`, and `partition-specs`, read from the S3 URI in Glue's `Table.Parameters.metadata_location`): fail CI if any newly added column or nested field reuses an id `<= last-column-id` or an id previously bound to a different field path/name in `schemas`, or if a changed partition field reuses an existing `field-id`. See [docs/field-ids.md](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md) for the exact `aws glue get-table` / `aws s3 cp` lookup commands.
+
 ### Catalog account and tokenized table names
 
-`catalogId` (Python `catalog_id`) on `IcebergTable` and on the import
-attributes is the account id of the Glue Data Catalog that holds the
-table. A literal is 12 digits; a string that contains a token
-(`Stack.of(this).account`, `Aws.ACCOUNT_ID`, a `CfnParameter`) is used
-as given. Omitting it changes nothing: the table is
-created in the stack's account and `tableArn` and every grant keep
-their policies. When set, it is the table's `CatalogId` and the account
-in the catalog, database and table ARNs of `tableArn` and of every
-grant; the database ARN is then built from `database.databaseName` and
-that account, whatever account the `IDatabase` names. The database must
-already exist in that catalog: a `Database` construct in the stack
-creates one in the stack's account. The construct does not set up
-cross-account access: the resource policy of the catalog, the Lake
-Formation permissions and the IAM permissions of the deploying role in
-that account are yours.
+`catalogId` (`catalog_id` in Python) on `IcebergTable` and `IcebergTableAttributes` sets the target Glue Data Catalog account (12 digits if literal, or a CDK token). When omitted, the stack's account is used; when set, `CatalogId`, `tableArn`, and all grant database/table/catalog ARNs use that account (the database must already exist in that catalog, and cross-account catalog/Lake Formation/IAM policies remain yours to configure).
 
-`tableName` may be a token, such as a `CfnParameter` or a cross-stack
-reference. A literal is checked against `^[a-z0-9_]+$`. A string that
-contains a token, with or without literal text around it, is not
-checked and is rendered as given in the template and in the table ARN,
-for `tableName` and `catalogId` alike, so its deploy-time value is the
-deployer's responsibility. A `tableName` of `*` would make
-every grant on the table cover every table in the database.
+`tableName` accepts a lowercase `[a-z0-9_]+` literal or a CDK token (such as `CfnParameter` or cross-stack reference). Tokens are not validated at synth time; avoid resolving `tableName` to `*`, which would widen grants across every table in the database.
 
 ### Exported types
 
-The types you import from `cdk-glue-iceberg-table` (in Python, from
-the `cdk_glue_iceberg_table` module):
+All symbols exported by `cdk-glue-iceberg-table` (in Python, `cdk_glue_iceberg_table`):
 
-- **`IcebergTable`** — the L2 construct itself, with `grantRead` / `grantWrite` / `grantReadWrite` (each taking an optional `IcebergTableGrantOptions`), the `fromIcebergTableAttributes(...)` import factory, and `creationOrderFieldIds(columns)` (Python: `creation_order_field_ids`), which returns a map from field path to the id Glue gives that field in a new table; a name containing `.` or a backquote appears in backquotes.
-- **`IcebergType`** — primitive types, the v3 constants `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, and `VARIANT`, and the `list` / `map` / `struct` / `decimal` / `fixed` / `geometry(crs?)` / `geography(crs?, algorithm?)` factories. `list` takes an `IcebergListDefinition`, `map` an `IcebergMapDefinition`, and `struct` a list of `IcebergStructFieldDefinition`, each carrying the nested field ids. Renders to the string Glue's `IcebergStructField.type` expects.
-- **`IcebergPartitionTransform`** — identity / `bucket(N)` / `truncate(W)` / year / month / day / hour / void. Each transform validates against the source column type at synth time.
-- **`IcebergDataFormat`** (parquet/orc/avro, default parquet), **`IcebergFormatVersion`** (v1/v2/v3, required — set explicitly per table), **`IcebergSortDirection`**, **`IcebergNullOrder`**, **`IcebergEdgeAlgorithm`** (`SPHERICAL`, `VINCENTY`, `THOMAS`, `ANDOYER`, `KARNEY`; the second argument of `IcebergType.geography`).
+- **`IcebergTable`**: the L2 construct, exposing `tableArn`, `tableName`, `database`, `location`, `encryptionKey`, `dataFormat`, `formatVersion`, `resource` (the underlying `CfnTable` child `'Resource'`), `grantRead` / `grantWrite` / `grantReadWrite`, `fromIcebergTableAttributes(...)`, and `creationOrderFieldIds(columns)` (`creation_order_field_ids` in Python; names containing `.` or `` ` `` are backquoted).
+- **`IIcebergTable`**: public interface implemented by `IcebergTable` and tables returned by `fromIcebergTableAttributes`.
+- **`IcebergTableProps`**: constructor properties interface for `IcebergTable`.
+- **`IcebergTableAttributes`**: attributes interface for `IcebergTable.fromIcebergTableAttributes`.
+- **`IcebergTableGrantOptions`**: options interface for grant methods (`lakeFormationDataAccess`, `catalogEncryptionKey`).
+- **`IcebergColumn`**: top-level column definition (`name`, `type`, `id`, optional `required`, `doc`).
+- **`IcebergPartitionField`**: partition spec entry (`sourceColumn`, `transform`, `fieldId`, optional `name`).
+- **`IcebergSortField`**: write-order entry (`sourceColumn`, optional `transform`, `direction`, `nullOrder`).
+- **`IcebergType`**: type constants and factories (`BOOLEAN`, `INT`, `LONG`, `FLOAT`, `DOUBLE`, `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMPTZ`, `STRING`, `UUID`, `BINARY`, `UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, `VARIANT`, `decimal`, `fixed`, `list`, `map`, `struct`, `geometry`, `geography`) with private constructor and `kind: IcebergTypeKind`.
+- **`IcebergTypeKind`**: enum discriminator for `IcebergType` (for example, `type.kind === IcebergTypeKind.DECIMAL`).
+- **`IcebergListDefinition`**, **`IcebergMapDefinition`**, **`IcebergStructFieldDefinition`**: nested-type definitions carrying element, key, value, and struct field ids.
+- **`IcebergEdgeAlgorithm`**: geography edge-interpolation algorithm enum (`SPHERICAL`, `VINCENTY`, `THOMAS`, `ANDOYER`, `KARNEY`).
+- **`IcebergPartitionTransform`**: transform constants and factories (`IDENTITY`, `YEAR`, `MONTH`, `DAY`, `HOUR`, `VOID`, `bucket(N)`, `truncate(W)`) with private constructor, `kind: IcebergPartitionTransformKind`, and `toTransformString()`.
+- **`IcebergPartitionTransformKind`**: enum discriminator for `IcebergPartitionTransform` (for example, `transform.kind === IcebergPartitionTransformKind.BUCKET`).
+- **`IcebergDataFormat`**: data-file format enum (`PARQUET`, `ORC`, `AVRO`; defaults to `PARQUET`).
+- **`IcebergFormatVersion`**: Iceberg format version enum (`V1`, `V2`, `V3`; required on `IcebergTable`).
+- **`IcebergSortDirection`**: sort direction enum (`ASC`, `DESC`).
+- **`IcebergNullOrder`**: null-ordering enum (`NULLS_FIRST`, `NULLS_LAST`).
 
 ## Known limitations
 
-**Rules the construct does not check.**
-
-- **At creation Glue numbers a new table's columns and partition fields itself, whatever ids are declared** ([creation order](#creation-order), [partition fields](#partition-fields)).
-- **A reused field id is not detected.** The construct is stateless about field ids; see [The field id rules](#the-field-id-rules).
-- **`merge-on-read` on a v1 table is not caught.** The construct does not check `write.{delete,update,merge}.mode`; set `merge-on-read` only on a v2 or later table.
-
-**What Glue and CloudFormation do.**
-
-- **Mixing CDK-managed and engine-managed partition evolution needs a check of `last-partition-id`.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The integration suites assert the counter is at least the highest supplied field id after a partition evolution ([pinned](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md)), but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter. If you mix the two, verify the counter in `metadata.json` before trusting engine-side changes.
-- **Removing the last identifier from a table created with identifiers before 0.11.0 can bring the old ids back.** That table's history holds an unmarked schema with ids, and Glue reuses it when the rendered fields match it again. Change a column `doc` in the same deploy that removes the last identifier.
-- **Every deploy that changes a table without replacing it goes through Glue's `UpdateTable`.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that.
-- **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property. Revisit when that schema gains the two properties.
-- **Athena DDL features that don't surface through CFN are not exposed** (e.g. `ALTER TABLE … SET LOCATION`, `bucketed_by` / `bucket_count` Hive clauses). Use `IcebergPartitionTransform.bucket(N)` instead of Hive bucketing.
-
-**Engines and v3 types.**
-
-- **Spark 4.1.1 with Iceberg 1.11.0 cannot convert a nanosecond timestamp column, so such a table is catalog-only there.** In [`TypeToSparkType`](https://github.com/apache/iceberg/blob/apache-iceberg-1.11.0/spark/v4.1/spark/src/main/java/org/apache/iceberg/spark/TypeToSparkType.java) at the `apache-iceberg-1.11.0` tag, `primitive()` has no case for the `TIMESTAMP_NANO` type id, so a table with a `timestamp_ns` or `timestamptz_ns` column reaches the `Cannot convert unsupported type to Spark` error. The integration suite asserts these columns from `metadata.json` only.
-- **Spark 4.1.1 with Iceberg 1.11.0, the versions AWS Glue 6.0 ships, cannot read geometry and geography columns, so such a table is catalog-only there.** The first Spark read of a table holding a `geography` and a `geometry` column failed with `UnsupportedOperationException: Cannot convert unsupported type to Spark: geography(OGC:CRS84, spherical)` on those versions. [`TypeToSparkType`](https://github.com/apache/iceberg/blob/apache-iceberg-1.11.0/spark/v4.1/spark/src/main/java/org/apache/iceberg/spark/TypeToSparkType.java) at the `apache-iceberg-1.11.0` tag has no conversion for `geometry` either. The integration suite deploys these columns on a table no Spark job opens and asserts them from `metadata.json` only.
-
-## FAQ
-
-### How do I create an Apache Iceberg table in AWS CDK?
-
-Install `cdk-glue-iceberg-table`, then declare an `IcebergTable` with
-a database, a column list, and an S3 `location`; `cdk deploy` creates
-it as a plain `AWS::Glue::Table`. See [Quick start](#quick-start).
-
-### How do I evolve an Iceberg table schema (add, rename, or drop a column) in CloudFormation?
-
-Change the `columns` array and run `cdk deploy` again. The ids you
-declare must follow [The field id rules](#the-field-id-rules). See
-[Evolving a table](#evolving-a-table).
-
-### Does CloudFormation support Iceberg tables natively?
-
-Yes, through `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput`.
-Two hand-written variants of it go wrong, and the construct emits
-neither; see [Why a raw CfnTable goes
-wrong](#why-a-raw-cfntable-goes-wrong).
-
-### What is the difference between cdk-glue-iceberg-table and a raw CfnTable?
-
-A raw `CfnTable` makes you hand-write the `OpenTableFormatInput` JSON
-and avoid the two shapes under [Why a raw CfnTable goes
-wrong](#why-a-raw-cfntable-goes-wrong) yourself; this construct gives
-a typed API with synth-time validation, field ids you declare, and
-`grantRead` / `grantWrite`. See [How it compares](#how-it-compares).
-
-### How do I create a partitioned Iceberg table in CDK?
-
-Pass a `partitionSpec` of `IcebergPartitionTransform` entries. See
-[Partition fields](#partition-fields).
-
-### Does it work with Athena and Lake Formation?
-
-Yes for v2 tables: the integration suites query tables registered with
-Lake Formation through Athena and Spark ([what the suites
-run](#what-the-integration-suites-run)). Athena cannot query v3 tables
-([engine matrix](#format-version-3)).
-
-### Can I use Iceberg v2 merge-on-read (row-level UPDATE and DELETE)?
-
-Yes. Set `formatVersion: IcebergFormatVersion.V2` and the
-`write.{delete,update,merge}.mode = merge-on-read` table properties;
-the construct does not check them ([Known
-limitations](#known-limitations)).
-
-### Can I create an Iceberg v3 table?
-
-Yes. Set `formatVersion: IcebergFormatVersion.V3`; see [Format
-version 3](#format-version-3) for the types, the engine matrix and the
-limits.
+- **Creation-time numbering:** Glue ignores declared column and partition ids on `CREATE` and numbers columns in creation order and partition fields from `1000` ([Creation order](#creation-order), [Partition fields](#partition-fields)).
+- **Stateless field-id validation:** `IcebergTable` checks ids within one declaration only and cannot detect cross-deploy id reuse ([The field id rules](#the-field-id-rules)).
+- **Merge-on-read on v1:** `write.{delete,update,merge}.mode = merge-on-read` is not rejected at synth on `IcebergFormatVersion.V1`; set it only on v2 or v3 tables.
+- **Mixed CDK and engine partition evolution:** check `last-partition-id` in `metadata.json` before running engine-side `ALTER TABLE ... ADD PARTITION FIELD` after CDK partition updates.
+- **Pre-0.11.0 identifier removal:** tables created with identifiers before 0.11.0 lack `(PK) ` markers in their earliest schema, so removing the last identifier without changing another column's `doc` restores the old schema with ids.
+- **Update mechanism:** every non-replacing deploy emits `metadataOperation: 'CREATE'` (the only value CloudFormation's `IcebergInput` accepts), which CloudFormation passes through Glue's `UpdateTable`.
+- **Column defaults and Athena DDL-only clauses:** Iceberg v3 `initial-default` / `write-default` and Hive/Athena-only clauses (`ALTER TABLE ... SET LOCATION`, `bucketed_by`) are not exposed by `AWS::Glue::Table` (use `IcebergPartitionTransform.bucket(N)`).
+- **Spark v3 type support:** Spark and Iceberg at the versions listed under [Format version 3](#format-version-3) lack `TypeToSparkType` conversion for `timestamp_ns`, `timestamptz_ns`, `geometry`, and `geography` (`Cannot convert unsupported type to Spark`), so tables with those columns are catalog-only in those runtimes.
 
 ## Contributing
 
-The package is developed in the [`ksco92/arceus`](https://github.com/ksco92/arceus)
-monorepo, which also holds a CDK demo app that deploys the construct to
-a real AWS account. Development, the monorepo layout, and the demo app
-live in [CONTRIBUTING.md](https://github.com/ksco92/arceus/blob/main/CONTRIBUTING.md).
+The package is developed in the [`ksco92/arceus`](https://github.com/ksco92/arceus) monorepo alongside a CDK demo and integration suite. Build/test instructions, CI and release gates, and the demo stacks live in [CONTRIBUTING.md](https://github.com/ksco92/arceus/blob/main/CONTRIBUTING.md).
 
 ## License
 
