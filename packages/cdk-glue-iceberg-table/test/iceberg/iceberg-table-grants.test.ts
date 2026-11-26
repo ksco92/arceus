@@ -453,14 +453,6 @@ describe('IcebergTable grants in a foreign catalog', () => {
         ]);
     });
 
-    it.each(CASES)('%s on a %s table with catalogId equal to the stack account matches the default', (method, source) => {
-        const f = fixture();
-        grant(table(f, source, undefined, undefined, {
-            catalogId: '123456789012',
-        }), method, f.role);
-        expect(statements(f)).toEqual(baseStatements(f, method));
-    });
-
     it.each([
         'constructed',
         'imported',

@@ -262,6 +262,7 @@ describe('against a git repository', () => {
         git('init', '-q', '-b', 'main');
         git('config', 'user.email', 'a@example.com');
         git('config', 'user.name', 'a');
+        git('config', 'commit.gpgsign', 'false');
         write(MANIFEST, JSON.stringify(manifest('0.22.1')));
         write('package-lock.json', JSON.stringify(lock('0.22.1')));
         write('docs/table.ts', 'export const x = 1;\n'.repeat(20));
