@@ -402,7 +402,7 @@ export class IcebergType {
                 this.mapValueId = options.mapValueId;
                 this.mapValueRequired = options.mapValueRequired ?? false;
                 break;
-            case IcebergTypeKind.STRUCT:
+            case IcebergTypeKind.STRUCT: {
                 if (options.structFields === undefined || options.structFields.length === 0) {
                     throw new Error('struct requires at least one structField');
                 }
@@ -415,6 +415,7 @@ export class IcebergType {
                 }
                 this.structFields = options.structFields;
                 break;
+            }
             case IcebergTypeKind.GEOMETRY:
             case IcebergTypeKind.GEOGRAPHY:
                 if (options.geoCrs !== undefined && !/^[^\s(){},]+$/.test(options.geoCrs)) {
