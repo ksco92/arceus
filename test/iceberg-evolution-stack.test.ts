@@ -474,6 +474,22 @@ describe('IcebergEvolutionStack — Glue observation tables', () => {
             Name: before.Name,
         }).toEqual(before);
     });
+
+    it('decimal_test declares amount as decimal(10, 2)', () => {
+        expect(icebergInputAt(1, 'decimal_test').Schema.Fields).toEqual([
+            expect.objectContaining({
+                Name: 'amount',
+                Type: 'decimal(10, 2)',
+            }),
+        ]);
+    });
+
+    it('create_partition_id_test pins non-default partition field ids [1005, 1000]', () => {
+        expect(partitionsAt(1, 'create_partition_id_test').map((field) => field.FieldId)).toEqual([
+            1005,
+            1000,
+        ]);
+    });
 });
 
 describe('IcebergEvolutionStack — unmarked identifier tables', () => {
