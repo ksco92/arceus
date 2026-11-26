@@ -5,6 +5,7 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 ## Unreleased
 
 - (breaking) `IcebergType` and `IcebergPartitionTransform` constructors are now private (`IcebergTypeOptions` and `IcebergPartitionTransformOptions` are no longer exported), and `IcebergTable` no longer checks `formatVersion` and `dataFormat` enum membership at runtime.
+- (patch) The README's "Evolving a table" section lists the v2 type promotions (`int` to `long`, `float` to `double`, `decimal(10, 2)` to `decimal(12, 2)`) and nullability relaxation (`required: true` to `false`) that the evolution suite deploys alongside the v3 promotions.
 - (patch) Complete `@param` and `@returns` JSDoc tags on public `IcebergTable`, `IcebergType`, and `IcebergPartitionTransform` methods and enforce them via `eslint-plugin-jsdoc`.
 - (patch) The README and the `fieldId` doc comment state that Glue numbers a new table's partition fields 1000, 1001 and up in spec order and ignores the declared `fieldId`s; the README also lists the `decimal(P, S)` and partition-spec reuse behaviours among those the suites assert.
 - (patch) The README no longer advises removing a partition field before dropping its source column (`SELECT *` and `SELECT count(*)` fail in Athena either way), describes a reused `fieldId` without Trino and quotes the Iceberg spec on field id 1000; the `fieldId` doc comment drops Trino too.

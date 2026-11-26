@@ -227,9 +227,11 @@ The construct passes the new schema to Glue's `UpdateTable`, which
 writes a new `metadata.json` with a new `schema-id`. Existing data
 files stay readable while the ids follow [rule 2](#the-field-id-rules).
 Adds, renames (same `id`, new `name`) and drops all go through `cdk
-deploy` alone. On a v3 table the suites also deploy two type
-promotions, `unknown` to `string` and `date` to `timestamp`; no suite
-deploys any other type change.
+deploy` alone. On a v2 table the suites also deploy type promotions
+(`int` to `long`, `float` to `double`, `decimal(10, 2)` to
+`decimal(12, 2)`) and nullability relaxation (`required: true` to
+`false`), and on a v3 table `unknown` to `string` and `date` to
+`timestamp`; no suite deploys narrowing or incompatible type changes.
 
 ### Nested fields
 

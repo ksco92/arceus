@@ -133,7 +133,7 @@ export class IcebergEvolutionStack extends Stack {
             tableId: string,
             name: string,
             tableProps: Omit<IcebergTableProps, 'database' | 'tableName' | 'formatVersion' | 'location'>
-                & Partial<Pick<IcebergTableProps, 'tableName' | 'formatVersion'>>,
+                & Partial<Pick<IcebergTableProps, 'tableName' | 'formatVersion' | 'location'>>,
         ) => new IcebergTable(this, tableId, {
             database: importedDatabase,
             tableName: name,
@@ -314,6 +314,13 @@ export class IcebergEvolutionStack extends Stack {
             columns: ID_V_COLUMNS,
             tableProperties: step >= 2 ? COMMIT_RETRIES : undefined,
         });
+        const v2PromotionTable = icebergTable('V2PromotionTable', 'v2_promotion_test', {
+            columns: buildV2PromotionColumns(step),
+        });
+        const locationChangeTable = icebergTable('LocationChangeTable', 'location_change_test', {
+            location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/location_change_test/${step >= 2 ? 'v2' : 'v1'}/`,
+            columns: ID_V_COLUMNS,
+        });
 
         const grants: IcebergTable[] = [
             table,
@@ -335,6 +342,8 @@ export class IcebergEvolutionStack extends Stack {
             engineColumnOtherIdTable,
             engineUpgradeTable,
             engineUpgradeV2Table,
+            v2PromotionTable,
+            locationChangeTable,
         ];
         const grant = (id: string, tableName: string, target: CfnTable) => {
             const permission = new CfnPermissions(this, `${id}Permission`, {
@@ -542,10 +551,8 @@ function buildPartitionSpec(step: number): IcebergPartitionField[] {
         transform: IcebergPartitionTransform.DAY,
         fieldId: 1000,
     };
-    /// `customer_id` is partitioned via `bucket(8)` from step 3 onward,
-    /// and removed in step 4. The transform deliberately targets a
-    /// column that is NEVER dropped, so partition evolution proves out
-    /// independently of column-drop semantics.
+    /// `customer_id` gains `bucket(8)` in step 3 and drops it in step 4
+    /// while staying in the schema.
     const customerBucketPartition: IcebergPartitionField = {
         sourceColumn: 'customer_id',
         transform: IcebergPartitionTransform.bucket(8),
@@ -626,6 +633,40 @@ function buildDropSourceTable(step: number, columnDropStep: number): Pick<Iceber
             ...catPartition,
         ],
     };
+}
+
+/// Step 2 widens `n`, `f`, and `d` and relaxes `req` from required to optional.
+function buildV2PromotionColumns(step: number): IcebergColumn[] {
+    const promoted = step >= 2;
+    return [
+        {
+            name: 'id',
+            type: IcebergType.LONG,
+            required: true,
+            id: 1,
+        },
+        {
+            name: 'n',
+            type: promoted ? IcebergType.LONG : IcebergType.INT,
+            id: 2,
+        },
+        {
+            name: 'f',
+            type: promoted ? IcebergType.DOUBLE : IcebergType.FLOAT,
+            id: 3,
+        },
+        {
+            name: 'd',
+            type: promoted ? IcebergType.decimal(12, 2) : IcebergType.decimal(10, 2),
+            id: 4,
+        },
+        {
+            name: 'req',
+            type: IcebergType.STRING,
+            required: !promoted,
+            id: 5,
+        },
+    ];
 }
 
 /// Athena adds `w` to the engine column tables after step 1; step 2 declares it under `wId`.
