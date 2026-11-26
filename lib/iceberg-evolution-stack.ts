@@ -50,11 +50,10 @@ const ID_CAT_V_COLUMNS: IcebergColumn[] = [
         id: 3,
     },
 ];
-const ID_V_IDENTIFIER_COLUMNS: IcebergColumn[] = [
+const ID_V_COLUMNS: IcebergColumn[] = [
     {
         name: 'id',
         type: IcebergType.LONG,
-        required: true,
         id: 1,
     },
     {
@@ -62,6 +61,13 @@ const ID_V_IDENTIFIER_COLUMNS: IcebergColumn[] = [
         type: IcebergType.STRING,
         id: 2,
     },
+];
+const ID_V_IDENTIFIER_COLUMNS: IcebergColumn[] = [
+    {
+        ...ID_V_COLUMNS[0],
+        required: true,
+    },
+    ID_V_COLUMNS[1],
 ];
 const COMMIT_RETRIES = {
     'commit.retry.num-retries': '5',
@@ -188,18 +194,7 @@ export class IcebergEvolutionStack extends Stack {
             tableName: step >= 9 ? new CfnParameter(this, 'ParameterNameTableName', {
                 default: 'parameter_name_test',
             }).valueAsString : 'parameter_name_test',
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-                {
-                    name: 'v',
-                    type: IcebergType.STRING,
-                    id: 2,
-                },
-            ],
+            columns: ID_V_COLUMNS,
         });
 
         const renumberTable = icebergTable('RenumberTable', 'renumber_test', {
@@ -220,18 +215,7 @@ export class IcebergEvolutionStack extends Stack {
 
         const formatVersionTable = icebergTable('FormatVersionTable', 'format_version_test', {
             formatVersion: step >= 2 ? IcebergFormatVersion.V3 : IcebergFormatVersion.V2,
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-                {
-                    name: 'v',
-                    type: IcebergType.STRING,
-                    id: 2,
-                },
-            ],
+            columns: ID_V_COLUMNS,
         });
 
         const decimalTable = icebergTable('DecimalTable', 'decimal_test', {
@@ -312,6 +296,25 @@ export class IcebergEvolutionStack extends Stack {
             ));
         }
 
+        const engineColumnTable = icebergTable('EngineColumnTable', 'engine_column_test', {
+            columns: ID_V_COLUMNS,
+            tableProperties: step >= 3 ? COMMIT_RETRIES : undefined,
+        });
+        const engineColumnDeclaredTable = icebergTable('EngineColumnDeclaredTable', 'engine_column_declared_test', {
+            columns: buildEngineColumns(step, 3),
+        });
+        const engineColumnOtherIdTable = icebergTable('EngineColumnOtherIdTable', 'engine_column_other_id_test', {
+            columns: buildEngineColumns(step, 4),
+        });
+        const engineUpgradeTable = icebergTable('EngineUpgradeTable', 'engine_upgrade_test', {
+            formatVersion: step >= 2 ? IcebergFormatVersion.V3 : IcebergFormatVersion.V2,
+            columns: ID_V_COLUMNS,
+        });
+        const engineUpgradeV2Table = icebergTable('EngineUpgradeV2Table', 'engine_upgrade_v2_test', {
+            columns: ID_V_COLUMNS,
+            tableProperties: step >= 2 ? COMMIT_RETRIES : undefined,
+        });
+
         const grants: IcebergTable[] = [
             table,
             nestedTable,
@@ -327,6 +330,11 @@ export class IcebergEvolutionStack extends Stack {
             reusedPartitionIdTable,
             unmarkedIdentifierTable,
             unmarkedIdentifierDocTable,
+            engineColumnTable,
+            engineColumnDeclaredTable,
+            engineColumnOtherIdTable,
+            engineUpgradeTable,
+            engineUpgradeV2Table,
         ];
         const grant = (id: string, tableName: string, target: CfnTable) => {
             const permission = new CfnPermissions(this, `${id}Permission`, {
@@ -618,6 +626,21 @@ function buildDropSourceTable(step: number, columnDropStep: number): Pick<Iceber
             ...catPartition,
         ],
     };
+}
+
+/// Athena adds `w` to the engine column tables after step 1; step 2 declares it under `wId`.
+function buildEngineColumns(step: number, wId: number): IcebergColumn[] {
+    if (step < 2) {
+        return ID_V_COLUMNS;
+    }
+    return [
+        ...ID_V_COLUMNS,
+        {
+            name: 'w',
+            type: IcebergType.STRING,
+            id: wId,
+        },
+    ];
 }
 
 /// `partition_id_test` adds a field under 1005 at step 2, above the next

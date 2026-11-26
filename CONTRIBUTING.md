@@ -143,7 +143,7 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 
 - **`ci.yml`** runs on every PR — lints, runs the package unit tests with the 95% coverage gate, builds with `jsii`, builds the Python distribution with `jsii-pacmak`, installs the wheel into a virtual environment and runs the README's Python examples against it with `test/python-smoke/smoke.py`, runs `npm pack` on the package, runs the `release-policy` check described under "Changelog lines and releases", synths the `e2e-consumer` app against the pinned published npm version, installs the PR's own `npm pack` tarball into the `packed-consumer` fixture and synthesizes it, and reruns the package unit tests with `aws-cdk-lib` and `constructs` installed at the package's declared peer floors.
 - **`publish.yml`** runs on push to `main` and on manual dispatch. A `check` job compares the package version with npm and PyPI; when either differs, a `build` job with read-only permissions lints, tests, builds the npm tarball and the Python distribution, and uploads both as artifacts. `publish-npm` (npm OIDC trusted publishing, `--provenance`) and `publish-pypi` (PyPI OIDC trusted publishing) each run only when their own registry's version differs; only these two jobs hold `id-token: write`. Both declare the `release` environment. Publishing is limited to `main` only while that environment's deployment branches are limited to `main` (a repository setting) and the trusted publishers on npmjs.com and pypi.org name environment `release` (registry settings); neither registry binds a branch. A `github-release` job, the only one with `contents: write`, then creates a GitHub release whose notes are that version's section of `CHANGELOG.md`, with the tag `v<version>` on the commit the run built unless the tag exists; it runs only when the run published to at least one registry and every publish job that ran succeeded, and does nothing when the release already exists. A merge that leaves `version` alone runs `check` alone and publishes nothing, and a not-yet-configured PyPI trusted publisher never blocks the npm publish.
-- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (twelve `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, a property-only update, a sort order change and a rolled-back deploy, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and reads and writes through Spark and Athena as roles holding `grantRead` and `grantReadWrite`), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. The paths that require a green run before merging are listed in `.github/integ-trigger-set.txt` (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs").
+- **`integ-test.yml`** is the real-AWS gate. It installs the pinned Spark toolchain, runs `scripts/integration-test-spark-smoke.sh` (one deploy, then an INSERT and a count through Spark), and then runs five scripts back-to-back: `scripts/integration-test-evolution.sh` (twelve `cdk deploy`s exercising schema, partition, identifier and nested-field evolution, a property-only update, a sort order change, a rolled-back deploy, deploys after an engine `ALTER TABLE`, and a rename that replaces a table at its `location`, read through Spark and Athena after each), `scripts/integration-test-dml.sh` (one deploy, then UPDATE / DELETE / MERGE / time travel / compaction / snapshot expiry through Spark and then through Athena against a v2 merge-on-read table, with each engine reading the other's rows), `scripts/integration-test-surface.sh` (one deploy, then every partition transform, multi-field sort order, nested-type roundtrip through Spark and Athena, the field ids Glue stores at creation, and reads and writes through Spark and Athena as roles holding `grantRead` and `grantReadWrite`), `scripts/integration-test-v3-evolution.sh` (four `cdk deploy`s of a v3 table, asserted from `metadata.json`), and `scripts/integration-test-v3-dml.sh` (one deploy, then Spark DML, row lineage, and a v2→v3 upgrade against v3 tables). Gated by the `run-integ-test` label or a `/run-integ-test` collaborator comment. The paths that require a green run before merging are listed in `.github/integ-trigger-set.txt` (see [CLAUDE.md](CLAUDE.md) §"Integration test for construct-touching PRs").
 - **`integ-gate.yml`** posts the `integ-gate` commit status on each PR to `main`; see [docs/integ-test-setup.md](docs/integ-test-setup.md).
 
 ## Changelog lines and releases
@@ -252,7 +252,7 @@ npm install
 npm test                                  # package + demo stack tests
 npx cdk deploy ArceusStack --require-approval=never
 scripts/spark/install-spark.sh               # Spark toolchain for the Spark checks between deploys
-./scripts/integration-test-evolution.sh   # add + rename + drop + partition, identifier and nested-field change via cdk, Spark checks between deploys
+./scripts/integration-test-evolution.sh   # add + rename + drop + partition, identifier and nested-field change via cdk, deploys after an engine ALTER TABLE, a rename that replaces a table at its location, Spark checks between deploys
 ```
 
 `cdk ls` will show seven stacks: `ArceusStack` (the demo data lake +
@@ -303,7 +303,7 @@ Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`; the paragraphs below describe the other
 tables.
 
-The stack owns fifteen tables, and step 11 declares a sixteenth,
+The stack owns twenty tables, and step 11 declares a twenty-first,
 `table_input_test`, that fails to create. `evolution_test` changes in
 steps 1 to 6 and 9 to 12. `nested_evolution_test` is created in step 1
 and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
@@ -317,7 +317,12 @@ column in step 3; Spark and Athena read it after step 3.
 `partition_id_test` adds a partition field in step 2 and another in
 step 3; the script reads its `metadata.json` after each.
 `parameter_name_test` takes its name from a parameter from step 9;
-Athena reads it after step 9.
+Athena reads it after step 9. Step 10 passes that parameter the value
+`parameter_name_replaced_test`, which replaces the table at the same
+`location`, and later steps keep the value; the script reads the
+replacement's `metadata.json`, the stack's events and the objects under
+the old table's `location`, and Athena reads the replacement after
+step 10.
 In step 2, `renumber_test` (declared out of creation order) and
 `decimal_test` get a table property and `format_version_test` goes
 from V2 to V3; the script reads their `metadata.json` after it;
@@ -342,6 +347,21 @@ created with an identifier and an override that removes the `(PK) `
 marker, get the marker in step 2 and lose the identifier in step 3, the
 second with a `doc` added to its other column; the script reads their
 `metadata.json` after step 3.
+After step 1, Athena writes a row to `engine_column_test`,
+`engine_column_declared_test` and `engine_column_other_id_test`, adds a
+column `w` with `ALTER TABLE ... ADD COLUMNS`, and writes a row with a
+value in `w`; the script then reads the first's `metadata.json`. Step 2
+declares `w` on the second under the id Athena gave it and on the third
+under another id, and leaves the first unchanged; step 3 changes a
+table property of the first without declaring `w`. After step 2 the
+script reads the first's Glue version and the other two's
+`metadata.json`, and Athena reads the other two; after step 3 the
+script and Athena read the first.
+The Spark phase after step 1 writes a row to `engine_upgrade_test` and
+`engine_upgrade_v2_test` and upgrades both to v3. Step 2 sets the
+first's `formatVersion` to `V3` and changes a table property of the
+second; the script reads their `metadata.json` after it, and the Spark
+phase writes a row to each and reads both rows back.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 

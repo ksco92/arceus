@@ -537,6 +537,11 @@ describe('IcebergEvolutionStack — wiring', () => {
             'reused_partition_id_test',
             'unmarked_identifier_test',
             'unmarked_identifier_doc_test',
+            'engine_column_test',
+            'engine_column_declared_test',
+            'engine_column_other_id_test',
+            'engine_upgrade_test',
+            'engine_upgrade_v2_test',
             'storage_columns_test',
         ]);
         permissions.forEach((permission) => {

@@ -291,7 +291,13 @@ same `current-schema-id`, partition spec and sort order.
 
 - **Dropping a column that a partition field has sourced breaks Athena.** The construct accepts the change. Once the column is gone, `SELECT *` and `SELECT count(*)` from a table holding rows written before the drop fail in Athena with `GENERIC_INTERNAL_ERROR: Type cannot be null`, whether the partition field was removed in the same deploy or in an earlier one. Keep such a column in the schema.
 - **Glue ignores a V2 to V3 `formatVersion` change.** The table stays format 2, and `properties.format-version` reads `3` all the same. Keep `formatVersion` at the table's real version.
-- **What a deploy does after an engine-side `ALTER TABLE` is not observed.** The construct does not see a change an engine makes with `ALTER TABLE` (Spark, Athena), and no integration suite deploys a table after one. That includes the in-place upgrade of a v2 table with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`, which the v3 suite runs through Spark: setting `formatVersion` to `V3` afterwards makes the declaration match the table.
+- **A deploy that updates a table without declaring a column Athena added takes it out of the current schema.** On a table with columns `id` (1) and `v` (2) holding one row, Athena `ALTER TABLE ... ADD COLUMNS (w string)` gives `w` id 3, and a second row is written with a value in `w`. After that:
+  - a deploy that changes a table property and does not declare `w` leaves Athena `SELECT *` returning both rows without `w`;
+  - a deploy that leaves the table's declaration unchanged does not update the table: its Glue `VersionId` and `metadata_location` stay as they were;
+  - a deploy that declares `w` under id 3 adds no schema, and `SELECT *` returns the value written to `w`;
+  - a deploy that declares `w` under id 4 is accepted, and `SELECT *` returns `w` as NULL in the second row.
+- **After Spark upgrades a v2 table to v3, a deploy that keeps `V2` and changes a table property leaves a format 3 table with `properties.format-version` `2`.** Spark writes a row to a v2 table and upgrades it in place with `ALTER TABLE ... SET TBLPROPERTIES ('format-version' = '3')`. A deploy that changes `formatVersion` to `V3` instead leaves the table at format 3 with `properties.format-version` `3`. After either deploy, Spark writes a second row and reads both rows back. Set `formatVersion` to `V3`, the table's real version.
+- **What a deploy does after any other engine-side `ALTER TABLE` is not observed.** The two bullets above cover Athena's `ADD COLUMNS (w string)` and Spark's `SET TBLPROPERTIES ('format-version' = '3')`.
 - **A rolled-back deploy leaves its schema in the table's history.** When a deploy that adds a column updates the table and then fails on another resource, the stack ends in `UPDATE_ROLLBACK_COMPLETE` and `current-schema-id` is back to its earlier value, so the column is gone and the rows read as before. The schema that held the column stays in `schemas`, and `last-column-id` stays at the column's id. A clean redeploy of the same change makes that schema current again without adding a schema. Treat an id from a rolled-back deploy as used: give it only to the column that deploy added.
 
 ### Changes that replace or remove the table
@@ -307,8 +313,15 @@ it does to a removed one: with the default `RETAIN` CloudFormation
 leaves the old table in the catalog, outside the stack; with `DESTROY`
 it deletes the old table's catalog entry. The construct asks Glue to
 create the replacement as a new table and carries nothing over from
-the old one. No suite in this repository renames a table, so what Glue
-does with a replacement at the old `location` is not observed.
+the old one.
+
+When a deploy under `DESTROY` changes the `tableName` of a table
+holding a row and keeps its `location`, Glue creates the replacement
+with a `table-uuid` of its own and a first metadata file, its name
+starting `00000-`, under that `location`, and Athena `SELECT *` from
+the replacement returns no rows. Every object the old table wrote
+stays under the `location`, beside that file. What a replacement under
+`RETAIN` leaves at the old `location` is not observed.
 
 The construct never deletes objects under `location`, but that does
 not make them safe: give a replacement table its own `location`.
@@ -317,9 +330,9 @@ Athena documents that
 "Removes orphan files that are older than the time specified in the
 vacuum_max_snapshot_age_seconds table property" and that orphan files
 "are files in the table's data directory that are not part of the
-table state"; a table that shares the old `location` may treat the old
-table's files as orphans once they pass that age (inferred from those
-two sentences, not observed).
+table state". Whether `VACUUM` on a replacement that shares the old
+`location` treats the old table's files as orphans once they pass that
+age is not observed.
 
 ## Is this the right tool
 
@@ -926,7 +939,7 @@ the `cdk_glue_iceberg_table` module):
 
 - **Mixing CDK-managed and engine-managed partition evolution needs a check of `last-partition-id`.** The construct supplies the spec's field ids; Glue's `UpdateTable` computes the table's `last-partition-id` counter when it writes the new metadata. The integration suites assert the counter is at least the highest supplied field id after a partition evolution ([pinned](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md)), but engines that later evolve the spec themselves (e.g. Spark `ALTER TABLE … ADD PARTITION FIELD`) allocate from that counter. If you mix the two, verify the counter in `metadata.json` before trusting engine-side changes.
 - **Removing the last identifier from a table created with identifiers before 0.11.0 can bring the old ids back.** That table's history holds an unmarked schema with ids, and Glue reuses it when the rendered fields match it again. Change a column `doc` in the same deploy that removes the last identifier.
-- **Every deploy after the first goes through Glue's `UpdateTable`.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that.
+- **Every deploy that changes a table without replacing it goes through Glue's `UpdateTable`.** The CFN `IcebergInput.metadataOperation` only accepts `CREATE`; the construct always emits that.
 - **Column defaults are not available.** Iceberg v3 `initial-default` and `write-default` cannot be declared through CloudFormation: the `AWS::Glue::Table` resource schema has no `InitialDefault` or `WriteDefault` property. Revisit when that schema gains the two properties.
 - **Athena DDL features that don't surface through CFN are not exposed** (e.g. `ALTER TABLE … SET LOCATION`, `bucketed_by` / `bucket_count` Hive clauses). Use `IcebergPartitionTransform.bucket(N)` instead of Hive bucketing.
 
