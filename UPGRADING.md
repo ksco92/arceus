@@ -5,6 +5,14 @@ yet released are under Unreleased.
 
 ## Unreleased
 
+`IcebergType` and `IcebergPartitionTransform` constructors are now private and
+`IcebergTypeOptions` and `IcebergPartitionTransformOptions` are removed; use the
+static constants and factories (`IcebergType.INT`, `IcebergType.list(...)`,
+`IcebergPartitionTransform.DAY`, `IcebergPartitionTransform.bucket(...)`, etc.)
+instead. `IcebergTable` also no longer checks `formatVersion` and `dataFormat`
+enum membership at runtime; pass members of `IcebergFormatVersion` and
+`IcebergDataFormat`.
+
 ## 0.22.0
 
 Upgrading from a version before 0.22.0: `IcebergType.isPrimitive`,

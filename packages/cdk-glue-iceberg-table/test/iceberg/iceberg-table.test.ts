@@ -1174,28 +1174,6 @@ describe('IcebergTable — nested field ids', () => {
 });
 
 describe('IcebergTable — validation', () => {
-    it('rejects a formatVersion that is not an IcebergFormatVersion', () => {
-        const {
-            stack, database,
-        } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'simple',
-            formatVersion: '9' as IcebergFormatVersion,
-            columns: MINIMAL_COLUMNS,
-            location: 's3://my-bucket/simple/',
-        })).toThrow("formatVersion must be one of 1, 2, 3, got '9'");
-    });
-
-    it('rejects a dataFormat that is not an IcebergDataFormat', () => {
-        const {
-            stack, database,
-        } = makeStack();
-        expect(() => new IcebergTable(stack, 'Tbl', props(database, {
-            dataFormat: 'csv' as IcebergDataFormat,
-        }))).toThrow("dataFormat must be one of parquet, orc, avro, got 'csv'");
-    });
-
     it('rejects an empty column list', () => {
         const {
             stack, database,
