@@ -490,6 +490,86 @@ describe('IcebergEvolutionStack — Glue observation tables', () => {
             1000,
         ]);
     });
+
+    it('v2_promotion_test widens int, float, decimal and relaxes req at step 2 with ids preserved', () => {
+        expect(icebergInputAt(1, 'v2_promotion_test').Schema.Fields).toEqual([
+            {
+                Id: 1,
+                Name: 'id',
+                Type: 'long',
+                Required: true,
+            },
+            {
+                Id: 2,
+                Name: 'n',
+                Type: 'int',
+                Required: false,
+            },
+            {
+                Id: 3,
+                Name: 'f',
+                Type: 'float',
+                Required: false,
+            },
+            {
+                Id: 4,
+                Name: 'd',
+                Type: 'decimal(10, 2)',
+                Required: false,
+            },
+            {
+                Id: 5,
+                Name: 'req',
+                Type: 'string',
+                Required: true,
+            },
+        ]);
+        expect(icebergInputAt(2, 'v2_promotion_test').Schema.Fields).toEqual([
+            {
+                Id: 1,
+                Name: 'id',
+                Type: 'long',
+                Required: true,
+            },
+            {
+                Id: 2,
+                Name: 'n',
+                Type: 'long',
+                Required: false,
+            },
+            {
+                Id: 3,
+                Name: 'f',
+                Type: 'double',
+                Required: false,
+            },
+            {
+                Id: 4,
+                Name: 'd',
+                Type: 'decimal(12, 2)',
+                Required: false,
+            },
+            {
+                Id: 5,
+                Name: 'req',
+                Type: 'string',
+                Required: false,
+            },
+        ]);
+        expect(icebergInputAt(12, 'v2_promotion_test')).toEqual(icebergInputAt(2, 'v2_promotion_test'));
+    });
+
+    it('location_change_test moves location from v1 to v2 at step 2 and changes nothing else', () => {
+        const before = icebergInputAt(1, 'location_change_test');
+        const after = icebergInputAt(2, 'location_change_test');
+        expect(before.Location).toBe('s3://data-lake-bucket-123456789012/sample_database/location_change_test/v1/');
+        expect(after.Location).toBe('s3://data-lake-bucket-123456789012/sample_database/location_change_test/v2/');
+        expect({
+            ...after,
+            Location: before.Location,
+        }).toEqual(before);
+        expect(icebergInputAt(12, 'location_change_test')).toEqual(after);
+    });
 });
 
 describe('IcebergEvolutionStack — unmarked identifier tables', () => {
@@ -558,6 +638,8 @@ describe('IcebergEvolutionStack — wiring', () => {
             'engine_column_other_id_test',
             'engine_upgrade_test',
             'engine_upgrade_v2_test',
+            'v2_promotion_test',
+            'location_change_test',
             'storage_columns_test',
         ]);
         permissions.forEach((permission) => {

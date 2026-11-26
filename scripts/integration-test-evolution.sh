@@ -55,6 +55,9 @@ ENGINE_OTHER_ID_TABLE="engine_column_other_id_test"
 UPGRADE_TABLE="engine_upgrade_test"
 UPGRADE_V2_TABLE="engine_upgrade_v2_test"
 REPLACED_TABLE="parameter_name_replaced_test"
+TABLE_INPUT_TABLE="table_input_test"
+V2_PROMOTION_TABLE="v2_promotion_test"
+LOCATION_TABLE="location_change_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -86,6 +89,7 @@ print('spec-count', len(m['partition-specs']))
 print('format-version', m['format-version'])
 print('properties-format-version', m['properties'].get('format-version', 'unset'))
 print('table-uuid', m['table-uuid'])
+print('location', m['location'])
 print('default-spec-id', m['default-spec-id'])
 print('default-sort-order-id', m['default-sort-order-id'])
 print('sort-orders', ';'.join(str(o['order-id']) + ':' + ','.join(
@@ -96,6 +100,9 @@ print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields'
 print('partition-ids', ','.join(f\"{f['field-id']}:{f['transform']}\" for f in current_spec['fields']))
 print('last-partition-id', m['last-partition-id'])
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
+print('column-specs', ','.join(
+    f\"{f['id']}:{f['name']}:{f['type'] if isinstance(f['type'], str) else f['type']['type']}:{str(f['required']).lower()}\"
+    for f in current_schema['fields']))
 print('identifier-field-ids', ','.join(str(i) for i in current_schema.get('identifier-field-ids', [])))
 print('pk-marked', ','.join(f['name'] for f in current_schema['fields'] if f.get('doc', '').startswith('(PK) ')))
 "
@@ -124,7 +131,7 @@ assert_partitions() {
 }
 
 assert_meta() {
-    assert_same "$1" "$2" "$(table_column_names "${3:-$TABLE}" | grep "^$1 " | cut -d' ' -f2)"
+    assert_same "$1" "$2" "$(table_column_names "${3:-$TABLE}" | grep "^$1 " | cut -d' ' -f2-)"
 }
 
 # The listing of `evolution_test` without the lines whose key matches $1.
@@ -175,6 +182,11 @@ name_table_keys() {
         | awk '{print $4}' | sort
 }
 
+s3_prefix_state() {
+    { aws s3 ls "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/$1" --recursive --region "$AWS_REGION" || true; } \
+        | awk 'END {print (NR > 0 ? "present" : "empty")}'
+}
+
 storage_table() {
     aws glue get-table --database-name "$DATABASE" --name "$STORAGE_TABLE" --region "$AWS_REGION" \
         --query "$1" --output text
@@ -208,7 +220,8 @@ for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME
     "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE" \
     "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE" "$STORAGE_TABLE" \
     "$UNMARKED_TABLE" "$UNMARKED_DOC_TABLE" "$ENGINE_COLUMN_TABLE" "$ENGINE_DECLARED_TABLE" \
-    "$ENGINE_OTHER_ID_TABLE" "$UPGRADE_TABLE" "$UPGRADE_V2_TABLE"; do
+    "$ENGINE_OTHER_ID_TABLE" "$UPGRADE_TABLE" "$UPGRADE_V2_TABLE" \
+    "$TABLE_INPUT_TABLE" "$V2_PROMOTION_TABLE" "$LOCATION_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -247,6 +260,8 @@ athena_expect "SELECT * on ${STORAGE_TABLE} before its first update" "SELECT * F
 run_athena "INSERT INTO ${REUSED_TABLE} VALUES (1, 'c1')" >/dev/null
 run_athena "INSERT INTO ${NAME_TABLE} VALUES (1, 'v1')" >/dev/null
 run_athena "INSERT INTO ${RENUMBER_TABLE} VALUES ('A', 'B')" >/dev/null
+run_athena "INSERT INTO ${V2_PROMOTION_TABLE} VALUES (1, 42, CAST(1.5 AS REAL), CAST(12.34 AS DECIMAL(10, 2)), 'present')" >/dev/null
+run_athena "INSERT INTO ${LOCATION_TABLE} VALUES (1, 'at-v1')" >/dev/null
 for seeded in "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE"; do
     run_athena "INSERT INTO ${seeded} VALUES (1, 'x', 'v1')" >/dev/null
 done
@@ -262,6 +277,7 @@ assert_meta columns "1:id,2:v,3:w" "$ENGINE_COLUMN_TABLE"
 # Step 2: ADD column `region` (id 4). Partition spec unchanged.
 
 FORMAT_UUID=$(table_column_names "$FORMAT_TABLE" | grep ^table-uuid | cut -d' ' -f2)
+LOCATION_UUID=$(table_column_names "$LOCATION_TABLE" | grep '^table-uuid ' | cut -d' ' -f2-)
 ENGINE_COLUMN_BEFORE=$(version_and_file "$ENGINE_COLUMN_TABLE")
 
 deploy_step 2
@@ -298,6 +314,15 @@ assert_meta properties-format-version 2 "$UPGRADE_V2_TABLE"
 header "VERIFY step 2 (storage_columns_test)"
 assert_same "${STORAGE_TABLE} Glue parameter count after its first update" 0 "$(storage_table 'length(Table.Parameters)')"
 
+header "VERIFY step 2 (v2_promotion_test, location_change_test)"
+assert_meta column-specs "1:id:long:true,2:n:long:false,3:f:double:false,4:d:decimal(12, 2):false,5:req:string:false" "$V2_PROMOTION_TABLE"
+assert_meta table-uuid "$LOCATION_UUID" "$LOCATION_TABLE"
+assert_meta location "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${LOCATION_TABLE}/v2" "$LOCATION_TABLE"
+assert_same "${LOCATION_TABLE} metadata_location directory" \
+    "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${LOCATION_TABLE}/v2/metadata" \
+    "$(aws glue get-table --database-name "$DATABASE" --name "$LOCATION_TABLE" --region "$AWS_REGION" \
+        --query Table.Parameters.metadata_location --output text | sed 's|/[^/]*$||')"
+
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails, upgraded tables written)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
 
@@ -322,6 +347,15 @@ athena_expect_failure "SELECT * on ${STORAGE_TABLE} after its first update" \
     "SELECT * FROM ${STORAGE_TABLE}" "$HIVE_FORMAT"
 athena_expect_failure "count(*) on ${STORAGE_TABLE} after its first update" \
     "SELECT count(*) FROM ${STORAGE_TABLE}" "$HIVE_FORMAT"
+run_athena "INSERT INTO ${V2_PROMOTION_TABLE} VALUES (2, 3000000000, CAST(1.0000000001 AS DOUBLE), CAST(1234567890.12 AS DECIMAL(12, 2)), NULL)" >/dev/null
+athena_expect "SELECT * on ${V2_PROMOTION_TABLE} after v2 type promotions and nullability relaxation" \
+    "SELECT * FROM ${V2_PROMOTION_TABLE} ORDER BY id" "id|n|f|d|req" \
+    "1|42|1.5|12.34|present" "2|3000000000|1.0000000001|1234567890.12|NULL"
+run_athena "INSERT INTO ${LOCATION_TABLE} VALUES (2, 'at-v2')" >/dev/null
+athena_expect "SELECT * on ${LOCATION_TABLE} after location moves to v2" \
+    "SELECT * FROM ${LOCATION_TABLE} ORDER BY id" "id|v" "1|at-v1" "2|at-v2"
+assert_same "${LOCATION_TABLE} data files under v1 and v2" "present present" \
+    "$(s3_prefix_state "${LOCATION_TABLE}/v1/data/") $(s3_prefix_state "${LOCATION_TABLE}/v2/data/")"
 
 ################################################
 ################################################
@@ -344,8 +378,9 @@ header "VERIFY step 3 (unmarked_identifier_test, unmarked_identifier_doc_test)"
 assert_meta schema-id 0 "$UNMARKED_TABLE"
 assert_meta schemas-count 2 "$UNMARKED_TABLE"
 assert_meta identifier-field-ids 1 "$UNMARKED_TABLE"
-assert_meta schema-id 2 "$UNMARKED_DOC_TABLE"
-assert_meta identifier-field-ids "" "$UNMARKED_DOC_TABLE"
+UNMARKED_DOC_LISTING=$(table_column_names "$UNMARKED_DOC_TABLE")
+assert_same "${UNMARKED_DOC_TABLE} schema-id and identifier-field-ids" "2 " \
+    "$(echo "$UNMARKED_DOC_LISTING" | grep '^schema-id ' | cut -d' ' -f2-) $(echo "$UNMARKED_DOC_LISTING" | grep '^identifier-field-ids ' | cut -d' ' -f2-)"
 
 header "VERIFY step 3 (engine_column_test, w not declared)"
 assert_meta columns "1:id,2:v" "$ENGINE_COLUMN_TABLE"
@@ -472,7 +507,7 @@ BEFORE=$(listing_without commit-retries)
 deploy_step 9
 
 header "VERIFY step 9 (property-only update)"
-assert_meta commit-retries 5
+assert_meta commit-retries 5 "$TABLE"
 assert_same "rest of metadata.json unchanged" "$BEFORE" "$(listing_without commit-retries)"
 
 header "VERIFY step 9 (parameter_name_test)"

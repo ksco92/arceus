@@ -109,7 +109,7 @@ arceus/
 The demo stacks import the construct via a relative path into the
 package source (`../packages/cdk-glue-iceberg-table/lib/iceberg`), so
 `npm test` and `cdk synth` work without a prior package build. The
-`e2e-consumer` app is intentionally **not** an npm workspace: it
+`e2e-consumer` app is not an npm workspace: it
 installs `cdk-glue-iceberg-table` from npm (pinned in its own
 `package-lock.json`) to prove the published artifact works for a
 downstream consumer.
@@ -303,7 +303,7 @@ Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`; the paragraphs below describe the other
 tables.
 
-The stack owns twenty tables, and step 11 declares a twenty-first,
+The stack owns twenty-two tables, and step 11 declares a twenty-third,
 `table_input_test`, that fails to create. `evolution_test` changes in
 steps 1 to 6 and 9 to 12. `nested_evolution_test` is created in step 1
 and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
@@ -362,6 +362,8 @@ The Spark phase after step 1 writes a row to `engine_upgrade_test` and
 first's `formatVersion` to `V3` and changes a table property of the
 second; the script reads their `metadata.json` after it, and the Spark
 phase writes a row to each and reads both rows back.
+`v2_promotion_test` is created in step 1 with `int`, `float`, `decimal(10, 2)` and a `required: true` string column; Athena writes a row after step 1, step 2 widens the three numeric types (`long`, `double`, `decimal(12, 2)`) and relaxes the string column to `required: false`, the script checks `metadata.json`, and Athena inserts a widened row with `NULL` and reads both rows back.
+`location_change_test` is created at `.../location_change_test/v1/` in step 1 and moves to `.../location_change_test/v2/` in step 2; Athena writes a row after step 1, the script checks `table-uuid`, `location`, and `metadata_location` after step 2, and Athena inserts a second row, reads both rows back, and checks that data files exist under both prefixes.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 
