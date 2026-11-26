@@ -252,7 +252,7 @@ npm install
 npm test                                  # package + demo stack tests
 npx cdk deploy ArceusStack --require-approval=never
 scripts/spark/install-spark.sh               # Spark toolchain for the Spark checks between deploys
-./scripts/integration-test-evolution.sh   # add + rename + drop + partition, identifier and nested-field change via cdk, deploys after an engine ALTER TABLE, and a rename that replaces a table at its location, Spark checks between deploys
+./scripts/integration-test-evolution.sh   # add + rename + drop + partition, identifier and nested-field change via cdk, deploys after an engine ALTER TABLE, a rename that replaces a table at its location, Spark checks between deploys
 ```
 
 `cdk ls` will show seven stacks: `ArceusStack` (the demo data lake +
