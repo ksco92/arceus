@@ -5,8 +5,8 @@
 # A query that fails to start, fails, is cancelled, or is still running
 # after ATHENA_TIMEOUT_SECONDS returns 1 after printing Athena's reason.
 # `athena_expect LABEL SQL ROW...` fails unless the printed rows equal ROW...
-# `athena_expect_failure LABEL SQL REASON` fails unless the query ends FAILED
-# with REASON as Athena's whole StateChangeReason.
+# `athena_expect_failure LABEL SQL REASON [prefix]` fails unless the query
+# ends FAILED with REASON as Athena's StateChangeReason (or its prefix).
 #
 # Optional env vars:
 #   ATHENA_WORKGROUP       - default primary
@@ -76,8 +76,14 @@ athena_expect() {
 }
 
 athena_expect_failure() {
-    local label="$1" sql="$2" reason="$3" out
-    if ! out=$(run_athena "$sql" 2>&1) && [[ "$out" == *$'ended FAILED\t'"$reason"$'\nSQL: '* ]]; then
+    local label="$1" sql="$2" reason="$3" mode="${4:-}" out
+    if ! out=$(run_athena "$sql" 2>&1) && {
+        if [ "$mode" = prefix ]; then
+            [[ "$out" == *$'ended FAILED\t'"$reason"*$'\nSQL: '* ]]
+        else
+            [[ "$out" == *$'ended FAILED\t'"$reason"$'\nSQL: '* ]]
+        fi
+    }; then
         printf '\033[32m  Athena: %s fails with %s ✓\033[0m\n' "$label" "$reason"
     else
         printf '\033[31m  Athena: %s did not fail with %s ✗\033[0m\n%s\n' "$label" "$reason" "$out" >&2

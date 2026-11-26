@@ -7,6 +7,7 @@ TABLE = "glue.sample_database.evolution_test"
 NESTED = "glue.sample_database.nested_evolution_test"
 REUSED = "glue.sample_database.reused_id_test"
 REUSED_PARTITION = "glue.sample_database.reused_partition_id_test"
+LOCATION = "glue.sample_database.location_change_test"
 UPGRADED = ("glue.sample_database.engine_upgrade_test", "glue.sample_database.engine_upgrade_v2_test")
 CONFLICT = (
     "ValidationException: Conflicting partition fields:"
@@ -45,6 +46,10 @@ def phase_2(spark: SparkSession) -> None:
         rows = spark.sql(f"SELECT * FROM {table} ORDER BY id").collect()
         expected = [(1, "written at v2"), (2, "written after the deploy")]
         assert rows == expected, f"{table} rows after the deploy: expected {expected}, got {rows}"
+    spark.sql(f"INSERT INTO {LOCATION} VALUES (2, 'at-v2')")
+    rows = spark.sql(f"SELECT id, v FROM {LOCATION} ORDER BY id").collect()
+    expected = [(1, "at-v1"), (2, "at-v2")]
+    assert rows == expected, f"{LOCATION} rows after location moves to v2: expected {expected}, got {rows}"
 
 
 def phase_3(spark: SparkSession) -> None:

@@ -169,6 +169,7 @@ ROW_101="101|u1|u2|w1|w2|M1|D1"
 TYPE_NULL="GENERIC_INTERNAL_ERROR: Type cannot be null"
 # Athena's reason ends in a space.
 HIVE_FORMAT="HIVE_UNSUPPORTED_FORMAT: Unable to create input format "
+S3_DENIED="PERMISSION_DENIED: null (Service: S3, Status Code: 403"
 
 # Glue VersionId and the number of the metadata file metadata_location names.
 version_and_file() {
@@ -322,6 +323,8 @@ assert_same "${LOCATION_TABLE} metadata_location directory" \
     "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${LOCATION_TABLE}/v2/metadata" \
     "$(aws glue get-table --database-name "$DATABASE" --name "$LOCATION_TABLE" --region "$AWS_REGION" \
         --query Table.Parameters.metadata_location --output text | sed 's|/[^/]*$||')"
+athena_expect_failure "INSERT into ${LOCATION_TABLE} after location moves to v2" \
+    "INSERT INTO ${LOCATION_TABLE} VALUES (3, 'at-v2-athena')" "$S3_DENIED" prefix
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails, upgraded tables written)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
@@ -351,9 +354,8 @@ run_athena "INSERT INTO ${V2_PROMOTION_TABLE} VALUES (2, 3000000000, CAST(1.0000
 athena_expect "SELECT * on ${V2_PROMOTION_TABLE} after v2 type promotions and nullability relaxation" \
     "SELECT * FROM ${V2_PROMOTION_TABLE} ORDER BY id" "id|n|f|d|req" \
     "1|42|1.5|12.34|present" "2|3000000000|1.0000000001|1234567890.12|NULL"
-run_athena "INSERT INTO ${LOCATION_TABLE} VALUES (2, 'at-v2')" >/dev/null
-athena_expect "SELECT * on ${LOCATION_TABLE} after location moves to v2" \
-    "SELECT * FROM ${LOCATION_TABLE} ORDER BY id" "id|v" "1|at-v1" "2|at-v2"
+athena_expect_failure "SELECT * on ${LOCATION_TABLE} after location moves to v2" \
+    "SELECT * FROM ${LOCATION_TABLE}" "$S3_DENIED" prefix
 assert_same "${LOCATION_TABLE} data files under v1 and v2" "present present" \
     "$(s3_prefix_state "${LOCATION_TABLE}/v1/data/") $(s3_prefix_state "${LOCATION_TABLE}/v2/data/")"
 
