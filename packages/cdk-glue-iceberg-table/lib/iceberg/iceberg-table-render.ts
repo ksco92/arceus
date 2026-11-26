@@ -69,16 +69,6 @@ export function validateLocation(location: string): void {
 export function validateProps(props: IcebergTableProps): void {
     validateTableName(props.tableName);
     validateCatalogId(props.catalogId);
-    if (!Object.values(IcebergFormatVersion).includes(props.formatVersion)) {
-        throw new Error(
-            `formatVersion must be one of ${Object.values(IcebergFormatVersion).join(', ')}, got '${props.formatVersion}'`,
-        );
-    }
-    if (props.dataFormat !== undefined && !Object.values(IcebergDataFormat).includes(props.dataFormat)) {
-        throw new Error(
-            `dataFormat must be one of ${Object.values(IcebergDataFormat).join(', ')}, got '${props.dataFormat}'`,
-        );
-    }
     if (props.columns.length === 0) {
         throw new Error('IcebergTable requires at least one column');
     }

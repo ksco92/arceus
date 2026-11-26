@@ -513,8 +513,7 @@ change a field change. A `doc` you write must not start with `(PK) `.
 exceptions. The construct sets `format-version` and
 `write.format.default` itself, and a value you supply for either must
 agree with `formatVersion` or `dataFormat`. `comment` is set in one
-place only. `formatVersion` and `dataFormat` must be members of their
-enums.
+place only.
 
 ### A table using most of the surface
 
