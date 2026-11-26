@@ -53,6 +53,7 @@ export interface ArceusStackProps extends StackProps {
     readonly principalArn: string;
 }
 
+/** Demo stack that deploys the `IcebergTable` construct with Lake Formation and S3 buckets. */
 export class ArceusStack extends Stack {
     constructor(scope: Construct, id: string, props: ArceusStackProps) {
         super(scope, id, props);

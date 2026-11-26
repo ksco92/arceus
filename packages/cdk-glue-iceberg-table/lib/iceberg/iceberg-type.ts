@@ -216,6 +216,7 @@ export class IcebergType {
      * Fixed-precision decimal.
      * @param precision Total number of digits (1..38).
      * @param scale Digits after the decimal point (0..precision).
+     * @returns Decimal Iceberg type.
      */
     public static decimal(precision: number, scale: number): IcebergType {
         return new IcebergType({
@@ -228,6 +229,7 @@ export class IcebergType {
     /**
      * Fixed-length byte array.
      * @param length Byte length (must be positive).
+     * @returns Fixed-length Iceberg type.
      */
     public static fixed(length: number): IcebergType {
         return new IcebergType({
@@ -239,6 +241,7 @@ export class IcebergType {
     /**
      * Ordered list of values.
      * @param definition Element type, element id, and element nullability.
+     * @returns List Iceberg type.
      */
     public static list(definition: IcebergListDefinition): IcebergType {
         return new IcebergType({
@@ -252,6 +255,7 @@ export class IcebergType {
     /**
      * Key/value map.
      * @param definition Key and value types, their ids, and value nullability.
+     * @returns Map Iceberg type.
      */
     public static map(definition: IcebergMapDefinition): IcebergType {
         return new IcebergType({
@@ -267,6 +271,7 @@ export class IcebergType {
     /**
      * Nested struct.
      * @param fields Struct fields (each carries an id, name, type, required flag, optional doc).
+     * @returns Struct Iceberg type.
      */
     public static struct(fields: IcebergStructFieldDefinition[]): IcebergType {
         return new IcebergType({
@@ -278,6 +283,7 @@ export class IcebergType {
     /**
      * Geospatial features with linear edges. Format v3.
      * @param crs Coordinate reference system identifier, such as `EPSG:3857`. Defaults to `OGC:CRS84`.
+     * @returns Geometry Iceberg type.
      */
     public static geometry(crs?: string): IcebergType {
         return new IcebergType({
@@ -290,6 +296,7 @@ export class IcebergType {
      * Geospatial features with edges interpolated by an algorithm. Format v3.
      * @param crs Coordinate reference system identifier. Defaults to `OGC:CRS84`.
      * @param algorithm Edge-interpolation algorithm. Defaults to `SPHERICAL`.
+     * @returns Geography Iceberg type.
      */
     public static geography(crs?: string, algorithm?: IcebergEdgeAlgorithm): IcebergType {
         return new IcebergType({

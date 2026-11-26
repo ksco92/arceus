@@ -79,6 +79,7 @@ export class IcebergPartitionTransform {
     /**
      * `bucket[N]` — Murmur3 hash of the source mod N.
      * @param numBuckets Number of buckets (positive integer).
+     * @returns Bucket partition transform.
      */
     public static bucket(numBuckets: number): IcebergPartitionTransform {
         return new IcebergPartitionTransform({
@@ -90,6 +91,7 @@ export class IcebergPartitionTransform {
     /**
      * `truncate[W]` — truncate the source to width W.
      * @param width Width (positive integer).
+     * @returns Truncate partition transform.
      */
     public static truncate(width: number): IcebergPartitionTransform {
         return new IcebergPartitionTransform({
@@ -136,7 +138,10 @@ export class IcebergPartitionTransform {
         }
     }
 
-    /** Iceberg/Glue transform string (e.g. `identity`, `bucket[16]`, `hour`). */
+    /**
+     * Format this transform as the Iceberg/Glue transform string (e.g. `identity`, `bucket[16]`, `hour`).
+     * @returns Wire transform string accepted by Glue.
+     */
     public toTransformString(): string {
         switch (this.kind) {
             case IcebergPartitionTransformKind.BUCKET:

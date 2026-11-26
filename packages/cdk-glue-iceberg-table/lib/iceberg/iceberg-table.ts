@@ -276,6 +276,7 @@ export class IcebergTable extends Resource implements IIcebergTable {
      * or a backquote appears in backquotes, inner backquotes doubled. From Python, a
      * top-level column named `__proto__` makes the call raise a jsii serialization error.
      * @param columns Columns of the table, in declaration order.
+     * @returns Map of field path to Glue-assigned field id.
      */
     public static creationOrderFieldIds(columns: IcebergColumn[]): { [path: string]: number } {
         return creationOrderFieldIds(columns);
@@ -286,6 +287,10 @@ export class IcebergTable extends Resource implements IIcebergTable {
      *
      * Imported tables can be referenced from grants but cannot be
      * mutated; their schema and properties are unknown to CDK.
+     * @param scope Parent construct scope.
+     * @param id Construct id within `scope`.
+     * @param attrs Identifying attributes of the existing table.
+     * @returns Imported table reference supporting grant methods.
      */
     public static fromIcebergTableAttributes(
         scope: Construct,
@@ -327,17 +332,32 @@ export class IcebergTable extends Resource implements IIcebergTable {
         return new Imported(scope, id);
     }
 
-    /** Grant Glue + S3 read on this table. */
+    /**
+     * Grant Glue + S3 read on this table.
+     * @param grantee Principal receiving read permissions.
+     * @param options Optional Lake Formation or catalog KMS settings.
+     * @returns The Glue table grant.
+     */
     public grantRead(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
         return grantProfile(grantee, READ_PROFILE, this.grantContext, options);
     }
 
-    /** Grant Glue + S3 write on this table. */
+    /**
+     * Grant Glue + S3 write on this table.
+     * @param grantee Principal receiving write permissions.
+     * @param options Optional Lake Formation or catalog KMS settings.
+     * @returns The Glue table grant.
+     */
     public grantWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
         return grantProfile(grantee, WRITE_PROFILE, this.grantContext, options);
     }
 
-    /** Grant Glue + S3 read + write on this table. */
+    /**
+     * Grant Glue + S3 read + write on this table.
+     * @param grantee Principal receiving read and write permissions.
+     * @param options Optional Lake Formation or catalog KMS settings.
+     * @returns The Glue table grant.
+     */
     public grantReadWrite(grantee: IGrantable, options?: IcebergTableGrantOptions): Grant {
         return grantProfile(grantee, READ_WRITE_PROFILE, this.grantContext, options);
     }

@@ -2079,10 +2079,10 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                 id: 7,
             },
         ])).toEqual({
-            'id': 1,
-            'tags': 2,
-            'attrs': 3,
-            'addr': 4,
+            id: 1,
+            tags: 2,
+            attrs: 3,
+            addr: 4,
             'tags.element': 5,
             'attrs.key': 6,
             'attrs.value': 7,
@@ -2178,11 +2178,11 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                 id: 7,
             },
         ])).toEqual({
-            'c': 1,
-            'a': 2,
-            's': 3,
-            'm': 4,
-            't': 5,
+            c: 1,
+            a: 2,
+            s: 3,
+            m: 4,
+            t: 5,
             's.x': 6,
             's.lst': 7,
             's.y': 8,
@@ -2230,7 +2230,7 @@ describe('IcebergTable.creationOrderFieldIds', () => {
                 id: 6,
             },
         ])).toEqual({
-            'm': 1,
+            m: 1,
             'm.key': 2,
             'm.value': 3,
             'm.key.k1': 4,
@@ -2360,7 +2360,7 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
         } = makeStack();
         expect(() => new IcebergTable(stack, 'Tbl', props(database, {
             tableName,
-        }))).toThrow("must contain only lowercase letters, digits, and underscores");
+        }))).toThrow('must contain only lowercase letters, digits, and underscores');
     });
 
     it.each([
