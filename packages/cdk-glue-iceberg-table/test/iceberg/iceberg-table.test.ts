@@ -10,6 +10,7 @@ import {
     Template,
 } from 'aws-cdk-lib/assertions';
 import {
+    CfnTable,
     Database,
 } from 'aws-cdk-lib/aws-glue';
 import {
@@ -2348,5 +2349,146 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
             location: 's3://my-bucket/simple/',
             [key]: value,
         })).toThrow(message);
+    });
+});
+
+describe('IcebergTable — raw CfnTable exit-path equivalence', () => {
+    it('synthesizes the exact same AWS::Glue::Table resource as a raw CfnTable with overrideLogicalId', () => {
+        const {
+            stack: stackA,
+            database: databaseA,
+        } = makeStack();
+        const table = new IcebergTable(stackA, 'Tbl', {
+            database: databaseA,
+            tableName: 'orders',
+            formatVersion: IcebergFormatVersion.V2,
+            comment: 'Orders table.',
+            columns: [
+                {
+                    name: 'order_id',
+                    type: IcebergType.LONG,
+                    required: true,
+                    id: 1,
+                    doc: 'Primary key.',
+                },
+                {
+                    name: 'placed_at',
+                    type: IcebergType.TIMESTAMPTZ,
+                    required: true,
+                    id: 2,
+                },
+            ],
+            location: 's3://my-bucket/orders/',
+            partitionSpec: [
+                {
+                    sourceColumn: 'placed_at',
+                    transform: IcebergPartitionTransform.DAY,
+                    fieldId: 1000,
+                },
+            ],
+            sortOrder: [
+                {
+                    sourceColumn: 'placed_at',
+                    direction: IcebergSortDirection.DESC,
+                    nullOrder: IcebergNullOrder.NULLS_FIRST,
+                },
+            ],
+            identifierFieldNames: [
+                'order_id',
+            ],
+            tableProperties: {
+                'commit.retry.num-retries': '5',
+            },
+        });
+        const logicalId = stackA.getLogicalId(table.resource);
+
+        const {
+            stack: stackB,
+            database: databaseB,
+        } = makeStack();
+        const raw = new CfnTable(stackB, 'Tbl', {
+            catalogId: '123456789012',
+            databaseName: databaseB.databaseName,
+            name: 'orders',
+            openTableFormatInput: {
+                icebergInput: {
+                    metadataOperation: 'CREATE',
+                    version: '2',
+                    icebergTableInput: {
+                        location: 's3://my-bucket/orders/',
+                        schema: {
+                            type: 'struct',
+                            schemaId: 0,
+                            fields: [
+                                {
+                                    id: 1,
+                                    name: 'order_id',
+                                    type: 'long',
+                                    required: true,
+                                    doc: '(PK) Primary key.',
+                                },
+                                {
+                                    id: 2,
+                                    name: 'placed_at',
+                                    type: 'timestamptz',
+                                    required: true,
+                                },
+                            ],
+                            identifierFieldIds: [
+                                1,
+                            ],
+                        },
+                        partitionSpec: {
+                            specId: 0,
+                            fields: [
+                                {
+                                    name: 'placed_at_day',
+                                    sourceId: 2,
+                                    transform: 'day',
+                                    fieldId: 1000,
+                                },
+                            ],
+                        },
+                        writeOrder: {
+                            orderId: 1,
+                            fields: [
+                                {
+                                    sourceId: 2,
+                                    transform: 'identity',
+                                    direction: 'desc',
+                                    nullOrder: 'nulls-first',
+                                },
+                            ],
+                        },
+                        properties: {
+                            'format-version': '2',
+                            'write.format.default': 'parquet',
+                            'commit.retry.num-retries': '5',
+                            comment: 'Orders table.',
+                        },
+                    },
+                },
+            },
+        });
+        raw.applyRemovalPolicy(RemovalPolicy.RETAIN);
+        raw.overrideLogicalId(logicalId);
+
+        const tablesA = Template.fromStack(stackA).findResources('AWS::Glue::Table');
+        const tablesB = Template.fromStack(stackB).findResources('AWS::Glue::Table');
+        expect(Object.keys(tablesA)).toEqual([
+            logicalId,
+        ]);
+        expect(tablesB).toEqual(tablesA);
+        expect(Object.keys(tablesA[logicalId]).sort()).toEqual([
+            'DeletionPolicy',
+            'Properties',
+            'Type',
+            'UpdateReplacePolicy',
+        ]);
+        expect(tablesA[logicalId]).toMatchObject({
+            Type: 'AWS::Glue::Table',
+            DeletionPolicy: 'Retain',
+            UpdateReplacePolicy: 'Retain',
+        });
     });
 });
