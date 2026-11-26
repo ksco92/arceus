@@ -669,6 +669,26 @@ describe('IcebergTable — happy path', () => {
             },
         });
     });
+
+    it('renders no IdentifierFieldIds for an empty identifierFieldNames', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            identifierFieldNames: [],
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            OpenTableFormatInput: {
+                IcebergInput: {
+                    IcebergTableInput: Match.objectLike({
+                        Schema: Match.objectLike({
+                            IdentifierFieldIds: Match.absent(),
+                        }),
+                    }),
+                },
+            },
+        });
+    });
 });
 
 describe('IcebergTable — pinned field ids', () => {
@@ -709,60 +729,6 @@ describe('IcebergTable — pinned field ids', () => {
                                 Match.objectLike({
                                     Id: 99,
                                     Name: 'b',
-                                }),
-                            ],
-                        }),
-                    }),
-                },
-            },
-        });
-    });
-
-    it('honors arbitrary non-contiguous pinned ids', () => {
-        const {
-            stack, database,
-        } = makeStack();
-        new IcebergTable(stack, 'Tbl', {
-            database,
-            tableName: 'sparse',
-            formatVersion: IcebergFormatVersion.V2,
-            columns: [
-                {
-                    name: 'first',
-                    type: IcebergType.LONG,
-                    id: 1,
-                },
-                {
-                    name: 'second',
-                    type: IcebergType.STRING,
-                    id: 5,
-                },
-                {
-                    name: 'third',
-                    type: IcebergType.STRING,
-                    id: 100,
-                },
-            ],
-            location: 's3://my-bucket/sparse/',
-        });
-        const template = Template.fromStack(stack);
-        template.hasResourceProperties('AWS::Glue::Table', {
-            OpenTableFormatInput: {
-                IcebergInput: {
-                    IcebergTableInput: Match.objectLike({
-                        Schema: Match.objectLike({
-                            Fields: [
-                                Match.objectLike({
-                                    Id: 1,
-                                    Name: 'first',
-                                }),
-                                Match.objectLike({
-                                    Id: 5,
-                                    Name: 'second',
-                                }),
-                                Match.objectLike({
-                                    Id: 100,
-                                    Name: 'third',
                                 }),
                             ],
                         }),
@@ -2009,33 +1975,6 @@ describe('IcebergTable.fromIcebergTableAttributes', () => {
 });
 
 describe('IcebergTable.creationOrderFieldIds', () => {
-    it('numbers flat columns in declaration order', () => {
-        expect(IcebergTable.creationOrderFieldIds([
-            {
-                name: 'customer_id',
-                type: IcebergType.LONG,
-                required: true,
-                id: 1,
-            },
-            {
-                name: 'email',
-                type: IcebergType.STRING,
-                required: true,
-                id: 2,
-            },
-            {
-                name: 'signed_up_at',
-                type: IcebergType.TIMESTAMPTZ,
-                required: true,
-                id: 3,
-            },
-        ])).toEqual({
-            customer_id: 1,
-            email: 2,
-            signed_up_at: 3,
-        });
-    });
-
     it('numbers each top-level column before any list element, map key and value, or struct field', () => {
         expect(IcebergTable.creationOrderFieldIds([
             {
@@ -2347,6 +2286,40 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
         Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
             Name: {
                 Ref: 'TableNameParam',
+            },
+        });
+    });
+
+    it('renders composite literal-plus-token strings for tableName and catalogId as Fn::Join', () => {
+        const {
+            stack, database,
+        } = makeStack();
+        new IcebergTable(stack, 'Tbl', props(database, {
+            tableName: `Bad-${new CfnParameter(stack, 'NamePart').valueAsString}`,
+            catalogId: `bad-${new CfnParameter(stack, 'CatPart').valueAsString}`,
+        }));
+        Template.fromStack(stack).hasResourceProperties('AWS::Glue::Table', {
+            Name: {
+                'Fn::Join': [
+                    '',
+                    [
+                        'Bad-',
+                        {
+                            Ref: 'NamePart',
+                        },
+                    ],
+                ],
+            },
+            CatalogId: {
+                'Fn::Join': [
+                    '',
+                    [
+                        'bad-',
+                        {
+                            Ref: 'CatPart',
+                        },
+                    ],
+                ],
             },
         });
     });

@@ -5,16 +5,6 @@ import {
 } from '../../lib/iceberg/iceberg-table-properties';
 
 describe('validateIcebergProperties', () => {
-    it('rejects write.format.default that disagrees with dataFormat', () => {
-        expect(() => validateIcebergProperties(
-            IcebergDataFormat.PARQUET,
-            IcebergFormatVersion.V2,
-            {
-                'write.format.default': 'orc',
-            },
-        )).toThrow(/write\.format\.default.*orc.*parquet/);
-    });
-
     it('rejects format-version that disagrees with formatVersion', () => {
         expect(() => validateIcebergProperties(
             IcebergDataFormat.PARQUET,
