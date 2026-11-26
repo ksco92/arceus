@@ -41,19 +41,10 @@ describe('IcebergPartitionTransform — strings', () => {
     it('truncate renders as truncate[W]', () => {
         expect(IcebergPartitionTransform.truncate(64).toTransformString()).toBe('truncate[64]');
     });
-});
 
-describe('IcebergPartitionTransform — direct constructor', () => {
-    it('rejects bucket kind without bucketCount', () => {
-        expect(() => new IcebergPartitionTransform({
-            kind: IcebergPartitionTransformKind.BUCKET,
-        })).toThrow(/bucketCount/);
-    });
-
-    it('rejects truncate kind without truncateWidth', () => {
-        expect(() => new IcebergPartitionTransform({
-            kind: IcebergPartitionTransformKind.TRUNCATE,
-        })).toThrow(/truncateWidth/);
+    it('exposes the kind discriminator on constants and factory instances', () => {
+        expect(IcebergPartitionTransform.IDENTITY.kind).toBe(IcebergPartitionTransformKind.IDENTITY);
+        expect(IcebergPartitionTransform.bucket(8).kind).toBe(IcebergPartitionTransformKind.BUCKET);
     });
 });
 

@@ -96,58 +96,21 @@ export interface IcebergMapDefinition {
     readonly valueRequired?: boolean;
 }
 
-/**
- * Construction options for an `IcebergType`.
- *
- * Most callers should use the static factories (`IcebergType.BOOLEAN`,
- * `IcebergType.list(...)`, etc.) rather than instantiate directly.
- * The constructor exists for jsii reflection; it runs the same
- * validation as the factories.
- */
-export interface IcebergTypeOptions {
-    /** Discriminator. */
+interface IcebergTypeOptions {
     readonly kind: IcebergTypeKind;
-
-    /** Decimal precision (1..38). Required when `kind === DECIMAL`. */
     readonly decimalPrecision?: number;
-
-    /** Decimal scale (0..precision). Required when `kind === DECIMAL`. */
     readonly decimalScale?: number;
-
-    /** Fixed-byte length (positive). Required when `kind === FIXED`. */
     readonly fixedLength?: number;
-
-    /** Element type. Required when `kind === LIST`. */
     readonly listElement?: IcebergType;
-
-    /** Element field id. Checked by `IcebergTable`. */
     readonly listElementId?: number;
-
-    /** Whether list elements are non-nullable. Defaults to `false`. */
     readonly listElementRequired?: boolean;
-
-    /** Map key type. Required when `kind === MAP`. */
     readonly mapKey?: IcebergType;
-
-    /** Map key field id. Checked by `IcebergTable`. */
     readonly mapKeyId?: number;
-
-    /** Map value type. Required when `kind === MAP`. */
     readonly mapValue?: IcebergType;
-
-    /** Map value field id. Checked by `IcebergTable`. */
     readonly mapValueId?: number;
-
-    /** Whether map values are non-nullable. Defaults to `false`. */
     readonly mapValueRequired?: boolean;
-
-    /** Struct fields (non-empty, unique names). Required when `kind === STRUCT`. */
     readonly structFields?: IcebergStructFieldDefinition[];
-
-    /** Coordinate reference system identifier. Optional when `kind` is `GEOMETRY` or `GEOGRAPHY`. */
     readonly geoCrs?: string;
-
-    /** Edge-interpolation algorithm. Optional when `kind === GEOGRAPHY`. */
     readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 }
 
@@ -212,6 +175,15 @@ export class IcebergType {
         });
     }
 
+    private static validateGeoCrs(kind: IcebergTypeKind, crs?: string): void {
+        if (crs !== undefined && !/^[^\s(){},]+$/.test(crs)) {
+            throw new Error(
+                `${kind} CRS must be a non-empty identifier such as 'EPSG:4326' with no whitespace, `
+                + `parentheses, braces, or commas (inline PROJJSON is not allowed), got '${crs}'`,
+            );
+        }
+    }
+
     /**
      * Fixed-precision decimal.
      * @param precision Total number of digits (1..38).
@@ -219,6 +191,12 @@ export class IcebergType {
      * @returns Decimal Iceberg type.
      */
     public static decimal(precision: number, scale: number): IcebergType {
+        if (!Number.isInteger(precision) || precision < 1 || precision > 38) {
+            throw new Error(`decimal precision must be an integer in [1, 38], got ${precision}`);
+        }
+        if (!Number.isInteger(scale) || scale < 0 || scale > precision) {
+            throw new Error(`decimal scale must be an integer in [0, ${precision}], got ${scale}`);
+        }
         return new IcebergType({
             kind: IcebergTypeKind.DECIMAL,
             decimalPrecision: precision,
@@ -232,6 +210,9 @@ export class IcebergType {
      * @returns Fixed-length Iceberg type.
      */
     public static fixed(length: number): IcebergType {
+        if (!Number.isInteger(length) || length < 1) {
+            throw new Error(`fixed length must be a positive integer, got ${length}`);
+        }
         return new IcebergType({
             kind: IcebergTypeKind.FIXED,
             fixedLength: length,
@@ -248,7 +229,7 @@ export class IcebergType {
             kind: IcebergTypeKind.LIST,
             listElement: definition.element,
             listElementId: definition.elementId,
-            listElementRequired: definition.elementRequired,
+            listElementRequired: definition.elementRequired ?? false,
         });
     }
 
@@ -264,7 +245,7 @@ export class IcebergType {
             mapKeyId: definition.keyId,
             mapValue: definition.value,
             mapValueId: definition.valueId,
-            mapValueRequired: definition.valueRequired,
+            mapValueRequired: definition.valueRequired ?? false,
         });
     }
 
@@ -274,6 +255,16 @@ export class IcebergType {
      * @returns Struct Iceberg type.
      */
     public static struct(fields: IcebergStructFieldDefinition[]): IcebergType {
+        if (fields.length === 0) {
+            throw new Error('struct requires at least one structField');
+        }
+        const seenNames = new Set<string>();
+        for (const field of fields) {
+            if (seenNames.has(field.name)) {
+                throw new Error(`duplicate field name in struct: ${field.name}`);
+            }
+            seenNames.add(field.name);
+        }
         return new IcebergType({
             kind: IcebergTypeKind.STRUCT,
             structFields: fields,
@@ -286,6 +277,7 @@ export class IcebergType {
      * @returns Geometry Iceberg type.
      */
     public static geometry(crs?: string): IcebergType {
+        IcebergType.validateGeoCrs(IcebergTypeKind.GEOMETRY, crs);
         return new IcebergType({
             kind: IcebergTypeKind.GEOMETRY,
             geoCrs: crs,
@@ -299,6 +291,7 @@ export class IcebergType {
      * @returns Geography Iceberg type.
      */
     public static geography(crs?: string, algorithm?: IcebergEdgeAlgorithm): IcebergType {
+        IcebergType.validateGeoCrs(IcebergTypeKind.GEOGRAPHY, crs);
         return new IcebergType({
             kind: IcebergTypeKind.GEOGRAPHY,
             geoCrs: crs,
@@ -351,83 +344,22 @@ export class IcebergType {
     /** Edge-interpolation algorithm (set when one was given). */
     public readonly geographyAlgorithm?: IcebergEdgeAlgorithm;
 
-    public constructor(options: IcebergTypeOptions) {
+    private constructor(options: IcebergTypeOptions) {
         this.kind = options.kind;
-        switch (options.kind) {
-            case IcebergTypeKind.DECIMAL:
-                if (options.decimalPrecision === undefined || options.decimalScale === undefined) {
-                    throw new Error('decimal requires both decimalPrecision and decimalScale');
-                }
-                if (!Number.isInteger(options.decimalPrecision)
-                    || options.decimalPrecision < 1
-                    || options.decimalPrecision > 38) {
-                    throw new Error(
-                        `decimal precision must be an integer in [1, 38], got ${options.decimalPrecision}`,
-                    );
-                }
-                if (!Number.isInteger(options.decimalScale)
-                    || options.decimalScale < 0
-                    || options.decimalScale > options.decimalPrecision) {
-                    throw new Error(
-                        `decimal scale must be an integer in [0, ${options.decimalPrecision}], got ${options.decimalScale}`,
-                    );
-                }
-                this.decimalPrecision = options.decimalPrecision;
-                this.decimalScale = options.decimalScale;
-                break;
-            case IcebergTypeKind.FIXED:
-                if (options.fixedLength === undefined) {
-                    throw new Error('fixed requires fixedLength');
-                }
-                if (!Number.isInteger(options.fixedLength) || options.fixedLength < 1) {
-                    throw new Error(`fixed length must be a positive integer, got ${options.fixedLength}`);
-                }
-                this.fixedLength = options.fixedLength;
-                break;
-            case IcebergTypeKind.LIST:
-                if (options.listElement === undefined) {
-                    throw new Error('list requires listElement');
-                }
-                this.listElement = options.listElement;
-                this.listElementId = options.listElementId;
-                this.listElementRequired = options.listElementRequired ?? false;
-                break;
-            case IcebergTypeKind.MAP:
-                if (options.mapKey === undefined || options.mapValue === undefined) {
-                    throw new Error('map requires both mapKey and mapValue');
-                }
-                this.mapKey = options.mapKey;
-                this.mapKeyId = options.mapKeyId;
-                this.mapValue = options.mapValue;
-                this.mapValueId = options.mapValueId;
-                this.mapValueRequired = options.mapValueRequired ?? false;
-                break;
-            case IcebergTypeKind.STRUCT: {
-                if (options.structFields === undefined || options.structFields.length === 0) {
-                    throw new Error('struct requires at least one structField');
-                }
-                const seenNames = new Set<string>();
-                for (const field of options.structFields) {
-                    if (seenNames.has(field.name)) {
-                        throw new Error(`duplicate field name in struct: ${field.name}`);
-                    }
-                    seenNames.add(field.name);
-                }
-                this.structFields = options.structFields;
-                break;
-            }
-            case IcebergTypeKind.GEOMETRY:
-            case IcebergTypeKind.GEOGRAPHY:
-                if (options.geoCrs !== undefined && !/^[^\s(){},]+$/.test(options.geoCrs)) {
-                    throw new Error(
-                        `${options.kind} CRS must be a non-empty identifier such as 'EPSG:4326' with no whitespace, `
-                        + `parentheses, braces, or commas (inline PROJJSON is not allowed), got '${options.geoCrs}'`,
-                    );
-                }
-                this.geoCrs = options.geoCrs;
-                this.geographyAlgorithm = options.geographyAlgorithm;
-                break;
-        }
+        this.decimalPrecision = options.decimalPrecision;
+        this.decimalScale = options.decimalScale;
+        this.fixedLength = options.fixedLength;
+        this.listElement = options.listElement;
+        this.listElementId = options.listElementId;
+        this.listElementRequired = options.listElementRequired;
+        this.mapKey = options.mapKey;
+        this.mapKeyId = options.mapKeyId;
+        this.mapValue = options.mapValue;
+        this.mapValueId = options.mapValueId;
+        this.mapValueRequired = options.mapValueRequired;
+        this.structFields = options.structFields;
+        this.geoCrs = options.geoCrs;
+        this.geographyAlgorithm = options.geographyAlgorithm;
     }
 
     /**

@@ -4,46 +4,6 @@ import {
     IcebergTypeKind,
 } from '../../lib/iceberg';
 
-describe('IcebergType — direct constructor', () => {
-    it('rejects decimal without precision + scale', () => {
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.DECIMAL,
-        })).toThrow(/decimalPrecision and decimalScale/);
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.DECIMAL,
-            decimalPrecision: 5,
-        })).toThrow(/decimalPrecision and decimalScale/);
-    });
-
-    it('rejects fixed without length', () => {
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.FIXED,
-        })).toThrow(/fixedLength/);
-    });
-
-    it('rejects list without listElement', () => {
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.LIST,
-        })).toThrow(/listElement/);
-    });
-
-    it('rejects map without mapKey or mapValue', () => {
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.MAP,
-        })).toThrow(/mapKey and mapValue/);
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.MAP,
-            mapKey: IcebergType.STRING,
-        })).toThrow(/mapKey and mapValue/);
-    });
-
-    it('rejects struct without fields', () => {
-        expect(() => new IcebergType({
-            kind: IcebergTypeKind.STRUCT,
-        })).toThrow(/at least one structField/);
-    });
-});
-
 describe('IcebergType — primitive', () => {
     it.each([
         [
@@ -128,6 +88,11 @@ describe('IcebergType — primitive', () => {
         ],
     ])('%s renders to %s', (_label, type, expected) => {
         expect(type._render()).toBe(expected);
+    });
+
+    it('exposes the kind discriminator on constants and factory instances', () => {
+        expect(IcebergType.INT.kind).toBe(IcebergTypeKind.INT);
+        expect(IcebergType.decimal(10, 2).kind).toBe(IcebergTypeKind.DECIMAL);
     });
 });
 
@@ -286,6 +251,10 @@ describe('IcebergType — struct', () => {
                 },
             ],
         });
+    });
+
+    it('rejects an empty field list', () => {
+        expect(() => IcebergType.struct([])).toThrow(/at least one structField/);
     });
 
     it('rejects duplicate field names', () => {

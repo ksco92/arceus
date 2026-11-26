@@ -18,26 +18,6 @@ export enum IcebergPartitionTransformKind {
 }
 
 /**
- * Construction options for an `IcebergPartitionTransform`.
- *
- * Most callers should use the static factories
- * (`IcebergPartitionTransform.IDENTITY`,
- * `IcebergPartitionTransform.bucket(...)`, etc.) rather than
- * instantiate directly. The constructor exists for jsii reflection
- * and runs the same validation as the factories.
- */
-export interface IcebergPartitionTransformOptions {
-    /** Discriminator. */
-    readonly kind: IcebergPartitionTransformKind;
-
-    /** Number of buckets (positive integer). Required when `kind === BUCKET`. */
-    readonly bucketCount?: number;
-
-    /** Truncate width (positive integer). Required when `kind === TRUNCATE`. */
-    readonly truncateWidth?: number;
-}
-
-/**
  * One of the partition / sort transforms defined in the Iceberg spec.
  *
  * Use the static factories on this class to construct one. The
@@ -47,34 +27,34 @@ export interface IcebergPartitionTransformOptions {
  */
 export class IcebergPartitionTransform {
     /** `identity` — source value unmodified. Legal on any column type. */
-    public static readonly IDENTITY: IcebergPartitionTransform = new IcebergPartitionTransform({
-        kind: IcebergPartitionTransformKind.IDENTITY,
-    });
+    public static readonly IDENTITY: IcebergPartitionTransform = new IcebergPartitionTransform(
+        IcebergPartitionTransformKind.IDENTITY,
+    );
 
     /** `year` — extracts the year of a date or timestamp (nanosecond timestamps included). */
-    public static readonly YEAR: IcebergPartitionTransform = new IcebergPartitionTransform({
-        kind: IcebergPartitionTransformKind.YEAR,
-    });
+    public static readonly YEAR: IcebergPartitionTransform = new IcebergPartitionTransform(
+        IcebergPartitionTransformKind.YEAR,
+    );
 
     /** `month` — extracts the month of a date or timestamp (nanosecond timestamps included). */
-    public static readonly MONTH: IcebergPartitionTransform = new IcebergPartitionTransform({
-        kind: IcebergPartitionTransformKind.MONTH,
-    });
+    public static readonly MONTH: IcebergPartitionTransform = new IcebergPartitionTransform(
+        IcebergPartitionTransformKind.MONTH,
+    );
 
     /** `day` — extracts the day of a date or timestamp (nanosecond timestamps included). */
-    public static readonly DAY: IcebergPartitionTransform = new IcebergPartitionTransform({
-        kind: IcebergPartitionTransformKind.DAY,
-    });
+    public static readonly DAY: IcebergPartitionTransform = new IcebergPartitionTransform(
+        IcebergPartitionTransformKind.DAY,
+    );
 
     /** `hour` — extracts the hour of a timestamp (nanosecond timestamps included, not a date). */
-    public static readonly HOUR: IcebergPartitionTransform = new IcebergPartitionTransform({
-        kind: IcebergPartitionTransformKind.HOUR,
-    });
+    public static readonly HOUR: IcebergPartitionTransform = new IcebergPartitionTransform(
+        IcebergPartitionTransformKind.HOUR,
+    );
 
     /** `void` — always-null partition. Useful for partition-spec evolution. */
-    public static readonly VOID: IcebergPartitionTransform = new IcebergPartitionTransform({
-        kind: IcebergPartitionTransformKind.VOID,
-    });
+    public static readonly VOID: IcebergPartitionTransform = new IcebergPartitionTransform(
+        IcebergPartitionTransformKind.VOID,
+    );
 
     /**
      * `bucket[N]` — Murmur3 hash of the source mod N.
@@ -82,10 +62,10 @@ export class IcebergPartitionTransform {
      * @returns Bucket partition transform.
      */
     public static bucket(numBuckets: number): IcebergPartitionTransform {
-        return new IcebergPartitionTransform({
-            kind: IcebergPartitionTransformKind.BUCKET,
-            bucketCount: numBuckets,
-        });
+        if (!Number.isInteger(numBuckets) || numBuckets < 1) {
+            throw new Error(`bucket() numBuckets must be a positive integer, got ${numBuckets}`);
+        }
+        return new IcebergPartitionTransform(IcebergPartitionTransformKind.BUCKET, numBuckets);
     }
 
     /**
@@ -94,10 +74,10 @@ export class IcebergPartitionTransform {
      * @returns Truncate partition transform.
      */
     public static truncate(width: number): IcebergPartitionTransform {
-        return new IcebergPartitionTransform({
-            kind: IcebergPartitionTransformKind.TRUNCATE,
-            truncateWidth: width,
-        });
+        if (!Number.isInteger(width) || width < 1) {
+            throw new Error(`truncate() width must be a positive integer, got ${width}`);
+        }
+        return new IcebergPartitionTransform(IcebergPartitionTransformKind.TRUNCATE, undefined, width);
     }
 
     /** Discriminator. */
@@ -109,33 +89,14 @@ export class IcebergPartitionTransform {
     /** Truncate width (set when `kind === TRUNCATE`). */
     public readonly truncateWidth?: number;
 
-    public constructor(options: IcebergPartitionTransformOptions) {
-        const {
-            kind,
-            bucketCount,
-            truncateWidth,
-        } = options;
+    private constructor(
+        kind: IcebergPartitionTransformKind,
+        bucketCount?: number,
+        truncateWidth?: number,
+    ) {
         this.kind = kind;
-        switch (kind) {
-            case IcebergPartitionTransformKind.BUCKET:
-                if (bucketCount === undefined) {
-                    throw new Error('bucket transform requires bucketCount');
-                }
-                if (!Number.isInteger(bucketCount) || bucketCount < 1) {
-                    throw new Error(`bucket() numBuckets must be a positive integer, got ${bucketCount}`);
-                }
-                this.bucketCount = bucketCount;
-                break;
-            case IcebergPartitionTransformKind.TRUNCATE:
-                if (truncateWidth === undefined) {
-                    throw new Error('truncate transform requires truncateWidth');
-                }
-                if (!Number.isInteger(truncateWidth) || truncateWidth < 1) {
-                    throw new Error(`truncate() width must be a positive integer, got ${truncateWidth}`);
-                }
-                this.truncateWidth = truncateWidth;
-                break;
-        }
+        this.bucketCount = bucketCount;
+        this.truncateWidth = truncateWidth;
     }
 
     /**
