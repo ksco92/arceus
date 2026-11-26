@@ -2353,7 +2353,7 @@ describe('IcebergTable — catalogId and tokenized tableName', () => {
 });
 
 describe('IcebergTable — raw CfnTable exit-path equivalence', () => {
-    it('synthesizes the exact same AWS::Glue::Table resource as a raw CfnTable with overrideLogicalId', () => {
+    it('synthesizes the same AWS::Glue::Table resource as a raw CfnTable with overrideLogicalId', () => {
         const {
             stack: stackA,
             database: databaseA,
