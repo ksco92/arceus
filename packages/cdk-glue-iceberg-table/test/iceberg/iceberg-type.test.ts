@@ -2,7 +2,7 @@ import {
     IcebergEdgeAlgorithm,
     IcebergType,
     IcebergTypeKind,
-} from '../../lib/iceberg/iceberg-type';
+} from '../../lib/iceberg';
 
 describe('IcebergType — direct constructor', () => {
     it('rejects decimal without precision + scale', () => {

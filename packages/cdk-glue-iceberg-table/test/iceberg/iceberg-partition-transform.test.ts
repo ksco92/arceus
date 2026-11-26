@@ -1,10 +1,8 @@
 import {
     IcebergPartitionTransform,
     IcebergPartitionTransformKind,
-} from '../../lib/iceberg/iceberg-partition-transform';
-import {
     IcebergType,
-} from '../../lib/iceberg/iceberg-type';
+} from '../../lib/iceberg';
 
 describe('IcebergPartitionTransform — strings', () => {
     it.each([
