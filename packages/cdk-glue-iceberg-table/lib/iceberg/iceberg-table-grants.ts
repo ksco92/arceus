@@ -105,14 +105,8 @@ export const READ_WRITE_PROFILE: GrantProfile = {
         ...READ_PROFILE.objectActions,
         ...WRITE_PROFILE.objectActions,
     ],
-    keyActions: [
-        ...READ_PROFILE.keyActions,
-        ...WRITE_PROFILE.keyActions,
-    ],
-    catalogKeyActions: [
-        ...READ_PROFILE.catalogKeyActions,
-        ...WRITE_PROFILE.catalogKeyActions,
-    ],
+    keyActions: WRITE_PROFILE.keyActions,
+    catalogKeyActions: WRITE_PROFILE.catalogKeyActions,
 };
 
 /**
