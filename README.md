@@ -65,7 +65,8 @@ Both examples go inside a stack's constructor in an existing CDK app. Required v
 - `formatVersion` is required (`IcebergFormatVersion.V1`, `V2`, or `V3`).
 - `dataFormat` defaults to `IcebergDataFormat.PARQUET`.
 - `removalPolicy` defaults to `RemovalPolicy.RETAIN`.
-- Setting `identifierFieldNames` prepends `(PK) ` to each identifier column's `doc` (the Glue column comment), so user-supplied `doc` strings on columns cannot start with `(PK) `.
+
+Setting `identifierFieldNames` prepends `(PK) ` to each identifier column's Glue comment ([Identifier fields](#identifier-fields)).
 
 ### TypeScript
 
@@ -141,7 +142,7 @@ IcebergTable(self, "OrdersTable",
 
 ### The field id rules
 
-`id` and `fieldId` are Iceberg field ids. Data files store values by field id rather than column name. `IcebergTable` validates the ids in a single declaration (distinct integers from `1` to `2147483447`), keeps no state across deploys, and leaves cross-deploy id hygiene to you:
+`id` and `fieldId` are Iceberg field ids. Data files store values by field id rather than column name. `IcebergTable` validates ids within a single declaration ([Columns and field ids](#columns-and-field-ids), [Partition fields](#partition-fields)), keeps no state across deploys, and leaves cross-deploy id hygiene to you:
 
 1. **Declare a new table's ids in creation order (columns 1, 2, 3 in order, then nested fields):** Glue numbers a new table this way regardless of declared ids; if the declared ids differ, the first update Glue accepts renumbers the fields to them, causing pre-update data files to read under the wrong field. Use `IcebergTable.creationOrderFieldIds(columns)` ([Creation order](#creation-order)).
 2. **Keep each column's id for life and retire dropped column ids:** A rename keeps the `id` and changes `name`; a new column takes an id above `last-column-id` ([how to read it](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#which-ids-the-table-has-used)). Giving a dropped column's id to a new column of the same type is accepted by Glue, causing Spark and Athena to read the dropped column's pre-drop values under the new column.
@@ -265,7 +266,7 @@ Declaring `tableInput` (even holding only `name`) beside `openTableFormatInput.i
 
 ### What the construct rests on
 
-`IcebergTable` relies on Glue behaviors that AWS does not document as contracts, including: CREATE renumbering columns in creation order and partition fields from 1000; `UpdateTable` storing declared column, nested, and partition `fieldId`s and advancing `last-partition-id`; v2 widening promotions and `required` relaxation keeping field ids in place; in-place `location` updates keeping `table-uuid` while Lake Formation scopes Athena credentials to the current `location`; schema and partition-spec reuse; property-only updates (including on `decimal` tables); sort order, identifier, `(PK) ` comment marker, and rollback behavior; and engine `ALTER TABLE` interactions. On v2 tables registered with Lake Formation, both Spark and Athena read and write the same tables (including merge-on-read DML, time travel, compaction, `VACUUM`, and IAM grants via `grantRead` and `grantReadWrite`). See [docs/glue-behaviours.md](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md) for the observed list and assertions.
+`IcebergTable` relies on undocumented AWS Glue behaviors verified on v2 and v3 tables against Spark and Athena; see [docs/glue-behaviours.md](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md) for the observed list.
 
 ## Granting access
 

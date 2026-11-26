@@ -180,7 +180,7 @@ edits and what follows it.
 
 A change goes to `main` through a pull request. The active `Protect main` repository ruleset enforces pull requests, blocks branch deletion and force-pushes, and requires the six status checks (`release-policy`, `build-test`, `e2e-consumer`, `packed-consumer`, `peer-floor`, and `integ-gate`) on `main`.
 
-- The `ci.yml` jobs pass: `release-policy`, `build-test`, `e2e-consumer`, `packed-consumer` and `peer-floor`.
+- All five `ci.yml` jobs pass.
 - A PR other than a release that changes the published package adds a changelog line under `## Unreleased` and leaves `version` alone.
 - A breaking change in such a PR also adds a note to `UPGRADING.md` under `## Unreleased`.
 - The `integ-gate` commit status on the PR head is `success`; [CLAUDE.md](CLAUDE.md) says when that needs an Integration test run.
