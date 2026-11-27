@@ -268,119 +268,6 @@ function metadataAfterDrop(): Record<string, unknown> {
 
 const BASE_TEMPLATE = synthTable(baseColumns(), DAY_PARTITION);
 
-describe('collectFields', () => {
-    it('collects top-level and nested ids from synthesized CloudFormation Schema.Fields', () => {
-        const template = synthTable([
-            ...baseColumns(),
-            {
-                name: 'a.b`c',
-                type: IcebergType.list({
-                    element: IcebergType.struct([
-                        {
-                            id: 14,
-                            name: 'item',
-                            type: IcebergType.STRING,
-                        },
-                    ]),
-                    elementId: 13,
-                }),
-                id: 12,
-            },
-        ]) as {
-            Resources: Record<string, {
-                Type: string;
-                Properties: {
-                    OpenTableFormatInput: {
-                        IcebergInput: {
-                            IcebergTableInput: {
-                                Schema: {
-                                    Fields: unknown[];
-                                };
-                            };
-                        };
-                    };
-                };
-            }>;
-        };
-        const glueTable = Object.values(template.Resources).find((r) => r.Type === 'AWS::Glue::Table')!;
-        const fields = glueTable.Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields;
-        expect(checker.collectFields(fields)).toEqual([
-            {
-                id: 1,
-                path: 'order_id',
-            },
-            {
-                id: 2,
-                path: 'customer_id',
-            },
-            {
-                id: 3,
-                path: 'placed_at',
-            },
-            {
-                id: 4,
-                path: 'tags',
-            },
-            {
-                id: 7,
-                path: 'tags.element',
-            },
-            {
-                id: 5,
-                path: 'addr',
-            },
-            {
-                id: 8,
-                path: 'addr.line1',
-            },
-            {
-                id: 9,
-                path: 'addr.city',
-            },
-            {
-                id: 6,
-                path: 'attrs',
-            },
-            {
-                id: 10,
-                path: 'attrs.key',
-            },
-            {
-                id: 11,
-                path: 'attrs.value',
-            },
-            {
-                id: 12,
-                path: '`a.b``c`',
-            },
-            {
-                id: 13,
-                path: '`a.b``c`.element',
-            },
-            {
-                id: 14,
-                path: '`a.b``c`.element.item',
-            },
-        ]);
-    });
-
-    it('handles non-object entries, optional prefix, and non-string field names safely', () => {
-        expect(checker.collectFields([
-            null,
-            {
-                Id: 6,
-                Name: 123,
-                Type: null,
-            },
-        ], 'p.')).toEqual([
-            {
-                id: 6,
-                path: 'p.',
-            },
-        ]);
-    });
-});
-
 describe('checkFieldIds — safe updates on synthesized IcebergTable', () => {
     it('passes on an unchanged table with nested fields and partitions', () => {
         expect(checker.checkFieldIds(BASE_TEMPLATE, baseMetadata()).problems).toEqual([]);
@@ -617,7 +504,7 @@ describe('checkFieldIds — violations', () => {
         expect(problems[3]).toContain('new_map.value');
     });
 
-    it('rejects new top-level or nested field ids <= last-column-id', () => {
+    it('rejects new top-level or nested field ids <= last-column-id and escapes dot/backtick paths', () => {
         const cols = baseColumns();
         cols[4] = {
             name: 'addr',
@@ -643,18 +530,22 @@ describe('checkFieldIds — violations', () => {
             id: 5,
         };
         cols.push({
-            name: 'currency',
-            type: IcebergType.STRING,
+            name: 'a.b`c',
+            type: IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: 14,
+            }),
             id: 13,
         });
         const {
             problems,
         } = checker.checkFieldIds(synthTable(cols), baseMetadata({
-            'last-column-id': 13,
+            'last-column-id': 14,
         }));
-        expect(problems).toHaveLength(2);
-        expect(problems[0]).toContain("New field 'addr.zip' uses id 12 <= last-column-id (13)");
-        expect(problems[1]).toContain("New field 'currency' uses id 13 <= last-column-id (13)");
+        expect(problems).toHaveLength(3);
+        expect(problems[0]).toContain("New field 'addr.zip' uses id 12 <= last-column-id (14)");
+        expect(problems[1]).toContain("New field '`a.b``c`' uses id 13 <= last-column-id (14)");
+        expect(problems[2]).toContain("New field '`a.b``c`.element' uses id 14 <= last-column-id (14)");
     });
 
     it('rejects out-of-creation-order active id swaps (docs/field-ids.md example)', () => {
@@ -824,6 +715,25 @@ describe('checkFieldIds — violations', () => {
 });
 
 describe('table selection and malformed inputs', () => {
+    const metaWith = (overrides: Record<string, unknown> = {}) => baseMetadata({
+        'last-column-id': 1,
+        schemas: [
+            {
+                'schema-id': 0,
+                fields: [
+                    {
+                        id: 1,
+                        name: 'id',
+                        type: 'long',
+                    },
+                ],
+            },
+        ],
+        'partition-specs': [],
+        'last-partition-id': 999,
+        ...overrides,
+    });
+
     function multiTableTemplate(): Record<string, unknown> {
         const app = new App();
         const stack = new Stack(app, 'MultiStack', {
@@ -880,23 +790,7 @@ describe('table selection and malformed inputs', () => {
         const tpl = multiTableTemplate();
         const resources = (tpl as { Resources: Record<string, { Type: string }> }).Resources;
         const eventsLogicalId = Object.keys(resources).find((k) => k.startsWith('EventsTable'))!;
-        const simpleMeta = baseMetadata({
-            'last-column-id': 1,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: [
-                        {
-                            id: 1,
-                            name: 'order_id',
-                            type: 'long',
-                        },
-                    ],
-                },
-            ],
-            'partition-specs': [],
-            'last-partition-id': 999,
-        });
+        const simpleMeta = metaWith();
 
         expect(checker.checkFieldIds(tpl, simpleMeta).problems[0]).toContain('--table');
         expect(checker.checkFieldIds(tpl, simpleMeta, {
@@ -985,24 +879,6 @@ describe('table selection and malformed inputs', () => {
     const singleTpl = tplWith([
         singleCol,
     ]);
-    const metaWith = (overrides: Record<string, unknown> = {}) => baseMetadata({
-        'last-column-id': 1,
-        schemas: [
-            {
-                'schema-id': 0,
-                fields: [
-                    {
-                        id: 1,
-                        name: 'id',
-                        type: 'long',
-                    },
-                ],
-            },
-        ],
-        'partition-specs': [],
-        'last-partition-id': 999,
-        ...overrides,
-    });
     const metaNoFields = metaWith({
         schemas: [
             {
@@ -1075,6 +951,12 @@ describe('table selection and malformed inputs', () => {
         singleCol,
         tplCol(1, 'b', 'long'),
     ]);
+    const nonStringNameTpl = tplWith([
+        tplCol(2, 123, null),
+    ]);
+    const nonStringNameMeta = metaWith({
+        'last-column-id': 2,
+    });
     const badSpecsMeta = metaWith({
         'partition-specs': 'bad',
     });
@@ -1105,6 +987,7 @@ describe('table selection and malformed inputs', () => {
         ${'non-object nested struct field entry'}      | ${badType('{"type":"struct","fields":[null]}')} | ${metaWith()} | ${"under 'id.'"}
         ${'unsupported object type'}                   | ${badType('{"type":"unknown_container"}')} | ${metaWith()} | ${'unsupported object type'}
         ${'non-object entry in Schema.Fields'}         | ${nonObjFieldTpl}         | ${metaWith()}            | ${'non-object entry'}
+        ${'non-string field Name'}                     | ${nonStringNameTpl}       | ${nonStringNameMeta}     | ${"New field '' uses id 2"}
         ${'non-integer field Id'}                      | ${nonIntIdTpl}            | ${metaWith()}            | ${'non-integer id'}
         ${'duplicate field Id'}                        | ${dupIdTpl}               | ${metaWith()}            | ${'duplicates field id 1'}
         ${'non-array partition-specs'}                 | ${singleTpl}              | ${badSpecsMeta}          | ${"'partition-specs' must be an array"}

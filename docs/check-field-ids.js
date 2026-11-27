@@ -55,9 +55,9 @@ function collectNestedType(rawType, path, parentId, out, problems) {
     return null;
 }
 
-function collectBindings(fields, problems = [], prefix = '', parentId = null, out = []) {
+function collectBindings(fields, problems, prefix = '', parentId = null, out = []) {
     if (!Array.isArray(fields)) {
-        problems.push(`Schema field list${prefix ? ` under '${prefix}'` : ''} must be an array.`);
+        problems.push(`Schema field list under '${prefix}' must be an array.`);
         return out;
     }
     for (const field of fields) {
@@ -81,23 +81,6 @@ function collectBindings(fields, problems = [], prefix = '', parentId = null, ou
         entry.kind = collectNestedType(field.type ?? field.Type, path, id, out, problems);
     }
     return out;
-}
-
-/**
- * Walk Iceberg schema fields recursively into `list`, `map`, and `struct` types.
- *
- * Accepts both CloudFormation `Schema.Fields` entries (PascalCase keys with
- * JSON-stringified `Type`) and Iceberg `metadata.json` `fields`.
- *
- * @param fields Array of field definitions.
- * @param prefix Dotted path prefix for nested fields.
- * @returns Flat list of `{ id, path }` entries.
- */
-function collectFields(fields, prefix = '') {
-    return collectBindings(fields, [], prefix).map(({ id, path }) => ({
-        id,
-        path,
-    }));
 }
 
 /**
@@ -259,6 +242,8 @@ function checkColumnIds(tableInput, metadata, problems) {
     }
 }
 
+const partitionBinding = (sourceId, transform) => `${sourceId}:${transform}`;
+
 function indexPartitionHistory(metadata, problems) {
     const specs = metadata['partition-specs'];
     if (specs !== undefined && !Array.isArray(specs)) {
@@ -283,7 +268,7 @@ function indexPartitionHistory(metadata, problems) {
                 continue;
             }
             const fieldId = field['field-id'];
-            const binding = `${field['source-id']}:${field.transform}`;
+            const binding = partitionBinding(field['source-id'], field.transform);
             if (fieldId > maxHistoricalPartitionId) {
                 maxHistoricalPartitionId = fieldId;
             }
@@ -324,9 +309,8 @@ function checkPartitionIds(tableInput, metadata, problems) {
             continue;
         }
         const fieldId = field.FieldId;
-        const sourceId = field.SourceId;
-        const transform = field.Transform;
-        const name = field.Name ?? `${sourceId}:${transform}`;
+        const binding = partitionBinding(field.SourceId, field.Transform);
+        const name = field.Name ?? binding;
         if (typeof fieldId !== 'number' || !Number.isInteger(fieldId)) {
             problems.push(`Template partition field '${name}' has non-integer FieldId ${JSON.stringify(fieldId)}.`);
             continue;
@@ -336,7 +320,6 @@ function checkPartitionIds(tableInput, metadata, problems) {
             continue;
         }
         seenPartitionIds.add(fieldId);
-        const binding = `${sourceId}:${transform}`;
         const prior = historicalPartitions.get(fieldId);
         if (prior !== undefined) {
             if (!prior.has(binding)) {
@@ -453,6 +436,5 @@ if (require.main === module) {
 
 module.exports = {
     checkFieldIds,
-    collectFields,
     findIcebergTable,
 };

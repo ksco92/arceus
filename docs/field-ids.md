@@ -111,7 +111,7 @@ the `fieldId` you declare. In the suite's table, after a day to month change dec
 
 ## Check in CI
 
-[docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) is a zero-dependency Node.js script and is not bundled in the npm or PyPI package. Copy [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) into your repository (for example at `docs/check-field-ids.js`), download the live table's `metadata.json` from Glue's `metadata_location` parameter, and pass it with your synthesized CloudFormation template (`--table` accepts a Glue table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
+Copy [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) (a zero-dependency Node.js script, not bundled in the npm or PyPI package) into your repository (for example at `docs/check-field-ids.js`), download the live `metadata.json` from Glue's `metadata_location` parameter, and run it against your synthesized template (`--table` accepts a Glue table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
 
 ```bash
 aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
