@@ -703,8 +703,36 @@ describe('checkFieldIds — violations', () => {
             },
         ]);
         expect(checker.checkFieldIds(newLowId, baseMetadata({
+            'last-partition-id': 1001,
+        })).problems[0]).toContain('fieldId 1001 <= last-partition-id (1001)');
+        expect(checker.checkFieldIds(newLowId, baseMetadata({
             'last-partition-id': 1002,
         })).problems[0]).toContain('fieldId 1001 <= last-partition-id (1002)');
+
+        const v1MissingCounter = baseMetadata({
+            'last-partition-id': undefined,
+            'partition-specs': [
+                {
+                    'spec-id': 0,
+                    fields: [
+                        {
+                            name: 'placed_at_day',
+                            'source-id': 3,
+                            transform: 'day',
+                            'field-id': 1000,
+                        },
+                        {
+                            name: 'placed_at_month',
+                            'source-id': 3,
+                            transform: 'month',
+                            'field-id': 1005,
+                        },
+                    ],
+                },
+            ],
+        });
+        expect(checker.checkFieldIds(newLowId, v1MissingCounter).problems[0])
+            .toContain('fieldId 1001 <= last-partition-id (1005)');
 
         const staleResult = checker.checkFieldIds(BASE_TEMPLATE, baseMetadata({
             'last-partition-id': 999,
@@ -1085,6 +1113,14 @@ describe('CLI execution', () => {
             [],
             [
                 templateFile,
+            ],
+            [
+                '',
+                metadataFile,
+            ],
+            [
+                templateFile,
+                '',
             ],
             [
                 templateFile,
