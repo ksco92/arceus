@@ -4,7 +4,7 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
-- (patch) Document live AWS integration coverage for `IcebergFormatVersion.V1` and `AWS::Glue::TableOptimizer` coexistence (with `optimizer.node.addDependency(table)` and `table.grantReadWrite(optimizerRole, { lakeFormationDataAccess: true })` wiring notes) in the README.
+- (patch) Document live AWS integration coverage for `IcebergFormatVersion.V1` and `AWS::Glue::TableOptimizer` coexistence (with `optimizer.node.addDependency(table)` and `table.grantReadWrite(optimizerRole, { lakeFormationDataAccess: true, catalogEncryptionKey })` wiring notes) in the README.
 - (minor) Bundle the zero-dependency field-id checker CLI (`cdk-glue-iceberg-check-field-ids`, `bin/check-field-ids.js`) in the npm package, add `permissions.node.addDependency(table)` to the `CfnPermissions` README example, document the Integration test workflow schedule and V1 / `AWS::Glue::TableOptimizer` test status, and move the CI check and tool comparison earlier in the README.
 - (patch) Document the zero-dependency CI field-id checker (`docs/check-field-ids.js`) and copy-pasteable `aws glue get-table` / `aws s3 cp` invocation in the README and `docs/field-ids.md`.
 - (patch) Tighten the README for first-time adopters (add an `IcebergTableProps` summary table, document `Database.fromDatabaseArn` and tokenized `location` grant rules, clarify `fromIcebergTableAttributes` vs `cdk import`, surface the plain-`CfnTable` eject hatch and `UpdateTable` mechanism earlier, and move the Format version 3 deep dive to `docs/format-version-3.md`).

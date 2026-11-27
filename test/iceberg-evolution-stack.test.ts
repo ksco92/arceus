@@ -685,7 +685,34 @@ describe('IcebergEvolutionStack — Glue observation tables', () => {
         expect(policyJson).toContain('glue:UpdateTable');
         expect(policyJson).toContain('s3:PutObject');
         expect(policyJson).toContain('sample_database/optimizer_test/*');
-        expect(policyJson).toContain('lakeformation:GetDataAccess');
+        expect(policy.Properties.PolicyDocument.Statement.slice(-3)).toEqual([
+            {
+                Action: [
+                    'kms:Decrypt',
+                    'kms:GenerateDataKey',
+                ],
+                Effect: 'Allow',
+                Resource: {
+                    Ref: 'DataLakeKeyArn',
+                },
+            },
+            {
+                Action: [
+                    'kms:Decrypt',
+                    'kms:Encrypt',
+                    'kms:GenerateDataKey',
+                ],
+                Effect: 'Allow',
+                Resource: {
+                    Ref: 'CatalogKeyArn',
+                },
+            },
+            {
+                Action: 'lakeformation:GetDataAccess',
+                Effect: 'Allow',
+                Resource: '*',
+            },
+        ]);
 
         const lfPermissions = step1.findResources('AWS::LakeFormation::Permissions');
         const rolePermission = lfPermissions.OptimizerRolePermission;

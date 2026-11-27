@@ -18,7 +18,9 @@
 #     privilege on specified resource`.
 #   - ArceusStack already deployed with the SAME `PRINCIPAL_ARN` —
 #     the stack registers it as the LF admin / table grantee, and a
-#     mismatch makes the verify steps fail.
+#     mismatch makes the verify steps fail. The data-lake bucket's key
+#     and the Data Catalog key are read from the account and passed to
+#     the stack as parameters.
 #   - The Spark toolchain installed (scripts/spark/install-spark.sh).
 #   - An Athena workgroup and query result location (scripts/athena.sh).
 #
@@ -242,6 +244,8 @@ deploy_step() {
     npx cdk deploy "$STACK" \
         --require-approval=never \
         --region "$AWS_REGION" \
+        --parameters "${STACK}:DataLakeKeyArn=${DATA_LAKE_KEY_ARN}" \
+        --parameters "${STACK}:CatalogKeyArn=${CATALOG_KEY_ARN}" \
         --context "evolutionStep=$step" "$@" 2>&1 | tail -3
 }
 
@@ -254,6 +258,16 @@ header "TEARDOWN any existing IcebergEvolutionStack from a prior run"
 npx cdk destroy "$STACK" --force --region "$AWS_REGION" 2>&1 | tail -3 || true
 yellow "  Also clearing the table's S3 prefix so Iceberg starts fresh."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+DATA_LAKE_KEY_ARN=$(aws s3api get-bucket-encryption \
+    --bucket "data-lake-bucket-${ACCOUNT_ID}" \
+    --region "$AWS_REGION" \
+    --query 'ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.KMSMasterKeyID' \
+    --output text)
+CATALOG_KEY_ID=$(aws glue get-data-catalog-encryption-settings \
+    --region "$AWS_REGION" \
+    --query 'DataCatalogEncryptionSettings.EncryptionAtRest.SseAwsKmsKeyId' \
+    --output text)
+CATALOG_KEY_ARN="arn:aws:kms:${AWS_REGION}:${ACCOUNT_ID}:key/${CATALOG_KEY_ID##*/}"
 for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME_TABLE" \
     "$RENUMBER_TABLE" "$FORMAT_TABLE" "$DECIMAL_TABLE" "$CREATE_PARTITION_TABLE" \
     "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE" "$STORAGE_TABLE" \

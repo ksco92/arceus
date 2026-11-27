@@ -21,6 +21,9 @@ import {
     ServicePrincipal,
 } from 'aws-cdk-lib/aws-iam';
 import {
+    Key,
+} from 'aws-cdk-lib/aws-kms';
+import {
     Bucket,
 } from 'aws-cdk-lib/aws-s3';
 import {
@@ -133,6 +136,12 @@ export class IcebergEvolutionStack extends Stack {
             'ImportedDatabase',
             `arn:${this.partition}:glue:${this.region}:${this.account}:database/${props.importedDatabaseName}`,
         );
+        const dataLakeKey = Key.fromKeyArn(this, 'DataLakeKey', new CfnParameter(this, 'DataLakeKeyArn', {
+            description: 'ARN of the KMS key the data-lake bucket encrypts objects with.',
+        }).valueAsString);
+        const catalogKey = Key.fromKeyArn(this, 'CatalogKey', new CfnParameter(this, 'CatalogKeyArn', {
+            description: 'ARN of the KMS key the Data Catalog is encrypted with.',
+        }).valueAsString);
 
         const icebergTable = (
             tableId: string,
@@ -340,6 +349,7 @@ export class IcebergEvolutionStack extends Stack {
         });
         const optimizerTable = icebergTable('OptimizerTable', 'optimizer_test', {
             columns: idVNoteColumns,
+            encryptionKey: dataLakeKey,
             sortOrder: [
                 {
                     sourceColumn: 'id',
@@ -408,6 +418,7 @@ export class IcebergEvolutionStack extends Stack {
             assumedBy: new ServicePrincipal('glue.amazonaws.com'),
         });
         optimizerTable.grantReadWrite(optimizerRole, {
+            catalogEncryptionKey: catalogKey,
             lakeFormationDataAccess: true,
         });
         const optimizerRolePermissions = grant(
