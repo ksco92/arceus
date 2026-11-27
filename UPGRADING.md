@@ -5,6 +5,8 @@ yet released are under Unreleased.
 
 ## Unreleased
 
+## 0.23.0
+
 `IcebergType` and `IcebergPartitionTransform` constructors are now private and
 `IcebergTypeOptions` and `IcebergPartitionTransformOptions` are removed; use the
 static constants and factories (`IcebergType.INT`, `IcebergType.list(...)`,
