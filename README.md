@@ -390,7 +390,7 @@ The construct prepends `(PK) ` to each identifier column's `doc` (`(PK) ` alone 
 
 Set `formatVersion: IcebergFormatVersion.V3` to enable the six v3 column types at any nesting depth (`UNKNOWN`, `TIMESTAMP_NS`, `TIMESTAMPTZ_NS`, `VARIANT`, `geometry(crs?)`, and `geography(crs?, algorithm?)` with `IcebergEdgeAlgorithm`); `cdk synth` rejects them on `V1` and `V2` tables.
 
-Before choosing v3, note engine support: Athena operates on v2 tables only, Spark 4.1.1 + Iceberg 1.11.0 supports deletion vectors, row lineage, `variant`, and `unknown` but cannot open `timestamp_ns`, `timestamptz_ns`, `geometry`, or `geography` ([Known limitations](#known-limitations)), and Glue ignores a `V2` to `V3` `formatVersion` change on an existing table ([Changes that need care](#changes-that-need-care)).
+Spark supports deletion vectors, row lineage, `variant`, and `unknown`, while four v3 types are catalog-only ([Known limitations](#known-limitations)).
 
 See [docs/format-version-3.md](https://github.com/ksco92/arceus/blob/main/docs/format-version-3.md) for TypeScript and Python examples, per-type partition and identifier rules, `crs` validation, and the engine compatibility table.
 
@@ -471,7 +471,7 @@ All symbols exported by `cdk-glue-iceberg-table` (in Python, `cdk_glue_iceberg_t
 - **Mixed CDK and engine partition evolution:** check `last-partition-id` in `metadata.json` before running engine-side `ALTER TABLE ... ADD PARTITION FIELD` after CDK partition updates; if `last-partition-id` is below the highest declared partition `fieldId`, an engine-side `ADD PARTITION FIELD` can collide with an existing partition spec entry.
 - **Pre-0.11.0 identifier removal:** tables created with identifiers before 0.11.0 lack `(PK) ` markers in their earliest schema, so removing the last identifier without changing another column's `doc` restores the old schema with ids.
 - **Column defaults and Athena DDL-only clauses:** Iceberg v3 `initial-default` / `write-default` and Hive/Athena-only clauses (`ALTER TABLE ... SET LOCATION`, `bucketed_by`) are not exposed by `AWS::Glue::Table` (use `IcebergPartitionTransform.bucket(N)`).
-- **Spark v3 type support:** Spark 4.1.1 with Iceberg 1.11.0 (see [Format version 3](https://github.com/ksco92/arceus/blob/main/docs/format-version-3.md)) lacks `TypeToSparkType` conversion for `timestamp_ns`, `timestamptz_ns`, `geometry`, and `geography` (`Cannot convert unsupported type to Spark`), so tables with those columns are catalog-only in those runtimes.
+- **Spark v3 type support:** Spark and Iceberg at the versions listed in [Format version 3](https://github.com/ksco92/arceus/blob/main/docs/format-version-3.md) lack `TypeToSparkType` conversion for `timestamp_ns`, `timestamptz_ns`, `geometry`, and `geography` (`Cannot convert unsupported type to Spark`), so tables with those columns are catalog-only in those runtimes.
 
 ## Contributing
 

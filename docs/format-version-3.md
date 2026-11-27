@@ -77,8 +77,8 @@ Geometry and geography `crs` values must be non-empty identifiers (such as `OGC:
 | Engine | v3 tables | Notes |
 | --- | --- | --- |
 | Spark 4.1.1 + Iceberg 1.11.0 | Yes | Supports deletion vectors, row lineage, `variant`, and `unknown`; cannot open `timestamp_ns`, `timestamptz_ns`, `geometry`, or `geography` ([Known limitations](https://github.com/ksco92/arceus/blob/main/README.md#known-limitations)). |
-| AWS Glue 6.0 | Documented | [AWS Glue release notes](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) list Iceberg v3 (`VARIANT`, deletion vectors, row lineage, nanosecond timestamps, geo types); shares the Spark 4.1.1 and Iceberg 1.11.0 versions above, while the managed Glue job runtime itself is not exercised here. |
+| AWS Glue 6.0 | Documented | [AWS Glue release notes](https://docs.aws.amazon.com/glue/latest/dg/release-notes.html) list Iceberg v3 (`VARIANT`, deletion vectors, row lineage, nanosecond timestamps, geo types); shares the Spark and Iceberg versions above, while the managed Glue job runtime itself is not exercised here. |
 | Amazon EMR Spark 8.1.0 | Documented | [EMR Spark 8.1.0 release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark810-release.html) list Iceberg v3 support; not exercised here. |
 | Athena SQL | No | [Athena Iceberg documentation](https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html) states Athena operates only on Iceberg v2 tables. |
 
-Glue ignores a `V2` to `V3` `formatVersion` change on an existing table ([Changes that need care](https://github.com/ksco92/arceus/blob/main/README.md#changes-that-need-care)). To upgrade an existing v2 table to v3, run Spark `SET TBLPROPERTIES ('format-version' = '3')` and update `formatVersion` to `IcebergFormatVersion.V3` so `properties.format-version` stays aligned.
+Glue ignores a `V2` to `V3` `formatVersion` change on an existing table; for the Spark upgrade path, see [Changes that need care](https://github.com/ksco92/arceus/blob/main/README.md#changes-that-need-care).
