@@ -153,9 +153,10 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 ## Changelog lines and releases
 
 Leave `version` alone: a release pull request sets it. A file counts as
-published when it is under `packages/cdk-glue-iceberg-table/lib/`, or is
-the package's `README.md`, `LICENSE` or `package.json` (an edit confined
-to `devDependencies` does not count). If your change touches one, add
+published when it is under `packages/cdk-glue-iceberg-table/lib/` or
+`packages/cdk-glue-iceberg-table/bin/`, or is the package's `README.md`,
+`LICENSE` or `package.json` (an edit confined to `devDependencies` does
+not count). If your change touches one, add
 one line under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md), tagged
 with the level of the change:
 

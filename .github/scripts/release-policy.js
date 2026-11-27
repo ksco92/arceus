@@ -3,7 +3,7 @@ const {execFileSync} = require('child_process');
 const PACKAGE_PATH = 'packages/cdk-glue-iceberg-table';
 const PACKAGE_DIR = `${PACKAGE_PATH}/`;
 const MANIFEST = `${PACKAGE_DIR}package.json`;
-const PUBLISHED_DIR = `${PACKAGE_DIR}lib/`;
+const PUBLISHED_DIRS = [`${PACKAGE_DIR}lib/`, `${PACKAGE_DIR}bin/`];
 const PUBLISHED_FILES = [MANIFEST, `${PACKAGE_DIR}README.md`, `${PACKAGE_DIR}LICENSE`];
 const CHANGELOG = 'CHANGELOG.md';
 const UPGRADING = 'UPGRADING.md';
@@ -46,7 +46,7 @@ function lockWithoutPackageVersion(lock) {
 }
 
 function isPublishedPath(path) {
-    return path.startsWith(PUBLISHED_DIR) || PUBLISHED_FILES.includes(path);
+    return PUBLISHED_DIRS.some((dir) => path.startsWith(dir)) || PUBLISHED_FILES.includes(path);
 }
 
 /** A manifest edit counts unless it is confined to devDependencies. */

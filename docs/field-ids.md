@@ -116,10 +116,10 @@ the `fieldId` you declare. In the suite's table, after a day to month change dec
 ```bash
 aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
     --query 'Table.Parameters.metadata_location' --output text)" metadata.json
-npx cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders
+npx --no -- cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders
 ```
 
-Python projects can run it via `npx --package cdk-glue-iceberg-table cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders` (Node.js 22.14+ is already required by jsii).
+Python projects can run it via `npx --package cdk-glue-iceberg-table@<version> -- cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders` with `<version>` pinned to the installed release (Node.js is already required by jsii).
 
 Checks and exit codes:
 

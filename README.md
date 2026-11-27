@@ -160,10 +160,10 @@ Because `IcebergTable` checks ids within one declaration only, run the bundled `
 ```bash
 aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
     --query 'Table.Parameters.metadata_location' --output text)" metadata.json
-npx cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders
+npx --no -- cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders
 ```
 
-Python projects can run it via `npx --package cdk-glue-iceberg-table cdk-glue-iceberg-check-field-ids ...` (Node.js 22.14+ is already required by jsii). See [docs/field-ids.md#check-in-ci](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#check-in-ci) for the full check list, `--table` behavior, and exit codes.
+Python projects can run it via `npx --package cdk-glue-iceberg-table@<version> -- cdk-glue-iceberg-check-field-ids ...` with `<version>` pinned to the installed release (Node.js is already required by jsii). See [docs/field-ids.md#check-in-ci](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#check-in-ci) for the full check list, `--table` behavior, and exit codes.
 
 ## Is this the right tool
 
