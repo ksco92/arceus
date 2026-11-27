@@ -4,6 +4,8 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
+## 0.23.0
+
 - (patch) Restructure the README for first-time adopters (move the full-surface example to `docs/full-example.md`, add a Table of Contents, surface comparison and access docs earlier, remove the FAQ), document all public exports (`IcebergTypeKind`, `IcebergPartitionTransformKind`, `IcebergTableProps`, `IcebergTableAttributes`, `IIcebergTable`, `IcebergSortField`), add `location` change behavior, document `.resource` migration and CI field-id checks, and narrow unasserted claims.
 - (breaking) `IcebergType` and `IcebergPartitionTransform` constructors are now private (`IcebergTypeOptions` and `IcebergPartitionTransformOptions` are no longer exported), and `IcebergTable` no longer checks `formatVersion` and `dataFormat` enum membership at runtime.
 - (patch) The README's "Evolving a table" section lists the v2 type promotions (`int` to `long`, `float` to `double`, `decimal(10, 2)` to `decimal(12, 2)`) and nullability relaxation (`required: true` to `false`) that the evolution suite deploys alongside the v3 promotions.
