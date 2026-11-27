@@ -174,7 +174,7 @@ Python projects can run it via `npx --package cdk-glue-iceberg-table@<version> -
 | Raw `CfnTable` (L1) | Yes | Only if you hand-write the `OpenTableFormatInput` shape | Yours to avoid | No |
 | CDK custom resource (Lambda + Glue SDK) | Custom resource to maintain | Diff logic is yours to write | Your code's responsibility | No |
 | Spark SQL or Athena SQL DDL at job runtime | Imperative, outside CloudFormation | Outside CloudFormation | n/a | No |
-| `cdk-glue-iceberg-table` | Yes | Via `cdk deploy` | Avoids [both](#why-a-raw-cfntable-goes-wrong) by construction; [field-id reuse](#the-field-id-rules) is not checked | Yes |
+| `cdk-glue-iceberg-table` | Yes | Via `cdk deploy` | Avoids [both](#why-a-raw-cfntable-goes-wrong) by construction; [field-id reuse](#the-field-id-rules) is not checked at synth time (check in CI with the [bundled CLI](#preventing-field-id-reuse-in-team-ci)) | Yes |
 
 - **No native Iceberg L2 in AWS CDK:** neither `aws-cdk-lib/aws-glue` nor `@aws-cdk/aws-glue-alpha` provides an Iceberg table L2 ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988) closed stale).
 - **Existing (brownfield) Glue Iceberg tables:** `cdk import` into `IcebergTable` management has not been tested; use [`IcebergTable.fromIcebergTableAttributes`](#referencing-an-existing-table-or-migrating-to-raw-cfntable) when you only need IAM grants.
@@ -434,9 +434,7 @@ To migrate an existing `IcebergTable` off this construct onto a raw `CfnTable` w
 import { RemovalPolicy } from 'aws-cdk-lib';
 import { CfnTable } from 'aws-cdk-lib/aws-glue';
 
-// Run `cdk synth` before removing `IcebergTable`, then copy `logicalId`
-// (also returned by `stack.getLogicalId(table.resource)`) and `OpenTableFormatInput`
-// from the synthesized template:
+// `logicalId` from `cdk synth` (or `stack.getLogicalId(table.resource)`):
 const raw = new CfnTable(this, 'OrdersTable', {
     catalogId: this.account,
     databaseName: db.databaseName,
