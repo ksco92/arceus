@@ -23,13 +23,11 @@ import type {
     IcebergListDefinition,
     IcebergMapDefinition,
     IcebergPartitionField,
-    IcebergPartitionTransformOptions,
     IcebergSortField,
     IcebergStructFieldDefinition,
     IcebergTableAttributes,
     IcebergTableGrantOptions,
     IcebergTableProps,
-    IcebergTypeOptions,
     IIcebergTable,
 } from 'cdk-glue-iceberg-table';
 import {
@@ -216,12 +214,6 @@ const icebergPartitionFieldKeys: Record<keyof IcebergPartitionField, true> = {
     fieldId: true,
 };
 
-const icebergPartitionTransformOptionsKeys: Record<keyof IcebergPartitionTransformOptions, true> = {
-    kind: true,
-    bucketCount: true,
-    truncateWidth: true,
-};
-
 const icebergSortFieldKeys: Record<keyof IcebergSortField, true> = {
     sourceColumn: true,
     transform: true,
@@ -249,24 +241,6 @@ const icebergMapDefinitionKeys: Record<keyof IcebergMapDefinition, true> = {
     value: true,
     valueId: true,
     valueRequired: true,
-};
-
-const icebergTypeOptionsKeys: Record<keyof IcebergTypeOptions, true> = {
-    kind: true,
-    decimalPrecision: true,
-    decimalScale: true,
-    fixedLength: true,
-    listElement: true,
-    listElementId: true,
-    listElementRequired: true,
-    mapKey: true,
-    mapKeyId: true,
-    mapValue: true,
-    mapValueId: true,
-    mapValueRequired: true,
-    structFields: true,
-    geoCrs: true,
-    geographyAlgorithm: true,
 };
 
 const icebergTypeInstanceKeys: Record<Exclude<keyof IcebergType, `_${string}`>, true> = {
@@ -308,12 +282,10 @@ export const SURFACE_ANCHORS = {
     icebergTableGrantOptionsKeys,
     icebergColumnKeys,
     icebergPartitionFieldKeys,
-    icebergPartitionTransformOptionsKeys,
     icebergSortFieldKeys,
     icebergStructFieldDefinitionKeys,
     icebergListDefinitionKeys,
     icebergMapDefinitionKeys,
-    icebergTypeOptionsKeys,
     icebergTypeInstanceKeys,
     icebergPartitionTransformInstanceKeys,
 };
