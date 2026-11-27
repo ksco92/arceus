@@ -26,9 +26,9 @@ import {
 } from '../packages/cdk-glue-iceberg-table/lib/iceberg';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const checker = require('../docs/check-field-ids.js');
+const checker = require('../packages/cdk-glue-iceberg-table/bin/check-field-ids.js');
 
-const SCRIPT = path.join(__dirname, '..', 'docs', 'check-field-ids.js');
+const SCRIPT = path.join(__dirname, '..', 'packages', 'cdk-glue-iceberg-table', 'bin', 'check-field-ids.js');
 
 const DAY_PARTITION: IcebergPartitionField[] = [
     {
@@ -1078,6 +1078,15 @@ describe('CLI execution', () => {
             status: 0,
             stderr: '',
         });
+        expect(spawnSync(SCRIPT, [
+            templateFile,
+            metadataFile,
+        ], {
+            encoding: 'utf8',
+        })).toMatchObject({
+            status: 0,
+            stderr: '',
+        });
         expect(run('--table=orders', templateFile, metadataFile)).toMatchObject({
             status: 0,
             stderr: '',
@@ -1145,7 +1154,7 @@ describe('CLI execution', () => {
         ]) {
             expect(run(...badArgs)).toMatchObject({
                 status: 2,
-                stderr: expect.stringContaining('usage: check-field-ids.js'),
+                stderr: expect.stringContaining('usage: cdk-glue-iceberg-check-field-ids'),
             });
         }
     });

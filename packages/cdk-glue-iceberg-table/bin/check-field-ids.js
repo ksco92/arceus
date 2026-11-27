@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Zero-dependency CI checker comparing a synthesized CloudFormation template's
  * `AWS::Glue::Table` Iceberg declaration against a live table's `metadata.json`
@@ -7,7 +8,7 @@
 const fs = require('fs');
 const { parseArgs } = require('util');
 
-const USAGE = 'usage: check-field-ids.js <template.json> <metadata.json> [--table <name>]';
+const USAGE = 'usage: cdk-glue-iceberg-check-field-ids <template.json> <metadata.json> [--table <name>]';
 
 function collectNestedType(rawType, path, parentId, out, problems) {
     let parsed = rawType;

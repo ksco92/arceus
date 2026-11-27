@@ -35,9 +35,13 @@
     ],
     "main": "dist/lib/iceberg/index.js",
     "types": "dist/lib/iceberg/index.d.ts",
+    "bin": {
+        "cdk-glue-iceberg-check-field-ids": "bin/check-field-ids.js"
+    },
     "files": [
         "dist/lib/iceberg/**/*.js",
         "dist/lib/iceberg/**/*.d.ts",
+        "bin/check-field-ids.js",
         ".jsii",
         "README.md",
         "LICENSE"
