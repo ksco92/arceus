@@ -13,9 +13,9 @@ Declare columns, partition specs, sort orders, and table properties in TypeScrip
 
 - **Plain CloudFormation:** emits `AWS::Glue::Table` directly with no custom resource, Lambda, or out-of-band DDL.
 - **Safe `OpenTableFormatInput` shape:** puts schema, partitions, sort order, and properties under `icebergTableInput`, avoiding the two broken raw `CfnTable` forms (placing columns under `storageDescriptor.columns`, which breaks Athena after an update, or setting `tableInput` beside `icebergTableInput`, which CloudFormation rejects at creation; see [Why a raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong)).
-- **Synth-time checks:** validates field ids, column types, and transform-to-column compatibility in TypeScript and Python ([jsii](https://aws.github.io/jsii/)) across Iceberg format versions 1, 2, and 3.
+- **Synth-time checks:** validates field ids, column types, and transform-to-column compatibility within one declaration in TypeScript and Python ([jsii](https://aws.github.io/jsii/)) across Iceberg format versions 1, 2, and 3.
 
-**Status (November 2026):** Pre-1.0 (`0.x`, with 1.0 planned; breaking changes bump the minor version and record upgrade notes in [UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md)). Published on [npm](https://www.npmjs.com/package/cdk-glue-iceberg-table), [PyPI](https://pypi.org/project/cdk-glue-iceberg-table/), and [Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table) by one maintainer, with a zero-replacement [plain-`CfnTable` eject hatch](#referencing-an-existing-table-or-migrating-to-raw-cfntable). Athena queries v2 tables only, not v3. Originally proposed for `@aws-cdk/aws-glue-alpha` in [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988) (closed stale in September 2026), this package is maintained independently. GitHub `main` may be ahead of the latest registry release (see [CHANGELOG.md](https://github.com/ksco92/arceus/blob/main/CHANGELOG.md)).
+**Status (November 2026):** Pre-1.0 (`0.x`, with 1.0 planned; breaking changes bump the minor version and record upgrade notes in [UPGRADING.md](https://github.com/ksco92/arceus/blob/main/UPGRADING.md)). Published on [npm](https://www.npmjs.com/package/cdk-glue-iceberg-table), [PyPI](https://pypi.org/project/cdk-glue-iceberg-table/), and [Construct Hub](https://constructs.dev/packages/cdk-glue-iceberg-table) by one maintainer, with a zero-replacement [plain-`CfnTable` eject hatch](#referencing-an-existing-table-or-migrating-to-raw-cfntable). Targeted at new tables (`cdk import` of existing tables is untested; use [`fromIcebergTableAttributes`](#referencing-an-existing-table-or-migrating-to-raw-cfntable) for grants). Originally proposed for `@aws-cdk/aws-glue-alpha` in [aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988) (closed stale in September 2026), this package is maintained independently. GitHub `main` may be ahead of the latest registry release (see [CHANGELOG.md](https://github.com/ksco92/arceus/blob/main/CHANGELOG.md)).
 
 ## Contents
 
@@ -177,7 +177,6 @@ Python projects can run it via `npx --package cdk-glue-iceberg-table@<version> -
 | `cdk-glue-iceberg-table` | Yes | Via `cdk deploy` | Avoids [both](#why-a-raw-cfntable-goes-wrong) by construction; [field-id reuse](#the-field-id-rules) is not checked at synth time (check in CI with the [bundled CLI](#preventing-field-id-reuse-in-team-ci)) | Yes |
 
 - **No native Iceberg L2 in AWS CDK:** neither `aws-cdk-lib/aws-glue` nor `@aws-cdk/aws-glue-alpha` provides an Iceberg table L2 ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988) closed stale).
-- **Existing (brownfield) Glue Iceberg tables:** `cdk import` into `IcebergTable` management has not been tested; use [`IcebergTable.fromIcebergTableAttributes`](#referencing-an-existing-table-or-migrating-to-raw-cfntable) when you only need IAM grants.
 
 ### Why a raw CfnTable goes wrong
 
@@ -249,20 +248,17 @@ type: IcebergType.struct([
 
 ### Change the partition spec
 
-To change from `month(placed_at)` to `day(placed_at)`, replace the entry under a fresh `fieldId` ([rule 3](#the-field-id-rules)):
+To change `day(placed_at)` to `month(placed_at)` on the quick-start `orders` table, keep `bucket(16)` at `fieldId` `1001` and replace the `placed_at` entry under fresh `fieldId` `1002` ([rule 3](#the-field-id-rules)):
 
 ```typescript
 partitionSpec: [
-    // was: { sourceColumn: 'placed_at', transform: IcebergPartitionTransform.MONTH, fieldId: 1000 },
-    {
-        sourceColumn: 'placed_at',
-        transform: IcebergPartitionTransform.DAY,
-        fieldId: 1001,
-    },
+    // was: { sourceColumn: 'placed_at', transform: IcebergPartitionTransform.DAY, fieldId: 1000 },
+    { sourceColumn: 'placed_at',   transform: IcebergPartitionTransform.MONTH,      fieldId: 1002 },
+    { sourceColumn: 'customer_id', transform: IcebergPartitionTransform.bucket(16), fieldId: 1001 },
 ],
 ```
 
-Old data files written under the month spec stay readable; new writes partition by day.
+Old data files written under the day spec stay readable; new writes partition by month.
 
 ### Identifiers, sort order and table properties
 
@@ -486,7 +482,7 @@ All symbols exported by `cdk-glue-iceberg-table` (in Python, `cdk_glue_iceberg_t
 - **Mixed CDK and engine partition evolution:** check `last-partition-id` in `metadata.json` before running engine-side `ALTER TABLE ... ADD PARTITION FIELD` after CDK partition updates; if `last-partition-id` is below the highest declared partition `fieldId`, an engine-side `ADD PARTITION FIELD` can collide with an existing partition spec entry.
 - **Pre-0.11.0 identifier removal:** tables created with identifiers before 0.11.0 lack `(PK) ` markers in their earliest schema, so removing the last identifier without changing another column's `doc` restores the old schema with ids.
 - **Column defaults and Athena DDL-only clauses:** Iceberg v3 `initial-default` / `write-default` and Hive/Athena-only clauses (`ALTER TABLE ... SET LOCATION`, `bucketed_by`) are not exposed by `AWS::Glue::Table` (use `IcebergPartitionTransform.bucket(N)`).
-- **Spark v3 type support:** Spark and Iceberg at the versions listed in [Format version 3](https://github.com/ksco92/arceus/blob/main/docs/format-version-3.md) lack `TypeToSparkType` conversion for `timestamp_ns`, `timestamptz_ns`, `geometry`, and `geography` (`Cannot convert unsupported type to Spark`), so tables with those columns are catalog-only in those runtimes.
+- **Engine v3 support:** Athena queries v2 tables only, not v3; Spark and Iceberg at the versions listed in [Format version 3](https://github.com/ksco92/arceus/blob/main/docs/format-version-3.md) lack `TypeToSparkType` conversion for `timestamp_ns`, `timestamptz_ns`, `geometry`, and `geography` (`Cannot convert unsupported type to Spark`), so tables with those columns are catalog-only in those runtimes.
 
 ## Contributing
 
