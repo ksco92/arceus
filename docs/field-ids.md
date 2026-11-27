@@ -111,13 +111,15 @@ the `fieldId` you declare. In the suite's table, after a day to month change dec
 
 ## Check in CI
 
-Copy [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) (a zero-dependency Node.js script, not bundled in the npm or PyPI package) into your repository (for example at `docs/check-field-ids.js`), download the live `metadata.json` from Glue's `metadata_location` parameter, and run it against your synthesized template (`--table` accepts a Glue table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
+[packages/cdk-glue-iceberg-table/bin/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/packages/cdk-glue-iceberg-table/bin/check-field-ids.js) is a zero-dependency Node.js CLI bundled in the npm package as `cdk-glue-iceberg-check-field-ids`. Download the live `metadata.json` from Glue's `metadata_location` parameter and run it against your synthesized template (`--table` accepts a Glue table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
 
 ```bash
 aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
     --query 'Table.Parameters.metadata_location' --output text)" metadata.json
-node docs/check-field-ids.js cdk.out/MyStack.template.json metadata.json --table orders
+npx cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders
 ```
+
+Python projects can run it via `npx --package cdk-glue-iceberg-table cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders` (Node.js 22.14+ is already required by jsii).
 
 Checks and exit codes:
 
