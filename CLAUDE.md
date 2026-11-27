@@ -15,9 +15,9 @@ unpublished, so its version is not released).
 
 A pull request that changes a published file adds one line under
 `## Unreleased` in `CHANGELOG.md`. The published files are those the
-manifest's `files` field ships (built from
-`packages/cdk-glue-iceberg-table/lib/`), the package `README.md`, and
-the manifest apart from its `devDependencies`. A line is
+manifest's `files` field ships (`packages/cdk-glue-iceberg-table/lib/`
+and `packages/cdk-glue-iceberg-table/bin/`), the package `README.md`,
+and the manifest apart from its `devDependencies`. A line is
 `- (patch) …`, `- (minor) …` or `- (breaking) …`, the level chosen per
 semver:
 

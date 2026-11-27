@@ -30,6 +30,8 @@ arceus/
 ├── package.json                        # Monorepo root + demo-app manifest (npm workspaces)
 ├── packages/
 │   └── cdk-glue-iceberg-table/         # The PUBLISHED package (npm + PyPI, built with jsii)
+│       ├── bin/
+│       │   └── check-field-ids.js      # Zero-dependency CI CLI (cdk-glue-iceberg-check-field-ids)
 │       ├── lib/iceberg/
 │       │   ├── iceberg-table.ts        # The L2 construct itself
 │       │   ├── iceberg-type.ts         # IcebergType + struct/list/map/decimal/fixed
@@ -92,7 +94,6 @@ arceus/
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
-│   ├── check-field-ids.js              # Zero-dependency CI checker for field-id reuse against metadata.json
 │   ├── field-ids.md                    # What field ids are and the rule for not reusing them
 │   ├── format-version-3.md             # Format version 3 TypeScript and Python examples, types, and engine support
 │   ├── full-example.md                 # Full-surface TypeScript IcebergTable example and resulting metadata.json
@@ -152,9 +153,10 @@ app's `lib/**/*.ts` (via the root `jest.config.js`).
 ## Changelog lines and releases
 
 Leave `version` alone: a release pull request sets it. A file counts as
-published when it is under `packages/cdk-glue-iceberg-table/lib/`, or is
-the package's `README.md`, `LICENSE` or `package.json` (an edit confined
-to `devDependencies` does not count). If your change touches one, add
+published when it is under `packages/cdk-glue-iceberg-table/lib/` or
+`packages/cdk-glue-iceberg-table/bin/`, or is the package's `README.md`,
+`LICENSE` or `package.json` (an edit confined to `devDependencies` does
+not count). If your change touches one, add
 one line under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md), tagged
 with the level of the change:
 

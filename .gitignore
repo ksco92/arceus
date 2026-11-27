@@ -2,7 +2,7 @@
 !jest.config.js
 !eslint.config.js
 !.github/scripts/*.js
-!docs/check-field-ids.js
+!packages/cdk-glue-iceberg-table/bin/check-field-ids.js
 *.d.ts
 node_modules
 

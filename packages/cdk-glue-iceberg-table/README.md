@@ -1,6 +1,7 @@
 # cdk-glue-iceberg-table
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ksco92/arceus/ci.yml?branch=main&label=CI)](https://github.com/ksco92/arceus/actions/workflows/ci.yml)
+[![Integration test](https://img.shields.io/github/actions/workflow/status/ksco92/arceus/integ-test.yml?branch=main&label=Integration%20test)](https://github.com/ksco92/arceus/actions/workflows/integ-test.yml)
 [![coverage](https://codecov.io/gh/ksco92/arceus/branch/main/graph/badge.svg)](https://codecov.io/gh/ksco92/arceus)
 [![npm](https://img.shields.io/npm/v/cdk-glue-iceberg-table.svg)](https://www.npmjs.com/package/cdk-glue-iceberg-table)
 [![PyPI](https://img.shields.io/pypi/v/cdk-glue-iceberg-table.svg)](https://pypi.org/project/cdk-glue-iceberg-table/)
@@ -21,11 +22,12 @@ Declare columns, partition specs, sort orders, and table properties in TypeScrip
 - [Install](#install)
 - [Quick start](#quick-start)
   - [The field id rules](#the-field-id-rules)
-- [Evolving a table](#evolving-a-table)
+  - [Preventing field-id reuse in team CI](#preventing-field-id-reuse-in-team-ci)
 - [Is this the right tool](#is-this-the-right-tool)
   - [How it compares](#how-it-compares)
   - [Why a raw CfnTable goes wrong](#why-a-raw-cfntable-goes-wrong)
   - [What the construct rests on](#what-the-construct-rests-on)
+- [Evolving a table](#evolving-a-table)
 - [Granting access](#granting-access)
   - [CloudFormation deploying-role permissions](#cloudformation-deploying-role-permissions)
 - [Reference](#reference)
@@ -36,7 +38,6 @@ Declare columns, partition specs, sort orders, and table properties in TypeScrip
   - [Table properties](#table-properties)
   - [Format version 3](#format-version-3)
   - [Referencing an existing table or migrating to raw CfnTable](#referencing-an-existing-table-or-migrating-to-raw-cfntable)
-  - [Preventing field-id reuse in team CI](#preventing-field-id-reuse-in-team-ci)
   - [Catalog account, tokenized table names, and tokenized locations](#catalog-account-tokenized-table-names-and-tokenized-locations)
   - [Exported types](#exported-types)
 - [Known limitations](#known-limitations)
@@ -68,7 +69,7 @@ Both examples go inside a stack's constructor in an existing CDK app. Required v
 - `dataFormat` defaults to `IcebergDataFormat.PARQUET`.
 - `removalPolicy` defaults to `RemovalPolicy.RETAIN`.
 
-Setting `identifierFieldNames` prepends `(PK) ` to each identifier column's Glue comment so Glue `UpdateTable` recognizes identifier changes as a distinct schema instead of reusing an earlier matching one ([Identifier fields](#identifier-fields)).
+(Setting `identifierFieldNames` prepends `(PK) ` to each identifier column's Glue comment; see [Identifier fields](#identifier-fields).)
 
 ### TypeScript
 
@@ -150,7 +151,72 @@ IcebergTable(self, "OrdersTable",
 2. **Keep each column's id for life and retire dropped column ids:** A rename keeps the `id` and changes `name`; a new column takes an id above `last-column-id` ([how to read it](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#which-ids-the-table-has-used)). Giving a dropped column's id to a new column of the same type is accepted by Glue, causing Spark and Athena to read the dropped column's pre-drop values under the new column.
 3. **Use `fieldId >= 1000` and never reuse a changed or dropped partition field's id:** Changing a transform or `sourceColumn` creates a new partition field that needs a `fieldId` no partition spec of the table has used. Reassigning a prior id (such as giving `bucket(8)` the id `bucket(4)` held) is accepted by Glue and readable in Athena, while Spark `SELECT *` fails with `ValidationException: Conflicting partition fields`. At creation Glue numbers partition fields sequentially from 1000 ([Partition fields](#partition-fields)).
 
-See [docs/field-ids.md](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md) for worked examples and [Preventing field-id reuse in team CI](#preventing-field-id-reuse-in-team-ci) for an automated check.
+See [docs/field-ids.md](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md) for worked examples.
+
+### Preventing field-id reuse in team CI
+
+Because `IcebergTable` checks ids within one declaration only, run the bundled `cdk-glue-iceberg-check-field-ids` CLI in CI against each PR's synthesized template and the live table's `metadata.json` to fail before deploy on field-id reuse or stale partition counters:
+
+```bash
+aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
+    --query 'Table.Parameters.metadata_location' --output text)" metadata.json
+npx --no -- cdk-glue-iceberg-check-field-ids cdk.out/MyStack.template.json metadata.json --table orders
+```
+
+Python projects can run it via `npx --package cdk-glue-iceberg-table@<version> -- cdk-glue-iceberg-check-field-ids ...` with `<version>` pinned to the installed release (Node.js is already required by jsii). See [docs/field-ids.md#check-in-ci](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#check-in-ci) for the full check list, `--table` behavior, and exit codes.
+
+## Is this the right tool
+
+### How it compares
+
+| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two hand-written shapes that go wrong | Typed API + synth-time validation |
+| --- | --- | --- | --- | --- |
+| Raw `CfnTable` (L1) | Yes | Only if you hand-write the `OpenTableFormatInput` shape | Yours to avoid | No |
+| CDK custom resource (Lambda + Glue SDK) | Custom resource to maintain | Diff logic is yours to write | Your code's responsibility | No |
+| Spark SQL or Athena SQL DDL at job runtime | Imperative, outside CloudFormation | Outside CloudFormation | n/a | No |
+| `cdk-glue-iceberg-table` | Yes | Via `cdk deploy` | Avoids [both](#why-a-raw-cfntable-goes-wrong) by construction; [field-id reuse](#the-field-id-rules) is not checked at synth time (check in CI with the [bundled CLI](#preventing-field-id-reuse-in-team-ci)) | Yes |
+
+- **No native Iceberg L2 in AWS CDK:** neither `aws-cdk-lib/aws-glue` nor `@aws-cdk/aws-glue-alpha` provides an Iceberg table L2 ([aws/aws-cdk#37988](https://github.com/aws/aws-cdk/pull/37988) closed stale).
+- **Existing (brownfield) Glue Iceberg tables:** `cdk import` into `IcebergTable` management has not been tested; use [`IcebergTable.fromIcebergTableAttributes`](#referencing-an-existing-table-or-migrating-to-raw-cfntable) when you only need IAM grants.
+
+### Why a raw CfnTable goes wrong
+
+AWS documents Iceberg tables on `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput` ([AWS Big Data blog](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation), [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)). The two shapes below break or fail.
+
+#### Schema under `storageDescriptor.columns`
+
+Glue creates the table below with parameter `table_type` `ICEBERG`, and Athena `SELECT *` initially returns its header. After an update that adds a column, the table has no Glue parameters and Athena `SELECT *` and `SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
+
+```typescript
+new CfnTable(this, 'OrdersBad', {
+    catalogId: this.account,
+    databaseName: 'analytics',
+    tableInput: {
+        name: 'orders',
+        tableType: 'EXTERNAL_TABLE',
+        storageDescriptor: {
+            location: 's3://.../orders/',
+            columns: [/* ... */],
+        },
+    },
+    openTableFormatInput: {
+        icebergInput: {
+            metadataOperation: 'CREATE',
+            version: '2',
+        },
+    },
+});
+```
+
+`IcebergTable` always emits schema, partitions, sort order, and properties under `openTableFormatInput.icebergInput.icebergTableInput`.
+
+#### `tableInput` beside `icebergTableInput`
+
+Declaring `tableInput` (even holding only `name`) beside `openTableFormatInput.icebergInput.icebergTableInput` fails at creation with `Table metadata is expected only via TableInput or via IcebergTableInput inside OpenTableFormatInput`. `IcebergTable` omits `tableInput` and stores `comment` in `icebergTableInput.properties['comment']`.
+
+### What the construct rests on
+
+Every non-replacing deploy emits `metadataOperation: 'CREATE'` (the only value CloudFormation's `IcebergInput` accepts), which CloudFormation passes through Glue's `UpdateTable` to update the Iceberg table metadata in place. That update mechanism and its edge cases rest on undocumented AWS Glue behaviors verified by [.github/workflows/integ-test.yml](https://github.com/ksco92/arceus/blob/main/.github/workflows/integ-test.yml), which runs weekly against `main` and before merge on every PR touching the construct, demo stacks, or suites (see [docs/glue-behaviours.md](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md) for the observed list). The suite tests v2 tables against Glue, Athena, and Spark and v3 tables against Glue and Spark; `IcebergFormatVersion.V1` is synth-validated only, and coexistence with `AWS::Glue::TableOptimizer` has not been tested.
 
 ## Evolving a table
 
@@ -224,56 +290,6 @@ When a deploy under `RemovalPolicy.DESTROY` changes `tableName` while keeping th
 
 Give a replacement table its own `location`: `IcebergTable` never deletes S3 objects, and whether Athena [`VACUUM`](https://docs.aws.amazon.com/athena/latest/ug/vacuum-statement.html) on a replacement sharing an old `location` treats the old table's files as orphans past `vacuum_max_snapshot_age_seconds` has not been tested.
 
-## Is this the right tool
-
-### How it compares
-
-| Approach | Declarative IaC (in the PR) | In-place schema + partition evolution | Keeps out the two hand-written shapes that go wrong | Typed API + synth-time validation |
-| --- | --- | --- | --- | --- |
-| Raw `CfnTable` (L1) | Yes | Only if you hand-write the `OpenTableFormatInput` shape | Yours to avoid | No |
-| CDK custom resource (Lambda + Glue SDK) | Custom resource to maintain | Diff logic is yours to write | Your code's responsibility | No |
-| Spark SQL or Athena SQL DDL at job runtime | Imperative, outside CloudFormation | Outside CloudFormation | n/a | No |
-| `cdk-glue-iceberg-table` | Yes | Via `cdk deploy` | Avoids [both](#why-a-raw-cfntable-goes-wrong) by construction; [field-id reuse](#the-field-id-rules) is not checked | Yes |
-
-### Why a raw CfnTable goes wrong
-
-AWS documents Iceberg tables on `AWS::Glue::Table` with `OpenTableFormatInput.IcebergInput` ([AWS Big Data blog](https://aws.amazon.com/blogs/big-data/create-and-update-apache-iceberg-tables-with-partitions-in-the-aws-glue-data-catalog-using-the-aws-sdk-and-aws-cloudformation), [aws/aws-cdk#29660](https://github.com/aws/aws-cdk/issues/29660#issuecomment-4411359248)). The two shapes below break or fail.
-
-#### Schema under `storageDescriptor.columns`
-
-Glue creates the table below with parameter `table_type` `ICEBERG`, and Athena `SELECT *` initially returns its header. After an update that adds a column, the table has no Glue parameters and Athena `SELECT *` and `SELECT count(*)` fail with `HIVE_UNSUPPORTED_FORMAT`.
-
-```typescript
-new CfnTable(this, 'OrdersBad', {
-    catalogId: this.account,
-    databaseName: 'analytics',
-    tableInput: {
-        name: 'orders',
-        tableType: 'EXTERNAL_TABLE',
-        storageDescriptor: {
-            location: 's3://.../orders/',
-            columns: [/* ... */],
-        },
-    },
-    openTableFormatInput: {
-        icebergInput: {
-            metadataOperation: 'CREATE',
-            version: '2',
-        },
-    },
-});
-```
-
-`IcebergTable` always emits schema, partitions, sort order, and properties under `openTableFormatInput.icebergInput.icebergTableInput`.
-
-#### `tableInput` beside `icebergTableInput`
-
-Declaring `tableInput` (even holding only `name`) beside `openTableFormatInput.icebergInput.icebergTableInput` fails at creation with `Table metadata is expected only via TableInput or via IcebergTableInput inside OpenTableFormatInput`. `IcebergTable` omits `tableInput` and stores `comment` in `icebergTableInput.properties['comment']`.
-
-### What the construct rests on
-
-Every non-replacing deploy emits `metadataOperation: 'CREATE'` (the only value CloudFormation's `IcebergInput` accepts), which CloudFormation passes through Glue's `UpdateTable` to update the Iceberg table metadata in place. That update mechanism and its edge cases rest on undocumented AWS Glue behaviors verified on v2 and v3 tables against Spark and Athena; see [docs/glue-behaviours.md](https://github.com/ksco92/arceus/blob/main/docs/glue-behaviours.md) for the observed list.
-
 ## Granting access
 
 ```typescript
@@ -308,7 +324,7 @@ Lake Formation permissions (`AWS::LakeFormation::Permissions`) are declared sepa
 ```typescript
 import { CfnPermissions } from 'aws-cdk-lib/aws-lakeformation';
 
-new CfnPermissions(this, 'OrdersReader', {
+const permissions = new CfnPermissions(this, 'OrdersReader', {
     dataLakePrincipal: { dataLakePrincipalIdentifier: role.roleArn },
     resource: {
         tableResource: {
@@ -319,6 +335,9 @@ new CfnPermissions(this, 'OrdersReader', {
     },
     permissions: ['SELECT', 'DESCRIBE'], // add INSERT, DELETE, ALTER for writers
 });
+// `table.tableName` is a literal string and creates no implicit CloudFormation dependency,
+// so declare the dependency explicitly to avoid racing Glue table creation on first deploy:
+permissions.node.addDependency(table);
 ```
 
 In Python, use `encryption_key`, `lake_formation_data_access`, and `catalog_encryption_key`.
@@ -409,36 +428,24 @@ const existing = IcebergTable.fromIcebergTableAttributes(this, 'Orders', {
 existing.grantRead(role);
 ```
 
-To migrate an existing `IcebergTable` off this construct onto a raw `CfnTable` without replacing the Glue table, use the `table.resource` escape hatch (the underlying `CfnTable` child with construct id `'Resource'`, also exposed as `table.node.defaultChild`). Because `IcebergTable` nests its `CfnTable` under child id `'Resource'`, capture its CloudFormation logical ID from the synthesized template (or `stack.getLogicalId(table.resource)`) before removing `IcebergTable`, declare a `CfnTable` with the matching `openTableFormatInput.icebergInput` properties and `applyRemovalPolicy(...)`, and pass that logical ID to `raw.overrideLogicalId(logicalId)`:
+To migrate an existing `IcebergTable` off this construct onto a raw `CfnTable` without replacing the Glue table, run `cdk synth` before removing `IcebergTable` and copy both the resource's CloudFormation logical ID (also returned by `stack.getLogicalId(table.resource)`, where `table.resource` is the underlying `CfnTable` child with construct id `'Resource'`, also exposed as `table.node.defaultChild`) and its synthesized `OpenTableFormatInput` shape directly from the synthesized template. Declare `new CfnTable(...)` with those `openTableFormatInput` properties (mapping the template's PascalCase keys such as `IcebergInput` and `IcebergTableInput` to camelCase `CfnTable` props), call `applyRemovalPolicy(...)`, and pass the captured logical ID to `raw.overrideLogicalId(logicalId)`:
 
 ```typescript
 import { RemovalPolicy } from 'aws-cdk-lib';
 import { CfnTable } from 'aws-cdk-lib/aws-glue';
 
-// Capture `logicalId` from the existing stack (`stack.getLogicalId(table.resource)`) before replacing:
+// `logicalId` from `cdk synth` (or `stack.getLogicalId(table.resource)`):
 const raw = new CfnTable(this, 'OrdersTable', {
     catalogId: this.account,
     databaseName: db.databaseName,
     name: 'orders',
-    openTableFormatInput: { /* matching icebergInput shape */ },
+    openTableFormatInput: { /* copied from synthesized Properties.OpenTableFormatInput */ },
 });
 raw.applyRemovalPolicy(RemovalPolicy.RETAIN);
 raw.overrideLogicalId(logicalId);
 ```
 
 With matching properties, removal policy, and logical ID, the synthesized `AWS::Glue::Table` resource is identical to what `IcebergTable` emits, so `cdk deploy` leaves the Glue table untouched.
-
-### Preventing field-id reuse in team CI
-
-Because `IcebergTable` checks ids within one declaration only, copy [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) into your repository (it is not bundled in the npm or PyPI package; for example at `docs/check-field-ids.js`) and run it in CI against each PR's synthesized template and the live table's `metadata.json` to fail before deploy on field-id reuse or stale partition counters:
-
-```bash
-aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
-    --query 'Table.Parameters.metadata_location' --output text)" metadata.json
-node docs/check-field-ids.js cdk.out/MyStack.template.json metadata.json --table orders
-```
-
-See [docs/field-ids.md#check-in-ci](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#check-in-ci) for the full check list, `--table` selection (including tokenized table names via logical resource id), and exit codes.
 
 ### Catalog account, tokenized table names, and tokenized locations
 

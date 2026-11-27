@@ -12,6 +12,7 @@ const SCRIPT = path.join(__dirname, '..', '.github', 'scripts', 'release-policy.
 const PACKAGE = 'packages/cdk-glue-iceberg-table';
 const MANIFEST = `${PACKAGE}/package.json`;
 const LIB_FILE = `${PACKAGE}/lib/iceberg/iceberg-table.ts`;
+const BIN_FILE = `${PACKAGE}/bin/check-field-ids.js`;
 const PACKAGE_README = `${PACKAGE}/README.md`;
 
 const PATCH = '- (patch) Fix a thing';
@@ -115,6 +116,7 @@ describe('a pull request that leaves the version alone', () => {
         name                                       | input                                                    | problems
         ${'no published file'}                     | ${touching('README.md', 'lib/arceus-stack.ts')}          | ${0}
         ${'a lib file'}                            | ${touching(LIB_FILE)}                                    | ${1}
+        ${'a bin file'}                            | ${touching(BIN_FILE)}                                    | ${1}
         ${'the package README'}                    | ${touching(PACKAGE_README)}                              | ${1}
         ${'the package LICENSE'}                   | ${touching(`${PACKAGE}/LICENSE`)}                        | ${1}
         ${'only devDependencies in the manifest'}  | ${editingManifest(DEV_EDIT)}                             | ${0}
@@ -122,6 +124,7 @@ describe('a pull request that leaves the version alone', () => {
         ${'a lib file and a line already on base'} | ${lineOnBase}                                            | ${1}
         ${'a lib file and a patch line'}           | ${withLine(PATCH, LIB_FILE)}                             | ${0}
         ${'a lib file and a minor line'}           | ${withLine(MINOR, LIB_FILE)}                             | ${0}
+        ${'a bin file and a minor line'}           | ${withLine(MINOR, BIN_FILE)}                             | ${0}
         ${'a lib file and a breaking line'}        | ${withLine(BREAKING, LIB_FILE)}                          | ${0}
         ${'an unknown tag'}                        | ${withLine('- (fix) Fix a thing')}                       | ${1}
         ${'a line with no text'}                   | ${withLine('- (patch)')}                                 | ${1}
@@ -230,6 +233,7 @@ describe('a release pull request', () => {
         ${'a version with a suffix'}                                          | ${bump('0.22.2-rc.1', PATCH)}                                          | ${1}
         ${'no pending lines'}                                                 | ${bump('0.22.2')}                                                      | ${1}
         ${'a lib file edited too'}                                            | ${editing(LIB_FILE)}                                                   | ${1}
+        ${'a bin file edited too'}                                            | ${editing(BIN_FILE)}                                                   | ${1}
         ${'the root README edited too'}                                       | ${editing('README.md')}                                                | ${1}
         ${'the package README edited too'}                                    | ${editing(PACKAGE_README)}                                             | ${1}
         ${'peerDependencies edited'}                                          | ${withManifest(PEER_EDIT)}                                             | ${1}
