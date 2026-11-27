@@ -4,6 +4,8 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
+- (patch) Tighten the README for first-time adopters (add an `IcebergTableProps` summary table, document `Database.fromDatabaseArn` and tokenized `location` grant rules, clarify `fromIcebergTableAttributes` vs `cdk import`, surface the plain-`CfnTable` eject hatch and `UpdateTable` mechanism earlier, and move the Format version 3 deep dive to `docs/format-version-3.md`).
+
 ## 0.23.0
 
 - (patch) Restructure the README for first-time adopters (move the full-surface example to `docs/full-example.md`, add a Table of Contents, surface comparison and access docs earlier, remove the FAQ), document all public exports (`IcebergTypeKind`, `IcebergPartitionTransformKind`, `IcebergTableProps`, `IcebergTableAttributes`, `IIcebergTable`, `IcebergSortField`), add `location` change behavior, document `.resource` migration and CI field-id checks, and narrow unasserted claims.

@@ -5,13 +5,27 @@ import aws_cdk as cdk
 from aws_cdk import aws_iam as iam
 from aws_cdk.assertions import Template
 
-readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
-samples = [b for b in re.findall(r"```python\n(.*?)```", readme, re.S) if "IcebergTable(" in b]
-assert len(samples) == 2, "expected the main and the format version 3 examples"
+
+def _extract_samples(path: Path) -> list[str]:
+    """Extract Python code blocks that construct an IcebergTable.
+
+    :param path: Markdown file to scan.
+    :return: Matching Python snippets in document order.
+    """
+    text = path.read_text()
+
+    return [b for b in re.findall(r"```python\n(.*?)```", text, re.S) if "IcebergTable(" in b]
+
+
+readme_samples = _extract_samples(Path(__file__).resolve().parents[2] / "README.md")
+assert len(readme_samples) == 1, "expected the main Python example in README.md"
+
+v3_samples = _extract_samples(Path(__file__).resolve().parents[4] / "docs" / "format-version-3.md")
+assert len(v3_samples) == 1, "expected the format version 3 Python example in docs/format-version-3.md"
 
 stack = cdk.Stack(cdk.App(), "Smoke", env=cdk.Environment(account="123456789012", region="us-east-1"))
 namespace = {"self": stack}
-for sample in samples:
+for sample in readme_samples + v3_samples:
     exec(sample, namespace)
 
 orders = stack.node.find_child("OrdersTable")
