@@ -308,7 +308,7 @@ Spark inserted, and after steps 1 and 6 the `(PK) ` column comments from
 `information_schema.columns`; the paragraphs below describe the other
 tables.
 
-The stack owns twenty-two tables, and step 11 declares a twenty-third,
+The stack owns twenty-four tables, and step 11 declares a twenty-fifth,
 `table_input_test`, that fails to create. `evolution_test` changes in
 steps 1 to 6 and 9 to 12. `nested_evolution_test` is created in step 1
 and loaded with one row; steps 7 and 8 evolve it. Its baseline columns
@@ -369,6 +369,8 @@ second; the script reads their `metadata.json` after it, and the Spark
 phase writes a row to each and reads both rows back.
 `v2_promotion_test` is created in step 1 with `int`, `float`, `decimal(10, 2)` and a `required: true` string column; Athena writes a row after step 1, step 2 widens the three numeric types (`long`, `double`, `decimal(12, 2)`) and relaxes the string column to `required: false`, the script checks `metadata.json`, and Athena inserts a widened row with `NULL` and reads both rows back.
 `location_change_test` is created at `.../location_change_test/v1/` in step 1 and moves to `.../location_change_test/v2/` in step 2; Athena writes a row after step 1, the script checks `table-uuid`, `location`, and `metadata_location`, and that an Athena `INSERT` fails with `PERMISSION_DENIED` after step 2, the Spark phase inserts a second row under `v2` and reads both rows back, Athena `SELECT *` fails with `PERMISSION_DENIED` ([Glue behaviours](docs/glue-behaviours.md)), and the script checks that data files exist under both prefixes.
+`v1_test` is created in step 1 with `IcebergFormatVersion.V1` (`id`, `v`) and adds `note` in step 2; the script checks `format-version: 1` and columns in `metadata.json` after both steps, and the Spark phases insert and read rows across the update.
+`optimizer_test` is created in step 1 (`id`, `v`, sorted by `id`) with an `OptimizerRole` (`optimizerTable.grantReadWrite(optimizerRole)` and Lake Formation table permissions) and two `AWS::Glue::TableOptimizer` resources (`compaction` with `binpack` strategy and `retention`), then adds `note` and `commit.retry.num-retries` in step 2; the script checks `aws glue get-table-optimizer` after steps 1 and 2 (without waiting for asynchronous background optimizer runs), and Spark and Athena read pre-update and post-update rows.
 
 Install the Spark toolchain first (see "Spark toolchain" above); the script needs `PRINCIPAL_ARN`, a deployed `ArceusStack` and the Athena prerequisites, and leaves `IcebergEvolutionStack` deployed at the end unless `DESTROY=1` is set.
 

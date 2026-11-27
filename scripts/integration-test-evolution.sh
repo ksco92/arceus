@@ -58,6 +58,8 @@ REPLACED_TABLE="parameter_name_replaced_test"
 TABLE_INPUT_TABLE="table_input_test"
 V2_PROMOTION_TABLE="v2_promotion_test"
 LOCATION_TABLE="location_change_test"
+V1_TABLE="v1_test"
+OPTIMIZER_TABLE="optimizer_test"
 STACK="IcebergEvolutionStack"
 
 # shellcheck source=scripts/spark/spark-env.sh
@@ -79,26 +81,32 @@ table_column_names() {
     echo "$meta" | python3 -c "
 import json, sys
 m = json.load(sys.stdin)
-current_schema = next(s for s in m['schemas'] if s['schema-id'] == m['current-schema-id'])
-current_spec = next(s for s in m['partition-specs'] if s['spec-id'] == m['default-spec-id'])
-print('schema-id', m['current-schema-id'])
-print('max-schema-id', max(s['schema-id'] for s in m['schemas']))
+schemas = m.get('schemas') or [m['schema']]
+current_schema_id = m.get('current-schema-id', schemas[0].get('schema-id', 0))
+current_schema = next((s for s in schemas if s.get('schema-id', 0) == current_schema_id), schemas[-1])
+specs = m.get('partition-specs') or [{'spec-id': 0, 'fields': m.get('partition-spec', [])}]
+default_spec_id = m.get('default-spec-id', specs[0].get('spec-id', 0))
+current_spec = next((s for s in specs if s.get('spec-id', 0) == default_spec_id), specs[0])
+props = m.get('properties', {})
+sort_orders = m.get('sort-orders', [])
+print('schema-id', current_schema_id)
+print('max-schema-id', max(s.get('schema-id', 0) for s in schemas))
 print('last-column-id', m['last-column-id'])
-print('schemas-count', len(m['schemas']))
-print('spec-count', len(m['partition-specs']))
+print('schemas-count', len(schemas))
+print('spec-count', len(specs))
 print('format-version', m['format-version'])
-print('properties-format-version', m['properties'].get('format-version', 'unset'))
+print('properties-format-version', props.get('format-version', 'unset'))
 print('table-uuid', m['table-uuid'])
 print('location', m['location'])
-print('default-spec-id', m['default-spec-id'])
-print('default-sort-order-id', m['default-sort-order-id'])
+print('default-spec-id', default_spec_id)
+print('default-sort-order-id', m.get('default-sort-order-id', 'unset'))
 print('sort-orders', ';'.join(str(o['order-id']) + ':' + ','.join(
     f\"{f['transform']}({f['source-id']})/{f['direction']}/{f['null-order']}\" for f in o['fields'])
-    for o in m['sort-orders']))
-print('commit-retries', m['properties'].get('commit.retry.num-retries', 'unset'))
+    for o in sort_orders))
+print('commit-retries', props.get('commit.retry.num-retries', 'unset'))
 print('partition-spec-fields', ','.join(f['name'] for f in current_spec['fields']))
 print('partition-ids', ','.join(f\"{f['field-id']}:{f['transform']}\" for f in current_spec['fields']))
-print('last-partition-id', m['last-partition-id'])
+print('last-partition-id', m.get('last-partition-id', 'unset'))
 print('columns', ','.join(f\"{f['id']}:{f['name']}\" for f in current_schema['fields']))
 print('column-specs', ','.join(
     f\"{f['id']}:{f['name']}:{f['type'] if isinstance(f['type'], str) else f['type']['type']}:{str(f['required']).lower()}\"
@@ -193,6 +201,35 @@ storage_table() {
         --query "$1" --output text
 }
 
+optimizer_config() {
+    aws glue get-table-optimizer \
+        --catalog-id "$ACCOUNT_ID" \
+        --database-name "$DATABASE" \
+        --table-name "$OPTIMIZER_TABLE" \
+        --type "$1" \
+        --region "$AWS_REGION" \
+        --query 'TableOptimizer.configuration' \
+        --output json
+}
+
+optimizer_summary() {
+    python3 -c "
+import json, sys
+opt_type = sys.argv[1]
+cfg = json.load(sys.stdin)
+parts = [f\"enabled={str(cfg['enabled']).lower()}\"]
+if opt_type == 'compaction':
+    ice = cfg.get('compactionConfiguration', {}).get('icebergConfiguration', {})
+    parts.append(f\"strategy={ice.get('strategy', 'unset')}\")
+else:
+    ice = cfg.get('retentionConfiguration', {}).get('icebergConfiguration', {})
+    parts.append(f\"days={ice.get('snapshotRetentionPeriodInDays', 'unset')}\")
+    parts.append(f\"snapshots={ice.get('numberOfSnapshotsToRetain', 'unset')}\")
+    parts.append(f\"clean={str(ice.get('cleanExpiredFiles', 'unset')).lower()}\")
+print(' '.join(parts))
+" "$1"
+}
+
 rows_10_to_14() {
     athena_expect "$1" "$ROWS" "customer_id|contact_email|signed_up_at" \
         "$ROW_10" "$ROW_11" "$ROW_12" "$ROW_13" "$ROW_14"
@@ -222,7 +259,8 @@ for prefix in "$TABLE" "$NESTED_TABLE" "$REUSED_TABLE" "$PARTITION_TABLE" "$NAME
     "$DROP_SOURCE_TABLE" "$DROP_SOURCE_LATER_TABLE" "$REUSED_PARTITION_TABLE" "$STORAGE_TABLE" \
     "$UNMARKED_TABLE" "$UNMARKED_DOC_TABLE" "$ENGINE_COLUMN_TABLE" "$ENGINE_DECLARED_TABLE" \
     "$ENGINE_OTHER_ID_TABLE" "$UPGRADE_TABLE" "$UPGRADE_V2_TABLE" \
-    "$TABLE_INPUT_TABLE" "$V2_PROMOTION_TABLE" "$LOCATION_TABLE"; do
+    "$TABLE_INPUT_TABLE" "$V2_PROMOTION_TABLE" "$LOCATION_TABLE" \
+    "$V1_TABLE" "$OPTIMIZER_TABLE"; do
     aws s3 rm "s3://data-lake-bucket-${ACCOUNT_ID}/${DATABASE}/${prefix}/" \
         --region "$AWS_REGION" --recursive 2>&1 | tail -3 || true
 done
@@ -248,6 +286,16 @@ assert_meta last-partition-id 1001 "$CREATE_PARTITION_TABLE"
 header "VERIFY step 1 (storage_columns_test)"
 assert_same "${STORAGE_TABLE} table_type" ICEBERG "$(storage_table Table.Parameters.table_type)"
 
+header "VERIFY step 1 (v1_test, optimizer_test)"
+assert_meta format-version 1 "$V1_TABLE"
+assert_meta columns "1:id,2:v" "$V1_TABLE"
+COMPACTION_BEFORE=$(optimizer_config compaction)
+RETENTION_BEFORE=$(optimizer_config retention)
+assert_same "${OPTIMIZER_TABLE} compaction optimizer" "enabled=true strategy=binpack" \
+    "$(echo "$COMPACTION_BEFORE" | optimizer_summary compaction)"
+assert_same "${OPTIMIZER_TABLE} retention optimizer" "enabled=true days=5 snapshots=1 clean=true" \
+    "$(echo "$RETENTION_BEFORE" | optimizer_summary retention)"
+
 header "SPARK step 1 (INSERT seed rows, including the nested row)"
 spark_submit "$VERIFY_PROGRAM" --phase 1
 
@@ -258,6 +306,7 @@ athena_expect "(PK) comment on customer_id" "$COMMENTS" \
 athena_expect "nested seed row" "${NESTED_ROWS} FROM ${NESTED_TABLE} ORDER BY id" \
     "id|tag1|tag2|k1|k2|line1|city" "$ROW_100"
 athena_expect "SELECT * on ${STORAGE_TABLE} before its first update" "SELECT * FROM ${STORAGE_TABLE}" "id"
+athena_expect "${OPTIMIZER_TABLE} seed row" "SELECT * FROM ${OPTIMIZER_TABLE} ORDER BY id" "id|v" "1|opt-before"
 run_athena "INSERT INTO ${REUSED_TABLE} VALUES (1, 'c1')" >/dev/null
 run_athena "INSERT INTO ${NAME_TABLE} VALUES (1, 'v1')" >/dev/null
 run_athena "INSERT INTO ${RENUMBER_TABLE} VALUES ('A', 'B')" >/dev/null
@@ -326,6 +375,20 @@ assert_same "${LOCATION_TABLE} metadata_location directory" \
 athena_expect_failure "INSERT into ${LOCATION_TABLE} after location moves to v2" \
     "INSERT INTO ${LOCATION_TABLE} VALUES (3, 'at-v2-athena')" "$S3_DENIED" prefix
 
+header "VERIFY step 2 (v1_test, optimizer_test)"
+assert_meta format-version 1 "$V1_TABLE"
+assert_meta columns "1:id,2:v,3:note" "$V1_TABLE"
+assert_meta commit-retries 5 "$OPTIMIZER_TABLE"
+assert_meta columns "1:id,2:v,3:note" "$OPTIMIZER_TABLE"
+COMPACTION_AFTER=$(optimizer_config compaction)
+RETENTION_AFTER=$(optimizer_config retention)
+assert_same "${OPTIMIZER_TABLE} compaction optimizer after update" "enabled=true strategy=binpack" \
+    "$(echo "$COMPACTION_AFTER" | optimizer_summary compaction)"
+assert_same "${OPTIMIZER_TABLE} retention optimizer after update" "enabled=true days=5 snapshots=1 clean=true" \
+    "$(echo "$RETENTION_AFTER" | optimizer_summary retention)"
+assert_same "${OPTIMIZER_TABLE} compaction configuration unchanged" "$COMPACTION_BEFORE" "$COMPACTION_AFTER"
+assert_same "${OPTIMIZER_TABLE} retention configuration unchanged" "$RETENTION_BEFORE" "$RETENTION_AFTER"
+
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails, upgraded tables written)"
 spark_submit "$VERIFY_PROGRAM" --phase 2
 
@@ -358,6 +421,8 @@ athena_expect_failure "SELECT * on ${LOCATION_TABLE} after location moves to v2"
     "SELECT * FROM ${LOCATION_TABLE}" "$S3_DENIED" prefix
 assert_same "${LOCATION_TABLE} data files under v1 and v2" "present present" \
     "$(s3_prefix_state "${LOCATION_TABLE}/v1/data/") $(s3_prefix_state "${LOCATION_TABLE}/v2/data/")"
+athena_expect "${OPTIMIZER_TABLE} rows after update" "SELECT * FROM ${OPTIMIZER_TABLE} ORDER BY id" \
+    "id|v|note" "1|opt-before|NULL" "2|opt-after|n2"
 
 ################################################
 ################################################
