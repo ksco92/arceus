@@ -108,3 +108,25 @@ evolution](https://iceberg.apache.org/spec/#partition-evolution)), and the const
 the `fieldId` you declare. In the suite's table, after a day to month change declared under
 `fieldId: 1002`, Glue reported `last-partition-id` 1002 (`scripts/integration-test-v3-evolution.sh`:
 `assert_equals "last-partition-id" "1002"` under `VERIFY step 4`).
+
+## Check in CI
+
+Copy [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) (a zero-dependency Node.js script, not bundled in the npm or PyPI package) into your repository (for example at `docs/check-field-ids.js`), download the live `metadata.json` from Glue's `metadata_location` parameter, and run it against your synthesized template (`--table` accepts a Glue table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
+
+```bash
+aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
+    --query 'Table.Parameters.metadata_location' --output text)" metadata.json
+node docs/check-field-ids.js cdk.out/MyStack.template.json metadata.json --table orders
+```
+
+Checks and exit codes:
+
+- `0` — safe update (unchanged ids, valid additions above `last-column-id` / `last-partition-id`, in-place column or nested renames keeping `(parentId, slot, containerKind)`, primitive widenings, drops, and reverting to an exact historical partition `(source-id, transform, field-id)`).
+- `1` — violation(s) printed to stderr:
+  - active field id moved across container/slot (including out-of-creation-order swaps or reusing a dropped container's nested id) or changed between container (`list`/`map`/`struct`) and primitive kinds
+  - column or nested field reusing a historical id not in the current schema
+  - new column or nested field with `id <= last-column-id`
+  - partition field reusing a historical `field-id` with a different `(source-id, transform)` or adding a new `fieldId <= last-partition-id`
+  - stale `last-partition-id < max historical field-id`
+  - missing or ambiguous `--table` selection, duplicate template ids, or unreadable or invalid JSON
+- `2` — invalid CLI arguments (usage printed to stderr).
