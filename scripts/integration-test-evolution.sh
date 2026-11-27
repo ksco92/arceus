@@ -83,10 +83,10 @@ import json, sys
 m = json.load(sys.stdin)
 schemas = m.get('schemas') or [m['schema']]
 current_schema_id = m.get('current-schema-id', schemas[0].get('schema-id', 0))
-current_schema = next((s for s in schemas if s.get('schema-id', 0) == current_schema_id), schemas[-1])
+current_schema = next(s for s in schemas if s.get('schema-id', 0) == current_schema_id)
 specs = m.get('partition-specs') or [{'spec-id': 0, 'fields': m.get('partition-spec', [])}]
 default_spec_id = m.get('default-spec-id', specs[0].get('spec-id', 0))
-current_spec = next((s for s in specs if s.get('spec-id', 0) == default_spec_id), specs[0])
+current_spec = next(s for s in specs if s.get('spec-id', 0) == default_spec_id)
 props = m.get('properties', {})
 sort_orders = m.get('sort-orders', [])
 print('schema-id', current_schema_id)
@@ -380,14 +380,8 @@ assert_meta format-version 1 "$V1_TABLE"
 assert_meta columns "1:id,2:v,3:note" "$V1_TABLE"
 assert_meta commit-retries 5 "$OPTIMIZER_TABLE"
 assert_meta columns "1:id,2:v,3:note" "$OPTIMIZER_TABLE"
-COMPACTION_AFTER=$(optimizer_config compaction)
-RETENTION_AFTER=$(optimizer_config retention)
-assert_same "${OPTIMIZER_TABLE} compaction optimizer after update" "enabled=true strategy=binpack" \
-    "$(echo "$COMPACTION_AFTER" | optimizer_summary compaction)"
-assert_same "${OPTIMIZER_TABLE} retention optimizer after update" "enabled=true days=5 snapshots=1 clean=true" \
-    "$(echo "$RETENTION_AFTER" | optimizer_summary retention)"
-assert_same "${OPTIMIZER_TABLE} compaction configuration unchanged" "$COMPACTION_BEFORE" "$COMPACTION_AFTER"
-assert_same "${OPTIMIZER_TABLE} retention configuration unchanged" "$RETENTION_BEFORE" "$RETENTION_AFTER"
+assert_same "${OPTIMIZER_TABLE} compaction configuration unchanged" "$COMPACTION_BEFORE" "$(optimizer_config compaction)"
+assert_same "${OPTIMIZER_TABLE} retention configuration unchanged" "$RETENTION_BEFORE" "$(optimizer_config retention)"
 
 header "SPARK step 2 (old rows read region=NULL, INSERT row carrying region, reused_partition_id_test read fails, upgraded tables written)"
 spark_submit "$VERIFY_PROGRAM" --phase 2

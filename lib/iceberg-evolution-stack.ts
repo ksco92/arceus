@@ -407,7 +407,9 @@ export class IcebergEvolutionStack extends Stack {
         const optimizerRole = new Role(this, 'OptimizerRole', {
             assumedBy: new ServicePrincipal('glue.amazonaws.com'),
         });
-        optimizerTable.grantReadWrite(optimizerRole);
+        optimizerTable.grantReadWrite(optimizerRole, {
+            lakeFormationDataAccess: true,
+        });
         const optimizerRolePermissions = grant(
             'OptimizerRole',
             optimizerTable.tableName,
@@ -450,9 +452,7 @@ export class IcebergEvolutionStack extends Stack {
             compactionOptimizer,
             retentionOptimizer,
         ].forEach((optimizer) => {
-            optimizer.addResourceDependency(optimizerTable.resource);
-            optimizer.node.addDependency(optimizerRole);
-            optimizer.node.addDependency(optimizerRolePermissions);
+            optimizer.node.addDependency(optimizerTable, optimizerRole, optimizerRolePermissions);
         });
 
         const storageColumnsTable = new CfnTable(this, 'StorageColumnsTable', {
