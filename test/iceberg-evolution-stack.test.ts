@@ -570,6 +570,232 @@ describe('IcebergEvolutionStack — Glue observation tables', () => {
         }).toEqual(before);
         expect(icebergInputAt(12, 'location_change_test')).toEqual(after);
     });
+
+    it('v1_test uses format version 1 and adds note (id 3) at step 2', () => {
+        const step1Table = Object.values(synthAt(1).findResources('AWS::Glue::Table'))
+            .find((resource) => resource.Properties.Name === 'v1_test')!;
+        expect(step1Table.Properties.OpenTableFormatInput.IcebergInput.Version).toBe('1');
+        expect(icebergInputAt(1, 'v1_test').Properties['format-version']).toBe('1');
+        expect(fieldsAt(1, 'v1_test')).toEqual([
+            {
+                Id: 1,
+                Name: 'id',
+            },
+            {
+                Id: 2,
+                Name: 'v',
+            },
+        ]);
+        expect(fieldsAt(2, 'v1_test')).toEqual([
+            {
+                Id: 1,
+                Name: 'id',
+            },
+            {
+                Id: 2,
+                Name: 'v',
+            },
+            {
+                Id: 3,
+                Name: 'note',
+            },
+        ]);
+        expect(icebergInputAt(12, 'v1_test')).toEqual(icebergInputAt(2, 'v1_test'));
+    });
+
+    it('optimizer_test evolves schema + commit.retry.num-retries and attaches compaction + retention optimizers', () => {
+        const step1 = synthAt(1);
+        const step1Tables = step1.findResources('AWS::Glue::Table');
+        const [
+            optimizerTableId,
+            optimizerTable,
+        ] = Object.entries(step1Tables).find(([
+            , resource,
+        ]) => resource.Properties.Name === 'optimizer_test')!;
+        expect(optimizerTable.Properties.OpenTableFormatInput.IcebergInput.Version).toBe('2');
+        expect(icebergInputAt(1, 'optimizer_test').WriteOrder).toEqual({
+            OrderId: 1,
+            Fields: [
+                {
+                    SourceId: 1,
+                    Transform: 'identity',
+                    Direction: 'asc',
+                    NullOrder: 'nulls-last',
+                },
+            ],
+        });
+        expect(fieldsAt(1, 'optimizer_test')).toEqual([
+            {
+                Id: 1,
+                Name: 'id',
+            },
+            {
+                Id: 2,
+                Name: 'v',
+            },
+        ]);
+        expect(icebergInputAt(1, 'optimizer_test').Properties['commit.retry.num-retries']).toBeUndefined();
+        expect(fieldsAt(2, 'optimizer_test')).toEqual([
+            {
+                Id: 1,
+                Name: 'id',
+            },
+            {
+                Id: 2,
+                Name: 'v',
+            },
+            {
+                Id: 3,
+                Name: 'note',
+            },
+        ]);
+        expect(icebergInputAt(2, 'optimizer_test').Properties['commit.retry.num-retries']).toBe('5');
+        expect(icebergInputAt(12, 'optimizer_test')).toEqual(icebergInputAt(2, 'optimizer_test'));
+
+        const roles = step1.findResources('AWS::IAM::Role');
+        const [
+            roleId,
+            role,
+        ] = Object.entries(roles).find(([
+            logicalId,
+        ]) => logicalId.startsWith('OptimizerRole'))!;
+        expect(role.Properties.AssumeRolePolicyDocument.Statement).toEqual([
+            expect.objectContaining({
+                Action: 'sts:AssumeRole',
+                Effect: 'Allow',
+                Principal: {
+                    Service: 'glue.amazonaws.com',
+                },
+            }),
+        ]);
+
+        const policies = step1.findResources('AWS::IAM::Policy');
+        const [
+            policyId,
+            policy,
+        ] = Object.entries(policies).find(([
+            logicalId,
+        ]) => logicalId.startsWith('OptimizerRoleDefaultPolicy'))!;
+        expect(policy.Properties.Roles).toEqual([
+            {
+                Ref: roleId,
+            },
+        ]);
+        const policyJson = JSON.stringify(policy.Properties.PolicyDocument);
+        expect(policyJson).toContain('glue:UpdateTable');
+        expect(policyJson).toContain('s3:PutObject');
+        expect(policyJson).toContain('sample_database/optimizer_test/*');
+        expect(policy.Properties.PolicyDocument.Statement.slice(-3)).toEqual([
+            {
+                Action: [
+                    'kms:Decrypt',
+                    'kms:GenerateDataKey',
+                ],
+                Effect: 'Allow',
+                Resource: {
+                    Ref: 'DataLakeKeyArn',
+                },
+            },
+            {
+                Action: [
+                    'kms:Decrypt',
+                    'kms:Encrypt',
+                    'kms:GenerateDataKey',
+                ],
+                Effect: 'Allow',
+                Resource: {
+                    Ref: 'CatalogKeyArn',
+                },
+            },
+            {
+                Action: 'lakeformation:GetDataAccess',
+                Effect: 'Allow',
+                Resource: '*',
+            },
+        ]);
+
+        const lfPermissions = step1.findResources('AWS::LakeFormation::Permissions');
+        const rolePermission = lfPermissions.OptimizerRolePermission;
+        expect(rolePermission.Properties.Resource.TableResource.Name).toBe('optimizer_test');
+        expect(rolePermission.Properties.DataLakePrincipal.DataLakePrincipalIdentifier).toEqual({
+            'Fn::GetAtt': [
+                roleId,
+                'Arn',
+            ],
+        });
+        expect([
+            ...rolePermission.Properties.Permissions,
+        ].sort()).toEqual([
+            'ALTER',
+            'DELETE',
+            'DESCRIBE',
+            'INSERT',
+            'SELECT',
+        ]);
+        expect(rolePermission.DependsOn).toEqual([
+            optimizerTableId,
+        ]);
+
+        const optimizers = step1.findResources('AWS::Glue::TableOptimizer');
+        expect(Object.keys(optimizers).sort()).toEqual([
+            'CompactionOptimizer',
+            'RetentionOptimizer',
+        ]);
+        const expectedDeps = [
+            optimizerTableId,
+            policyId,
+            roleId,
+            'OptimizerRolePermission',
+        ].sort();
+        expect(optimizers.CompactionOptimizer.Properties).toEqual({
+            CatalogId: '123456789012',
+            DatabaseName: 'sample_database',
+            TableName: 'optimizer_test',
+            Type: 'compaction',
+            TableOptimizerConfiguration: {
+                Enabled: true,
+                RoleArn: {
+                    'Fn::GetAtt': [
+                        roleId,
+                        'Arn',
+                    ],
+                },
+                CompactionConfiguration: {
+                    IcebergConfiguration: {
+                        Strategy: 'binpack',
+                    },
+                },
+            },
+        });
+        expect([
+            ...optimizers.CompactionOptimizer.DependsOn,
+        ].sort()).toEqual(expectedDeps);
+        expect(optimizers.RetentionOptimizer.Properties).toEqual({
+            CatalogId: '123456789012',
+            DatabaseName: 'sample_database',
+            TableName: 'optimizer_test',
+            Type: 'retention',
+            TableOptimizerConfiguration: {
+                Enabled: true,
+                RoleArn: {
+                    'Fn::GetAtt': [
+                        roleId,
+                        'Arn',
+                    ],
+                },
+                RetentionConfiguration: {
+                    IcebergConfiguration: {
+                        SnapshotRetentionPeriodInDays: 5,
+                        NumberOfSnapshotsToRetain: 1,
+                        CleanExpiredFiles: true,
+                    },
+                },
+            },
+        });
+        expect([
+            ...optimizers.RetentionOptimizer.DependsOn,
+        ].sort()).toEqual(expectedDeps);
+    });
 });
 
 describe('IcebergEvolutionStack — unmarked identifier tables', () => {
@@ -610,7 +836,13 @@ describe('IcebergEvolutionStack — wiring', () => {
 
     it('grants the developer IAM user SELECT/INSERT/DELETE/ALTER/DESCRIBE on every table', () => {
         const template = synthAt(1);
-        const permissions = Object.values(template.findResources('AWS::LakeFormation::Permissions'));
+        const permissions = Object.entries(template.findResources('AWS::LakeFormation::Permissions'))
+            .filter(([
+                logicalId,
+            ]) => logicalId !== 'OptimizerRolePermission')
+            .map(([
+                , permission,
+            ]) => permission);
         const tableIds = Object.fromEntries(Object.entries(template.findResources('AWS::Glue::Table')).map(([
             logicalId,
             table,
@@ -640,6 +872,8 @@ describe('IcebergEvolutionStack — wiring', () => {
             'engine_upgrade_v2_test',
             'v2_promotion_test',
             'location_change_test',
+            'v1_test',
+            'optimizer_test',
             'storage_columns_test',
         ]);
         permissions.forEach((permission) => {

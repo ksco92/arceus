@@ -21,7 +21,11 @@ def walk(path, field_type, out):
 
 
 metadata = json.load(sys.stdin)
-schema = next(s for s in metadata['schemas'] if s['schema-id'] == metadata['current-schema-id'])
+schemas = metadata.get('schemas')
+if schemas and 'current-schema-id' in metadata:
+    schema = next(s for s in schemas if s['schema-id'] == metadata['current-schema-id'])
+else:
+    schema = metadata['schema']
 out = []
 for field in schema['fields']:
     out.append('%s:%d' % (field['name'], field['id']))

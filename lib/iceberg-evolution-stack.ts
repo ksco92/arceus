@@ -13,8 +13,16 @@ import {
 } from 'aws-cdk-lib/aws-lakeformation';
 import {
     CfnTable,
+    CfnTableOptimizer,
     Database,
 } from 'aws-cdk-lib/aws-glue';
+import {
+    Role,
+    ServicePrincipal,
+} from 'aws-cdk-lib/aws-iam';
+import {
+    Key,
+} from 'aws-cdk-lib/aws-kms';
 import {
     Bucket,
 } from 'aws-cdk-lib/aws-s3';
@@ -128,6 +136,12 @@ export class IcebergEvolutionStack extends Stack {
             'ImportedDatabase',
             `arn:${this.partition}:glue:${this.region}:${this.account}:database/${props.importedDatabaseName}`,
         );
+        const dataLakeKey = Key.fromKeyArn(this, 'DataLakeKey', new CfnParameter(this, 'DataLakeKeyArn', {
+            description: 'ARN of the KMS key the data-lake bucket encrypts objects with.',
+        }).valueAsString);
+        const catalogKey = Key.fromKeyArn(this, 'CatalogKey', new CfnParameter(this, 'CatalogKeyArn', {
+            description: 'ARN of the KMS key the Data Catalog is encrypted with.',
+        }).valueAsString);
 
         const icebergTable = (
             tableId: string,
@@ -321,6 +335,28 @@ export class IcebergEvolutionStack extends Stack {
             location: `s3://${importedBucket.bucketName}/${importedDatabase.databaseName}/location_change_test/${step >= 2 ? 'v2' : 'v1'}/`,
             columns: ID_V_COLUMNS,
         });
+        const idVNoteColumns: IcebergColumn[] = step >= 2 ? [
+            ...ID_V_COLUMNS,
+            {
+                name: 'note',
+                type: IcebergType.STRING,
+                id: 3,
+            },
+        ] : ID_V_COLUMNS;
+        const v1Table = icebergTable('V1Table', 'v1_test', {
+            formatVersion: IcebergFormatVersion.V1,
+            columns: idVNoteColumns,
+        });
+        const optimizerTable = icebergTable('OptimizerTable', 'optimizer_test', {
+            columns: idVNoteColumns,
+            encryptionKey: dataLakeKey,
+            sortOrder: [
+                {
+                    sourceColumn: 'id',
+                },
+            ],
+            tableProperties: step >= 2 ? COMMIT_RETRIES : undefined,
+        });
 
         const grants: IcebergTable[] = [
             table,
@@ -344,8 +380,15 @@ export class IcebergEvolutionStack extends Stack {
             engineUpgradeV2Table,
             v2PromotionTable,
             locationChangeTable,
+            v1Table,
+            optimizerTable,
         ];
-        const grant = (id: string, tableName: string, target: CfnTable) => {
+        const grant = (
+            id: string,
+            tableName: string,
+            target: CfnTable,
+            principalArn: string = props.principalArn,
+        ): CfnPermissions => {
             const permission = new CfnPermissions(this, `${id}Permission`, {
                 permissions: [
                     'SELECT',
@@ -363,12 +406,65 @@ export class IcebergEvolutionStack extends Stack {
                     },
                 },
                 dataLakePrincipal: {
-                    dataLakePrincipalIdentifier: props.principalArn,
+                    dataLakePrincipalIdentifier: principalArn,
                 },
             });
             permission.addResourceDependency(target);
+            return permission;
         };
         grants.forEach((target) => grant(target.node.id, target.tableName, target.resource));
+
+        const optimizerRole = new Role(this, 'OptimizerRole', {
+            assumedBy: new ServicePrincipal('glue.amazonaws.com'),
+        });
+        optimizerTable.grantReadWrite(optimizerRole, {
+            catalogEncryptionKey: catalogKey,
+            lakeFormationDataAccess: true,
+        });
+        const optimizerRolePermissions = grant(
+            'OptimizerRole',
+            optimizerTable.tableName,
+            optimizerTable.resource,
+            optimizerRole.roleArn,
+        );
+        const compactionOptimizer = new CfnTableOptimizer(this, 'CompactionOptimizer', {
+            catalogId: this.account,
+            databaseName: importedDatabase.databaseName,
+            tableName: optimizerTable.tableName,
+            type: 'compaction',
+            tableOptimizerConfiguration: {
+                enabled: true,
+                roleArn: optimizerRole.roleArn,
+                compactionConfiguration: {
+                    icebergConfiguration: {
+                        strategy: 'binpack',
+                    },
+                },
+            },
+        });
+        const retentionOptimizer = new CfnTableOptimizer(this, 'RetentionOptimizer', {
+            catalogId: this.account,
+            databaseName: importedDatabase.databaseName,
+            tableName: optimizerTable.tableName,
+            type: 'retention',
+            tableOptimizerConfiguration: {
+                enabled: true,
+                roleArn: optimizerRole.roleArn,
+                retentionConfiguration: {
+                    icebergConfiguration: {
+                        snapshotRetentionPeriodInDays: 5,
+                        numberOfSnapshotsToRetain: 1,
+                        cleanExpiredFiles: true,
+                    },
+                },
+            },
+        });
+        [
+            compactionOptimizer,
+            retentionOptimizer,
+        ].forEach((optimizer) => {
+            optimizer.node.addDependency(optimizerTable, optimizerRole, optimizerRolePermissions);
+        });
 
         const storageColumnsTable = new CfnTable(this, 'StorageColumnsTable', {
             catalogId: this.account,

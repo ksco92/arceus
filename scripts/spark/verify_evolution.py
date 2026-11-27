@@ -8,6 +8,8 @@ NESTED = "glue.sample_database.nested_evolution_test"
 REUSED = "glue.sample_database.reused_id_test"
 REUSED_PARTITION = "glue.sample_database.reused_partition_id_test"
 LOCATION = "glue.sample_database.location_change_test"
+V1 = "glue.sample_database.v1_test"
+OPTIMIZER = "glue.sample_database.optimizer_test"
 UPGRADED = ("glue.sample_database.engine_upgrade_test", "glue.sample_database.engine_upgrade_v2_test")
 CONFLICT = (
     "ValidationException: Conflicting partition fields:"
@@ -29,6 +31,10 @@ def phase_1(spark: SparkSession) -> None:
     for table in UPGRADED:
         spark.sql(f"INSERT INTO {table} VALUES (1, 'written at v2')")
         spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES ('format-version' = '3')")
+    for table, value in ((V1, "v1-before"), (OPTIMIZER, "opt-before")):
+        spark.sql(f"INSERT INTO {table} VALUES (1, '{value}')")
+        rows = spark.sql(f"SELECT id, v FROM {table} ORDER BY id").collect()
+        assert rows == [(1, value)], f"{table} seed row: expected [(1, '{value}')], got {rows}"
 
 
 def phase_2(spark: SparkSession) -> None:
@@ -50,6 +56,11 @@ def phase_2(spark: SparkSession) -> None:
     rows = spark.sql(f"SELECT id, v FROM {LOCATION} ORDER BY id").collect()
     expected = [(1, "at-v1"), (2, "at-v2")]
     assert rows == expected, f"{LOCATION} rows after location moves to v2: expected {expected}, got {rows}"
+    for table, before, after in ((V1, "v1-before", "v1-after"), (OPTIMIZER, "opt-before", "opt-after")):
+        spark.sql(f"INSERT INTO {table} VALUES (2, '{after}', 'n2')")
+        rows = spark.sql(f"SELECT id, v, note FROM {table} ORDER BY id").collect()
+        expected = [(1, before, None), (2, after, "n2")]
+        assert rows == expected, f"{table} rows after update: expected {expected}, got {rows}"
 
 
 def phase_3(spark: SparkSession) -> None:
