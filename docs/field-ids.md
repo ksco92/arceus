@@ -123,7 +123,7 @@ Python projects can run it via `npx --package cdk-glue-iceberg-table@<version> -
 
 Checks and exit codes:
 
-- `0` — safe update (unchanged ids, valid additions above `last-column-id` / `last-partition-id`, in-place column or nested renames keeping `(parentId, slot, containerKind)`, primitive widenings, drops, and reverting to an exact historical partition `(source-id, transform, field-id)`).
+- `0` — no field-id or partition-id violations found (unchanged ids, valid additions above `last-column-id` / `last-partition-id`, in-place column or nested renames keeping `(parentId, slot, containerKind)`, primitive widenings, drops, and reverting to an exact historical partition `(source-id, transform, field-id)`). Other deploy hazards, such as incompatible type narrowings, dropping a partition source column, `location` moves, or table replacements, are outside the CLI's scope.
 - `1` — violation(s) printed to stderr:
   - active field id moved across container/slot (including out-of-creation-order swaps or reusing a dropped container's nested id) or changed between container (`list`/`map`/`struct`) and primitive kinds
   - column or nested field reusing a historical id not in the current schema

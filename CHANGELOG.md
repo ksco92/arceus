@@ -4,6 +4,7 @@ Releases up to 0.22.1 predate this file; their breaking changes are in [UPGRADIN
 
 ## Unreleased
 
+- (patch) Fix the README partition-update example to continue the quick-start `orders` table without colliding on `fieldId` `1001`, add above-the-fold scope qualifiers for single-declaration validation and untested `cdk import` (removing the duplicate comparison bullet), and narrow exit code `0` wording in `docs/field-ids.md`.
 - (patch) Document live AWS integration coverage for `IcebergFormatVersion.V1` and `AWS::Glue::TableOptimizer` coexistence (with `optimizer.node.addDependency(table)` and `table.grantReadWrite(optimizerRole, { lakeFormationDataAccess: true, catalogEncryptionKey })` wiring notes) in the README.
 - (minor) Bundle the zero-dependency field-id checker CLI (`cdk-glue-iceberg-check-field-ids`, `bin/check-field-ids.js`) in the npm package, add `permissions.node.addDependency(table)` to the `CfnPermissions` README example, document the Integration test workflow schedule and V1 / `AWS::Glue::TableOptimizer` test status, and move the CI check and tool comparison earlier in the README.
 - (patch) Document the zero-dependency CI field-id checker (`docs/check-field-ids.js`) and copy-pasteable `aws glue get-table` / `aws s3 cp` invocation in the README and `docs/field-ids.md`.
