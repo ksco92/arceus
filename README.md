@@ -430,7 +430,15 @@ With matching properties, removal policy, and logical ID, the synthesized `AWS::
 
 ### Preventing field-id reuse in team CI
 
-Because `IcebergTable` checks ids within one declaration only, teams can prevent accidental id reuse in CI by comparing each PR's synthesized `AWS::Glue::Table` template (`Properties.OpenTableFormatInput.IcebergInput.IcebergTableInput.Schema.Fields` and `PartitionSpec.Fields`) against the live table's `metadata.json` (`last-column-id`, historical `schemas`, `last-partition-id`, and `partition-specs`, read from the S3 URI in Glue's `Table.Parameters.metadata_location`): fail CI if any newly added column or nested field reuses an id `<= last-column-id` or an id previously bound to a different field path/name in `schemas`, or if a changed partition field reuses an existing `field-id`. See [docs/field-ids.md](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md) for the exact `aws glue get-table` / `aws s3 cp` lookup commands.
+Because `IcebergTable` checks ids within one declaration only, run [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) in CI against each PR's synthesized template and the live table's `metadata.json` to fail before deploy on reused historical column or nested field ids, ids `<= last-column-id`, conflicting partition `fieldId`s, or a stale `last-partition-id`:
+
+```bash
+aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
+    --query 'Table.Parameters.metadata_location' --output text)" metadata.json
+node docs/check-field-ids.js cdk.out/MyStack.template.json metadata.json --table orders
+```
+
+See [docs/field-ids.md#check-in-ci](https://github.com/ksco92/arceus/blob/main/docs/field-ids.md#check-in-ci) for `--table` selection (including tokenized table names via logical resource id) and exit codes.
 
 ### Catalog account, tokenized table names, and tokenized locations
 

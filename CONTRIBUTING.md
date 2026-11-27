@@ -92,6 +92,7 @@ arceus/
 │   ├── lib/consumer-stack.ts           # Realistic consumer (one IcebergTable)
 │   └── lib/surface-reference.ts        # Anchors every exported symbol so a rename breaks CI
 ├── docs/
+│   ├── check-field-ids.js              # Zero-dependency CI checker for field-id reuse against metadata.json
 │   ├── field-ids.md                    # What field ids are and the rule for not reusing them
 │   ├── format-version-3.md             # Format version 3 TypeScript and Python examples, types, and engine support
 │   ├── full-example.md                 # Full-surface TypeScript IcebergTable example and resulting metadata.json

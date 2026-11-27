@@ -108,3 +108,19 @@ evolution](https://iceberg.apache.org/spec/#partition-evolution)), and the const
 the `fieldId` you declare. In the suite's table, after a day to month change declared under
 `fieldId: 1002`, Glue reported `last-partition-id` 1002 (`scripts/integration-test-v3-evolution.sh`:
 `assert_equals "last-partition-id" "1002"` under `VERIFY step 4`).
+
+## Check in CI
+
+Download the live table's `metadata.json` from Glue's `metadata_location` parameter and pass it with the synthesized CloudFormation template to [docs/check-field-ids.js](check-field-ids.js) (`--table` accepts a table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
+
+```bash
+aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
+    --query 'Table.Parameters.metadata_location' --output text)" metadata.json
+node docs/check-field-ids.js cdk.out/MyStack.template.json metadata.json --table orders
+```
+
+Exit codes:
+
+- `0` — no field-id reuse or stale partition counter found.
+- `1` — violation(s) printed to stderr (reused historical column or nested field id, new field id `<= last-column-id`, conflicting partition `fieldId`, new partition `fieldId <= last-partition-id`, stale `last-partition-id`, missing or ambiguous table, or unreadable or invalid JSON).
+- `2` — invalid CLI arguments (usage printed to stderr).
