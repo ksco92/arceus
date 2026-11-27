@@ -217,7 +217,9 @@ describe('a release pull request', () => {
         ${'a post-1.0 patch bump of a patch line'}                            | ${postOne('1.0.1', PATCH)}                                             | ${0}
         ${'a post-1.0 minor bump of a minor line'}                            | ${postOne('1.1.0', MINOR)}                                             | ${0}
         ${'a post-1.0 major bump of a breaking line'}                         | ${postOne('2.0.0', BREAKING)}                                          | ${0}
+        ${'a post-1.0 major bump of minor and breaking lines'}                | ${postOne('2.0.0', MINOR, BREAKING)}                                   | ${0}
         ${'a post-1.0 minor bump of a breaking line'}                         | ${postOne('1.1.0', BREAKING)}                                          | ${1}
+        ${'a post-1.0 minor bump of minor and breaking lines'}                | ${postOne('1.1.0', MINOR, BREAKING)}                                   | ${1}
         ${'a post-1.0 major bump of a minor line'}                            | ${postOne('2.0.0', MINOR)}                                             | ${1}
         ${'a post-1.0 patch bump of a minor line'}                            | ${postOne('1.0.1', MINOR)}                                             | ${1}
         ${'a post-1.0 minor bump of a patch line'}                            | ${postOne('1.1.0', PATCH)}                                             | ${1}
