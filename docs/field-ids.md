@@ -111,7 +111,7 @@ the `fieldId` you declare. In the suite's table, after a day to month change dec
 
 ## Check in CI
 
-Download the live table's `metadata.json` from Glue's `metadata_location` parameter and pass it with the synthesized CloudFormation template to [docs/check-field-ids.js](check-field-ids.js) (`--table` accepts a table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
+[docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) is a zero-dependency Node.js script and is not bundled in the npm or PyPI package. Copy [docs/check-field-ids.js](https://github.com/ksco92/arceus/blob/main/docs/check-field-ids.js) into your repository (for example at `docs/check-field-ids.js`), download the live table's `metadata.json` from Glue's `metadata_location` parameter, and pass it with your synthesized CloudFormation template (`--table` accepts a Glue table name or CloudFormation logical resource id and is optional when the template contains one Iceberg table):
 
 ```bash
 aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
@@ -119,8 +119,14 @@ aws s3 cp "$(aws glue get-table --database-name analytics --name orders \
 node docs/check-field-ids.js cdk.out/MyStack.template.json metadata.json --table orders
 ```
 
-Exit codes:
+Checks and exit codes:
 
-- `0` — no field-id reuse or stale partition counter found.
-- `1` — violation(s) printed to stderr (reused historical column or nested field id, new field id `<= last-column-id`, conflicting partition `fieldId`, new partition `fieldId <= last-partition-id`, stale `last-partition-id`, missing or ambiguous table, or unreadable or invalid JSON).
+- `0` — safe update (unchanged ids, valid additions above `last-column-id` / `last-partition-id`, in-place column or nested renames keeping `(parentId, slot, containerKind)`, primitive widenings, drops, and reverting to an exact historical partition `(source-id, transform, field-id)`).
+- `1` — violation(s) printed to stderr:
+  - active field id moved across container/slot (including out-of-creation-order swaps or reusing a dropped container's nested id) or changed between container (`list`/`map`/`struct`) and primitive kinds
+  - column or nested field reusing a historical id not in the current schema
+  - new column or nested field with `id <= last-column-id`
+  - partition field reusing a historical `field-id` with a different `(source-id, transform)` or adding a new `fieldId <= last-partition-id`
+  - stale `last-partition-id < max historical field-id`
+  - missing or ambiguous `--table` selection, duplicate template ids, or unreadable or invalid JSON
 - `2` — invalid CLI arguments (usage printed to stderr).

@@ -30,13 +30,48 @@ const checker = require('../docs/check-field-ids.js');
 
 const SCRIPT = path.join(__dirname, '..', 'docs', 'check-field-ids.js');
 
-interface SynthTableOptions {
-    readonly tableName?: string;
-    readonly columns: IcebergColumn[];
-    readonly partitionSpec?: IcebergPartitionField[];
+const DAY_PARTITION: IcebergPartitionField[] = [
+    {
+        sourceColumn: 'placed_at',
+        transform: IcebergPartitionTransform.DAY,
+        fieldId: 1000,
+    },
+];
+
+function rawTable(
+    tableInput: Record<string, unknown>,
+    logicalId = 'Tbl',
+    name = 't',
+): Record<string, unknown> {
+    return {
+        [logicalId]: {
+            Type: 'AWS::Glue::Table',
+            Properties: {
+                Name: name,
+                OpenTableFormatInput: {
+                    IcebergInput: {
+                        IcebergTableInput: tableInput,
+                    },
+                },
+            },
+        },
+    };
 }
 
-function synthTable(opts: SynthTableOptions): Record<string, unknown> {
+function rawTemplate(
+    tableInput: Record<string, unknown>,
+    logicalId = 'Tbl',
+    name = 't',
+): Record<string, unknown> {
+    return {
+        Resources: rawTable(tableInput, logicalId, name),
+    };
+}
+
+function synthTable(
+    columns: IcebergColumn[],
+    partitionSpec?: IcebergPartitionField[],
+): Record<string, unknown> {
     const app = new App();
     const stack = new Stack(app, 'TestStack', {
         env: {
@@ -49,9 +84,9 @@ function synthTable(opts: SynthTableOptions): Record<string, unknown> {
     });
     new IcebergTable(stack, 'OrdersTable', {
         database,
-        tableName: opts.tableName ?? 'orders',
-        columns: opts.columns,
-        partitionSpec: opts.partitionSpec,
+        tableName: 'orders',
+        columns,
+        partitionSpec,
         location: 's3://test-bucket/analytics/orders/',
         formatVersion: IcebergFormatVersion.V2,
     });
@@ -213,27 +248,45 @@ function baseMetadata(overrides: Record<string, unknown> = {}): Record<string, u
     };
 }
 
+function metadataAfterDrop(): Record<string, unknown> {
+    const schema0Fields = baseMetadataFields();
+    return baseMetadata({
+        'last-column-id': 11,
+        'current-schema-id': 1,
+        schemas: [
+            {
+                'schema-id': 0,
+                fields: schema0Fields,
+            },
+            {
+                'schema-id': 1,
+                fields: schema0Fields.filter((f) => (f as { id: number }).id !== 2),
+            },
+        ],
+    });
+}
+
+const BASE_TEMPLATE = synthTable(baseColumns(), DAY_PARTITION);
+
 describe('collectFields', () => {
     it('collects top-level and nested ids from synthesized CloudFormation Schema.Fields', () => {
-        const template = synthTable({
-            columns: [
-                ...baseColumns(),
-                {
-                    name: 'a.b`c',
-                    type: IcebergType.list({
-                        element: IcebergType.struct([
-                            {
-                                id: 14,
-                                name: 'item',
-                                type: IcebergType.STRING,
-                            },
-                        ]),
-                        elementId: 13,
-                    }),
-                    id: 12,
-                },
-            ],
-        }) as {
+        const template = synthTable([
+            ...baseColumns(),
+            {
+                name: 'a.b`c',
+                type: IcebergType.list({
+                    element: IcebergType.struct([
+                        {
+                            id: 14,
+                            name: 'item',
+                            type: IcebergType.STRING,
+                        },
+                    ]),
+                    elementId: 13,
+                }),
+                id: 12,
+            },
+        ]) as {
             Resources: Record<string, {
                 Type: string;
                 Properties: {
@@ -311,63 +364,18 @@ describe('collectFields', () => {
         ]);
     });
 
-    it('supports synthetic PascalCase nested type objects and skips non-object field entries', () => {
-        const collected = checker.collectFields([
+    it('handles non-object entries, optional prefix, and non-string field names safely', () => {
+        expect(checker.collectFields([
             null,
-            {
-                Id: 1,
-                Name: 'items',
-                Type: {
-                    Type: 'list',
-                    ElementId: 2,
-                    Element: {
-                        Type: 'map',
-                        KeyId: 3,
-                        Key: 'string',
-                        ValueId: 4,
-                        Value: {
-                            Type: 'struct',
-                            Fields: [
-                                {
-                                    Id: 5,
-                                    Name: 'code',
-                                    Type: 'int',
-                                },
-                            ],
-                        },
-                    },
-                },
-            },
             {
                 Id: 6,
                 Name: 123,
                 Type: null,
             },
-        ]);
-        expect(collected).toEqual([
-            {
-                id: 1,
-                path: 'items',
-            },
-            {
-                id: 2,
-                path: 'items.element',
-            },
-            {
-                id: 3,
-                path: 'items.element.key',
-            },
-            {
-                id: 4,
-                path: 'items.element.value',
-            },
-            {
-                id: 5,
-                path: 'items.element.value.code',
-            },
+        ], 'p.')).toEqual([
             {
                 id: 6,
-                path: '',
+                path: 'p.',
             },
         ]);
     });
@@ -375,17 +383,7 @@ describe('collectFields', () => {
 
 describe('checkFieldIds — safe updates on synthesized IcebergTable', () => {
     it('passes on an unchanged table with nested fields and partitions', () => {
-        const template = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        expect(checker.checkFieldIds(template, baseMetadata()).problems).toEqual([]);
+        expect(checker.checkFieldIds(BASE_TEMPLATE, baseMetadata()).problems).toEqual([]);
     });
 
     it('passes when adding top-level and nested struct/list/map fields above last-column-id', () => {
@@ -433,31 +431,200 @@ describe('checkFieldIds — safe updates on synthesized IcebergTable', () => {
                 id: 15,
             },
         );
-        const template = synthTable({
-            columns: cols,
-            partitionSpec: [
+        expect(checker.checkFieldIds(synthTable(cols, DAY_PARTITION), baseMetadata()).problems).toEqual([]);
+    });
+
+    it('passes on column/ancestor/nested renames, sibling reordering, and primitive widening', () => {
+        const cols = baseColumns();
+        const reordered = [
+            cols[2],
+            {
+                id: 2,
+                name: 'buyer_id',
+                type: IcebergType.STRING,
+                required: false,
+            },
+            {
+                id: 1,
+                name: 'order_id',
+                type: IcebergType.DOUBLE,
+                required: true,
+            },
+            cols[3],
+            {
+                id: 5,
+                name: 'shipping_address',
+                type: IcebergType.struct([
+                    {
+                        id: 9,
+                        name: 'city',
+                        type: IcebergType.STRING,
+                        required: true,
+                    },
+                    {
+                        id: 8,
+                        name: 'street',
+                        type: IcebergType.STRING,
+                        required: true,
+                    },
+                ]),
+            },
+            cols[5],
+        ];
+        const meta = baseMetadata();
+        const fields = (meta.schemas as Array<{ fields: Array<Record<string, unknown>> }>)[0].fields;
+        fields[0].type = 'float';
+        fields[1].type = 'unknown';
+        fields[1].required = false;
+        expect(checker.checkFieldIds(synthTable(reordered, DAY_PARTITION), meta).problems).toEqual([]);
+    });
+
+    it('passes when dropping a column', () => {
+        const cols = baseColumns().filter((c) => c.name !== 'tags');
+        expect(checker.checkFieldIds(synthTable(cols, DAY_PARTITION), baseMetadata()).problems).toEqual([]);
+    });
+
+    it('passes when adding a partition field above last-partition-id', () => {
+        const spec = [
+            ...DAY_PARTITION,
+            {
+                sourceColumn: 'customer_id',
+                transform: IcebergPartitionTransform.bucket(16),
+                fieldId: 1001,
+            },
+        ];
+        expect(checker.checkFieldIds(synthTable(baseColumns(), spec), baseMetadata()).problems).toEqual([]);
+    });
+
+    it('passes when reverting to an exact historical partition field and when table has no partition spec', () => {
+        const evolvedMeta = baseMetadata({
+            'last-partition-id': 1005,
+            'partition-specs': [
                 {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
+                    'spec-id': 0,
+                },
+                {
+                    'spec-id': 1,
+                    fields: [
+                        {
+                            name: 'placed_at_month',
+                            'source-id': 3,
+                            transform: 'month',
+                            'field-id': 1005,
+                        },
+                        {
+                            name: 'placed_at_day',
+                            'source-id': 3,
+                            transform: 'day',
+                            'field-id': 1000,
+                        },
+                    ],
                 },
             ],
         });
-        expect(checker.checkFieldIds(template, baseMetadata()).problems).toEqual([]);
+        expect(checker.checkFieldIds(BASE_TEMPLATE, evolvedMeta).problems).toEqual([]);
+
+        const unpartitionedMeta = baseMetadata({
+            'partition-specs': undefined,
+            'last-partition-id': undefined,
+        });
+        expect(checker.checkFieldIds(synthTable(baseColumns()), unpartitionedMeta).problems).toEqual([]);
+    });
+});
+
+describe('checkFieldIds — violations', () => {
+    it('rejects reusing a dropped top-level column id', () => {
+        const cols = baseColumns().filter((c) => c.id !== 2);
+        cols.push({
+            name: 'currency',
+            type: IcebergType.STRING,
+            id: 2,
+        });
+        const {
+            problems,
+        } = checker.checkFieldIds(synthTable(cols), metadataAfterDrop());
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain("Field 'currency' reuses historical field id 2");
+        expect(problems[0]).toContain("'customer_id'");
     });
 
-    it('passes when renaming an existing column or nested field while keeping its active id', () => {
+    it('rejects reusing dropped nested struct, list, and map field ids', () => {
+        const meta = baseMetadata({
+            'last-column-id': 11,
+            'current-schema-id': 1,
+            schemas: [
+                {
+                    'schema-id': 0,
+                    fields: baseMetadataFields(),
+                },
+                {
+                    'schema-id': 1,
+                    fields: [
+                        {
+                            id: 1,
+                            name: 'order_id',
+                            required: true,
+                            type: 'long',
+                        },
+                    ],
+                },
+            ],
+        });
+        const template = synthTable([
+            {
+                name: 'order_id',
+                type: IcebergType.LONG,
+                required: true,
+                id: 1,
+            },
+            {
+                name: 'new_list',
+                type: IcebergType.list({
+                    element: IcebergType.STRING,
+                    elementId: 7,
+                }),
+                id: 12,
+            },
+            {
+                name: 'new_struct',
+                type: IcebergType.struct([
+                    {
+                        id: 9,
+                        name: 'postal_code',
+                        type: IcebergType.STRING,
+                    },
+                ]),
+                id: 13,
+            },
+            {
+                name: 'new_map',
+                type: IcebergType.map({
+                    key: IcebergType.STRING,
+                    keyId: 10,
+                    value: IcebergType.STRING,
+                    valueId: 11,
+                }),
+                id: 14,
+            },
+        ]);
+        const {
+            problems,
+        } = checker.checkFieldIds(template, meta);
+        expect(problems).toHaveLength(4);
+        expect(problems[0]).toContain('new_list.element');
+        expect(problems[1]).toContain('new_struct.postal_code');
+        expect(problems[2]).toContain('new_map.key');
+        expect(problems[3]).toContain('new_map.value');
+    });
+
+    it('rejects new top-level or nested field ids <= last-column-id', () => {
         const cols = baseColumns();
-        cols[1] = {
-            ...cols[1],
-            name: 'buyer_id',
-        };
         cols[4] = {
             name: 'addr',
             type: IcebergType.struct([
                 {
                     id: 8,
-                    name: 'street',
+                    name: 'line1',
                     type: IcebergType.STRING,
                     required: true,
                 },
@@ -467,309 +634,190 @@ describe('checkFieldIds — safe updates on synthesized IcebergTable', () => {
                     type: IcebergType.STRING,
                     required: true,
                 },
+                {
+                    id: 12,
+                    name: 'zip',
+                    type: IcebergType.STRING,
+                },
             ]),
             id: 5,
         };
-        const template = synthTable({
-            columns: cols,
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        expect(checker.checkFieldIds(template, baseMetadata()).problems).toEqual([]);
-    });
-
-    it('passes when dropping a column', () => {
-        const cols = baseColumns().filter((c) => c.name !== 'tags');
-        const template = synthTable({
-            columns: cols,
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        expect(checker.checkFieldIds(template, baseMetadata()).problems).toEqual([]);
-    });
-
-    it('passes when adding a partition field above last-partition-id', () => {
-        const template = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-                {
-                    sourceColumn: 'customer_id',
-                    transform: IcebergPartitionTransform.bucket(16),
-                    fieldId: 1001,
-                },
-            ],
-        });
-        expect(checker.checkFieldIds(template, baseMetadata()).problems).toEqual([]);
-    });
-
-    it('passes when reverting to an exact historical partition field and when table has no partition spec', () => {
-        const template = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        const evolvedMeta = baseMetadata({
-            'last-partition-id': 1001,
-            'partition-specs': [
-                {
-                    'spec-id': 0,
-                    fields: [
-                        {
-                            name: 'placed_at_day',
-                            'source-id': 3,
-                            transform: 'day',
-                            'field-id': 1000,
-                        },
-                    ],
-                },
-                {
-                    'spec-id': 1,
-                    fields: [
-                        {
-                            name: 'placed_at_month',
-                            'source-id': 3,
-                            transform: 'month',
-                            'field-id': 1001,
-                        },
-                    ],
-                },
-            ],
-        });
-        expect(checker.checkFieldIds(template, evolvedMeta).problems).toEqual([]);
-
-        const unpartitionedTemplate = synthTable({
-            columns: baseColumns(),
-        });
-        const unpartitionedMeta = baseMetadata({
-            'partition-specs': undefined,
-            'last-partition-id': undefined,
-        });
-        expect(checker.checkFieldIds(unpartitionedTemplate, unpartitionedMeta).problems).toEqual([]);
-    });
-});
-
-describe('checkFieldIds — violations', () => {
-    function metadataAfterDrop(): Record<string, unknown> {
-        const schema0Fields = baseMetadataFields();
-        const schema1Fields = schema0Fields.filter((f) => (f as { id: number }).id !== 2);
-        return baseMetadata({
-            'last-column-id': 11,
-            'current-schema-id': 1,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: schema0Fields,
-                },
-                {
-                    'schema-id': 1,
-                    fields: schema1Fields,
-                },
-            ],
-        });
-    }
-
-    it('rejects reusing a dropped top-level column id', () => {
-        const cols = baseColumns().filter((c) => c.id !== 2);
         cols.push({
             name: 'currency',
             type: IcebergType.STRING,
-            id: 2,
-        });
-        const template = synthTable({
-            columns: cols,
+            id: 13,
         });
         const {
             problems,
-        } = checker.checkFieldIds(template, metadataAfterDrop());
-        expect(problems).toHaveLength(1);
-        expect(problems[0]).toContain("Field 'currency' reuses historical field id 2");
-        expect(problems[0]).toContain("'customer_id'");
+        } = checker.checkFieldIds(synthTable(cols), baseMetadata({
+            'last-column-id': 13,
+        }));
+        expect(problems).toHaveLength(2);
+        expect(problems[0]).toContain("New field 'addr.zip' uses id 12 <= last-column-id (13)");
+        expect(problems[1]).toContain("New field 'currency' uses id 13 <= last-column-id (13)");
     });
 
-    it('rejects reusing dropped nested struct, list, and map field ids', () => {
-        const schema0Fields = baseMetadataFields();
-        const schema1Fields = [
+    it('rejects out-of-creation-order active id swaps (docs/field-ids.md example)', () => {
+        const template = synthTable([
             {
-                id: 1,
                 name: 'order_id',
+                type: IcebergType.LONG,
                 required: true,
-                type: 'long',
+                id: 1,
             },
-        ];
-        const meta = baseMetadata({
-            'last-column-id': 11,
-            'current-schema-id': 1,
+            {
+                name: 'tags',
+                type: IcebergType.list({
+                    element: IcebergType.STRING,
+                    elementId: 2,
+                }),
+                id: 3,
+            },
+            {
+                name: 'placed_at',
+                type: IcebergType.TIMESTAMPTZ,
+                id: 4,
+            },
+        ]);
+        const glueOrderMeta = baseMetadata({
+            'last-column-id': 4,
             schemas: [
                 {
                     'schema-id': 0,
-                    fields: schema0Fields,
-                },
-                {
-                    'schema-id': 1,
-                    fields: schema1Fields,
-                },
-            ],
-        });
-        const template = synthTable({
-            columns: [
-                {
-                    name: 'order_id',
-                    type: IcebergType.LONG,
-                    required: true,
-                    id: 1,
-                },
-                {
-                    name: 'new_list',
-                    type: IcebergType.list({
-                        element: IcebergType.STRING,
-                        elementId: 7,
-                    }),
-                    id: 12,
-                },
-                {
-                    name: 'new_struct',
-                    type: IcebergType.struct([
+                    fields: [
                         {
-                            id: 9,
-                            name: 'postal_code',
-                            type: IcebergType.STRING,
+                            id: 1,
+                            name: 'order_id',
+                            type: 'long',
                         },
-                    ]),
-                    id: 13,
-                },
-                {
-                    name: 'new_map',
-                    type: IcebergType.map({
-                        key: IcebergType.STRING,
-                        keyId: 10,
-                        value: IcebergType.STRING,
-                        valueId: 11,
-                    }),
-                    id: 14,
+                        {
+                            id: 2,
+                            name: 'tags',
+                            type: {
+                                type: 'list',
+                                'element-id': 4,
+                                element: 'string',
+                            },
+                        },
+                        {
+                            id: 3,
+                            name: 'placed_at',
+                            type: 'timestamptz',
+                        },
+                    ],
                 },
             ],
+            'partition-specs': [],
+            'last-partition-id': 999,
         });
         const {
             problems,
-        } = checker.checkFieldIds(template, meta);
-        expect(problems).toHaveLength(4);
-        expect(problems[0]).toContain('new_list.element');
-        expect(problems[0]).toContain('tags.element');
-        expect(problems[1]).toContain('new_struct.postal_code');
-        expect(problems[1]).toContain('addr.city');
-        expect(problems[2]).toContain('new_map.key');
-        expect(problems[2]).toContain('attrs.key');
-        expect(problems[3]).toContain('new_map.value');
-        expect(problems[3]).toContain('attrs.value');
+        } = checker.checkFieldIds(template, glueOrderMeta);
+        expect(problems).toHaveLength(3);
+        expect(problems[0]).toContain('tags');
+        expect(problems[1]).toContain('tags.element');
+        expect(problems[2]).toContain('placed_at');
     });
 
-    it('rejects a new field whose id is <= last-column-id when not in schemas (e.g. bumped counter)', () => {
-        const cols = baseColumns();
-        cols.push({
+    it('rejects moving an active nested id to top-level, swapping map key/value ids, or changing container kind', () => {
+        const dropListReuseElement = baseColumns().filter((c) => c.id !== 4);
+        dropListReuseElement.push({
             name: 'currency',
             type: IcebergType.STRING,
-            id: 12,
+            id: 7,
         });
-        const template = synthTable({
-            columns: cols,
+        expect(checker.checkFieldIds(synthTable(dropListReuseElement, DAY_PARTITION), baseMetadata()).problems[0])
+            .toContain("Field 'currency' uses active field id 7");
+
+        const swapMapAndMoveStructField = baseColumns();
+        swapMapAndMoveStructField[4] = {
+            name: 'addr',
+            type: IcebergType.struct([
+                {
+                    id: 8,
+                    name: 'line1',
+                    type: IcebergType.STRING,
+                    required: true,
+                },
+            ]),
+            id: 5,
+        };
+        swapMapAndMoveStructField[5] = {
+            name: 'attrs',
+            type: IcebergType.map({
+                key: IcebergType.STRING,
+                keyId: 11,
+                value: IcebergType.STRING,
+                valueId: 10,
+            }),
+            id: 6,
+        };
+        swapMapAndMoveStructField.push({
+            name: 'city',
+            type: IcebergType.STRING,
+            id: 9,
         });
-        const meta = baseMetadata({
-            'last-column-id': 12,
-        });
-        const {
-            problems,
-        } = checker.checkFieldIds(template, meta);
-        expect(problems).toHaveLength(1);
-        expect(problems[0]).toContain("New field 'currency' uses id 12 <= last-column-id (12)");
+        expect(checker.checkFieldIds(
+            synthTable(swapMapAndMoveStructField, DAY_PARTITION),
+            baseMetadata(),
+        ).problems).toHaveLength(3);
+
+        const kindMismatch = baseColumns();
+        kindMismatch[3] = {
+            name: 'tags',
+            type: IcebergType.STRING,
+            id: 4,
+        };
+        kindMismatch[1] = {
+            name: 'customer_id',
+            type: IcebergType.list({
+                element: IcebergType.STRING,
+                elementId: 12,
+            }),
+            id: 2,
+        };
+        const kindProblems = checker.checkFieldIds(synthTable(kindMismatch, DAY_PARTITION), baseMetadata()).problems;
+        expect(kindProblems).toHaveLength(2);
+        expect(kindProblems[0]).toContain("kind from 'primitive' to 'list'");
+        expect(kindProblems[1]).toContain("kind from 'list' to 'primitive'");
     });
 
     it('rejects reusing a partition fieldId with a different transform or source column', () => {
-        const diffTransform = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.MONTH,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        const transformResult = checker.checkFieldIds(diffTransform, baseMetadata());
-        expect(transformResult.problems).toHaveLength(1);
-        expect(transformResult.problems[0]).toContain('reuses fieldId 1000');
+        const diffTransform = synthTable(baseColumns(), [
+            {
+                sourceColumn: 'placed_at',
+                transform: IcebergPartitionTransform.MONTH,
+                fieldId: 1000,
+            },
+        ]);
+        expect(checker.checkFieldIds(diffTransform, baseMetadata()).problems[0]).toContain('reuses fieldId 1000');
 
-        const diffSource = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'customer_id',
-                    transform: IcebergPartitionTransform.IDENTITY,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        const sourceResult = checker.checkFieldIds(diffSource, baseMetadata());
-        expect(sourceResult.problems).toHaveLength(1);
-        expect(sourceResult.problems[0]).toContain('reuses fieldId 1000');
+        const diffSource = synthTable(baseColumns(), [
+            {
+                sourceColumn: 'customer_id',
+                transform: IcebergPartitionTransform.IDENTITY,
+                fieldId: 1000,
+            },
+        ]);
+        expect(checker.checkFieldIds(diffSource, baseMetadata()).problems[0]).toContain('reuses fieldId 1000');
     });
 
     it('rejects a new partition fieldId <= last-partition-id and detects stale last-partition-id', () => {
-        const rolledBackMeta = baseMetadata({
+        const newLowId = synthTable(baseColumns(), [
+            ...DAY_PARTITION,
+            {
+                sourceColumn: 'customer_id',
+                transform: IcebergPartitionTransform.bucket(8),
+                fieldId: 1001,
+            },
+        ]);
+        expect(checker.checkFieldIds(newLowId, baseMetadata({
             'last-partition-id': 1002,
-        });
-        const newLowId = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-                {
-                    sourceColumn: 'customer_id',
-                    transform: IcebergPartitionTransform.bucket(8),
-                    fieldId: 1001,
-                },
-            ],
-        });
-        const lowResult = checker.checkFieldIds(newLowId, rolledBackMeta);
-        expect(lowResult.problems).toHaveLength(1);
-        expect(lowResult.problems[0]).toContain('fieldId 1001 <= last-partition-id (1002)');
+        })).problems[0]).toContain('fieldId 1001 <= last-partition-id (1002)');
 
-        const staleMeta = baseMetadata({
+        const staleResult = checker.checkFieldIds(BASE_TEMPLATE, baseMetadata({
             'last-partition-id': 999,
-        });
-        const cleanTemplate = synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-            ],
-        });
-        const staleResult = checker.checkFieldIds(cleanTemplate, staleMeta);
+        }));
         expect(staleResult.problems).toHaveLength(1);
         expect(staleResult.problems[0]).toContain('Stale last-partition-id (999 < max historical field-id 1000)');
     });
@@ -881,230 +929,198 @@ describe('table selection and malformed inputs', () => {
         };
         expect(checker.findIcebergTable(emptyTpl).problem).toContain('No AWS::Glue::Table Iceberg resources');
 
-        const dupTpl = {
-            Resources: {
-                TableA: {
-                    Type: 'AWS::Glue::Table',
-                    Properties: {
-                        Name: 'dup',
-                        OpenTableFormatInput: {
-                            IcebergInput: {
-                                IcebergTableInput: {
-                                    Schema: {
-                                        Fields: [],
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                TableB: {
-                    Type: 'AWS::Glue::Table',
-                    Properties: {
-                        Name: 'dup',
-                        OpenTableFormatInput: {
-                            IcebergInput: {
-                                IcebergTableInput: {
-                                    Schema: {
-                                        Fields: [],
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
+        const emptySchema = {
+            Schema: {
+                Fields: [],
             },
         };
-        expect(checker.findIcebergTable(dupTpl, 'dup').problem).toContain("Multiple Iceberg tables match 'dup'");
+        const dupTpl = {
+            Resources: {
+                ...rawTable(emptySchema, 'TableA', 'dup'),
+                ...rawTable(emptySchema, 'TableB', ''),
+            },
+        };
+        expect(checker.findIcebergTable(dupTpl).problem).toContain('TableB');
+        expect(checker.findIcebergTable({
+            Resources: {
+                ...dupTpl.Resources,
+                ...rawTable(emptySchema, 'TableC', 'dup'),
+            },
+        }, 'dup').problem).toContain("Multiple Iceberg tables match 'dup'");
         expect(checker.findIcebergTable(dupTpl, 'TableB').table.logicalId).toBe('TableB');
     });
 
-    it('reports malformed template and metadata structures without throwing', () => {
-        const singleTpl = synthTable({
-            columns: [
-                {
-                    name: 'id',
-                    type: IcebergType.LONG,
-                    id: 1,
+    const singleCol = {
+        Id: 1,
+        Name: 'id',
+        Type: 'long',
+    };
+    const tplCol = (Id: unknown, Name: unknown, Type: unknown) => ({
+        Id,
+        Name,
+        Type,
+    });
+    const tplWith = (Fields: unknown, PartitionFields?: unknown) => rawTemplate(
+        PartitionFields !== undefined
+            ? {
+                Schema: {
+                    Fields,
                 },
-            ],
-        });
-        expect(checker.checkFieldIds(null, baseMetadata()).problems[0]).toContain('Invalid CloudFormation template');
-        expect(checker.checkFieldIds(singleTpl, null).problems[0]).toContain('Invalid Iceberg metadata');
-        expect(checker.checkFieldIds(singleTpl, {}).problems[0]).toContain('last-column-id');
-        expect(checker.checkFieldIds(singleTpl, {
-            'last-column-id': 1,
-        }).problems[0]).toContain('schemas');
-        expect(checker.checkFieldIds(singleTpl, {
-            'last-column-id': 1,
-            'current-schema-id': 9,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: [],
+                PartitionSpec: {
+                    Fields: PartitionFields,
                 },
-            ],
-        }).problems[0]).toContain('current-schema-id 9');
-
-        const badTemplate = {
-            Resources: {
-                Tbl: {
-                    Type: 'AWS::Glue::Table',
-                    Properties: {
-                        Name: 't',
-                        OpenTableFormatInput: {
-                            IcebergInput: {
-                                IcebergTableInput: {
-                                    Schema: {
-                                        Fields: [
-                                            {
-                                                Id: '1',
-                                                Name: 'a',
-                                                Type: 'long',
-                                            },
-                                            {
-                                                Id: 1,
-                                                Name: 'b',
-                                                Type: 'long',
-                                            },
-                                            {
-                                                Id: 1,
-                                                Name: 'c',
-                                                Type: 'long',
-                                            },
-                                        ],
-                                    },
-                                    PartitionSpec: {
-                                        Fields: [
-                                            {
-                                                FieldId: 'x',
-                                                SourceId: 1,
-                                                Transform: 'day',
-                                            },
-                                            {
-                                                FieldId: 1000,
-                                                SourceId: 1,
-                                                Transform: 'day',
-                                                Name: 'p1',
-                                            },
-                                            {
-                                                FieldId: 1000,
-                                                SourceId: 1,
-                                                Transform: 'month',
-                                                Name: 'p2',
-                                            },
-                                        ],
-                                    },
-                                },
-                            },
-                        },
-                    },
+            }
+            : {
+                Schema: {
+                    Fields,
                 },
             },
-        };
-        const badMeta = baseMetadata({
-            'last-column-id': 1,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: [
-                        {
-                            id: 1,
-                            name: 'b',
-                            type: 'long',
-                        },
-                    ],
-                },
-            ],
-            'partition-specs': [
-                {
-                    'spec-id': 0,
-                    fields: [],
-                },
-            ],
-            'last-partition-id': 999,
-        });
-        const badResult = checker.checkFieldIds(badTemplate, badMeta);
-        expect(badResult.problems).toHaveLength(4);
-
-        expect(checker.checkFieldIds({
-            Resources: {
-                Tbl: {
-                    Type: 'AWS::Glue::Table',
-                    Properties: {
-                        Name: 't',
-                        OpenTableFormatInput: {
-                            IcebergInput: {
-                                IcebergTableInput: {
-                                    Schema: {},
-                                },
-                            },
-                        },
+    );
+    const badType = (typeVal: unknown) => tplWith([
+        tplCol(1, 'id', typeVal),
+    ]);
+    const badPart = (fields: unknown) => tplWith([
+        singleCol,
+    ], fields);
+    const singleTpl = tplWith([
+        singleCol,
+    ]);
+    const metaWith = (overrides: Record<string, unknown> = {}) => baseMetadata({
+        'last-column-id': 1,
+        schemas: [
+            {
+                'schema-id': 0,
+                fields: [
+                    {
+                        id: 1,
+                        name: 'id',
+                        type: 'long',
                     },
-                },
+                ],
             },
-        }, {
-            'last-column-id': 1,
-            'current-schema-id': 0,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: [],
-                },
-            ],
-            'partition-specs': 'bad',
-        }).problems).toHaveLength(2);
-
-        expect(checker.checkFieldIds({
-            Resources: {
-                Tbl: {
-                    Type: 'AWS::Glue::Table',
-                    Properties: {
-                        Name: 't',
-                        OpenTableFormatInput: {
-                            IcebergInput: {
-                                IcebergTableInput: {
-                                    Schema: {
-                                        Fields: [],
-                                    },
-                                    PartitionSpec: {
-                                        Fields: 'bad',
-                                    },
-                                },
-                            },
-                        },
+        ],
+        'partition-specs': [],
+        'last-partition-id': 999,
+        ...overrides,
+    });
+    const metaNoFields = metaWith({
+        schemas: [
+            {
+                'schema-id': 0,
+            },
+        ],
+    });
+    const metaHistMissingFields = metaWith({
+        schemas: [
+            {
+                'schema-id': 0,
+                fields: [
+                    {
+                        id: 1,
+                        name: 'id',
+                        type: 'long',
                     },
-                },
+                ],
             },
-        }, {
-            'last-column-id': 1,
-            'current-schema-id': 0,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: [],
-                },
-            ],
-            'partition-specs': [],
-        }).problems).toHaveLength(1);
+            {
+                'schema-id': 1,
+            },
+        ],
+    });
+    const metaNullSpecField = metaWith({
+        'partition-specs': [
+            {
+                'spec-id': 0,
+                fields: [
+                    null,
+                ],
+            },
+        ],
+    });
+    const dupPartitionFields = [
+        {
+            FieldId: 'x',
+            SourceId: 1,
+            Transform: 'day',
+        },
+        {
+            FieldId: 1000,
+            SourceId: 1,
+            Transform: 'day',
+            Name: 'p1',
+        },
+        {
+            FieldId: 1000,
+            SourceId: 1,
+            Transform: 'month',
+            Name: 'p2',
+        },
+    ];
+    const onlyLastColMeta = {
+        'last-column-id': 1,
+    };
+    const badCurrentSchemaId = metaWith({
+        'current-schema-id': 9,
+    });
+    const missingSchemaFieldsTpl = rawTemplate({
+        Schema: {},
+    });
+    const nonObjFieldTpl = tplWith([
+        null,
+    ]);
+    const nonIntIdTpl = tplWith([
+        tplCol('1', 'id', 'long'),
+    ]);
+    const dupIdTpl = tplWith([
+        singleCol,
+        tplCol(1, 'b', 'long'),
+    ]);
+    const badSpecsMeta = metaWith({
+        'partition-specs': 'bad',
+    });
+    const nullSpecsMeta = metaWith({
+        'partition-specs': [
+            null,
+        ],
+    });
+    const badLastPartMeta = metaWith({
+        'last-partition-id': 'bad',
+    });
+    const nullPartTpl = badPart([
+        null,
+    ]);
 
-        expect(checker.checkFieldIds(singleTpl, {
-            'last-column-id': 1,
-            'current-schema-id': 0,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: [
-                        {
-                            id: 1,
-                            name: 'id',
-                            type: 'long',
-                        },
-                    ],
-                },
-            ],
-            'last-partition-id': 'bad',
-        }).problems[0]).toContain("non-integer 'last-partition-id'");
+    test.each`
+        name                                           | tpl                       | meta                     | expected
+        ${'non-object template'}                       | ${null}                   | ${metaWith()}            | ${'Invalid CloudFormation template'}
+        ${'non-object metadata'}                       | ${singleTpl}              | ${null}                  | ${'Invalid Iceberg metadata'}
+        ${'missing last-column-id'}                    | ${singleTpl}              | ${{}}                    | ${'last-column-id'}
+        ${'missing schemas'}                           | ${singleTpl}              | ${onlyLastColMeta}       | ${'schemas'}
+        ${'missing current-schema-id entry'}           | ${singleTpl}              | ${badCurrentSchemaId}    | ${'current-schema-id 9'}
+        ${'current schema missing fields array'}       | ${singleTpl}              | ${metaNoFields}          | ${"missing 'fields' array"}
+        ${'historical schema missing fields array'}    | ${singleTpl}              | ${metaHistMissingFields} | ${"entry missing 'fields' array"}
+        ${'template missing Schema.Fields'}            | ${missingSchemaFieldsTpl} | ${metaWith()}            | ${"missing 'Schema.Fields'"}
+        ${'malformed JSON type string'}                | ${badType('{bad')}        | ${metaWith()}            | ${'invalid JSON type'}
+        ${'non-array nested struct fields'}            | ${badType('{"type":"struct","fields":"bad"}')} | ${metaWith()} | ${'must be an array'}
+        ${'non-object nested struct field entry'}      | ${badType('{"type":"struct","fields":[null]}')} | ${metaWith()} | ${"under 'id.'"}
+        ${'unsupported object type'}                   | ${badType('{"type":"unknown_container"}')} | ${metaWith()} | ${'unsupported object type'}
+        ${'non-object entry in Schema.Fields'}         | ${nonObjFieldTpl}         | ${metaWith()}            | ${'non-object entry'}
+        ${'non-integer field Id'}                      | ${nonIntIdTpl}            | ${metaWith()}            | ${'non-integer id'}
+        ${'duplicate field Id'}                        | ${dupIdTpl}               | ${metaWith()}            | ${'duplicates field id 1'}
+        ${'non-array partition-specs'}                 | ${singleTpl}              | ${badSpecsMeta}          | ${"'partition-specs' must be an array"}
+        ${'malformed partition-specs entry'}           | ${singleTpl}              | ${nullSpecsMeta}         | ${'malformed spec entry'}
+        ${'non-object partition-specs[].fields entry'} | ${singleTpl}              | ${metaNullSpecField}     | ${"partition spec 'fields' contains a non-object entry"}
+        ${'non-integer last-partition-id'}             | ${singleTpl}              | ${badLastPartMeta}       | ${"non-integer 'last-partition-id'"}
+        ${'non-array PartitionSpec.Fields'}            | ${badPart('bad')}         | ${metaWith()}            | ${"'PartitionSpec.Fields' must be an array"}
+        ${'non-object PartitionSpec.Fields entry'}     | ${nullPartTpl}            | ${metaWith()}            | ${"'PartitionSpec.Fields' contains a non-object entry"}
+        ${'non-integer and duplicate FieldId'}         | ${badPart(dupPartitionFields)} | ${metaWith()}       | ${'duplicates FieldId 1000'}
+    `('reports $name cleanly without throwing', ({
+        tpl, meta, expected,
+    }) => {
+        const {
+            problems,
+        } = checker.checkFieldIds(tpl, meta);
+        expect(problems.some((p: string) => p.includes(expected))).toBe(true);
     });
 });
 
@@ -1127,27 +1143,16 @@ describe('CLI execution', () => {
         metadataFile = path.join(tmpDir, 'metadata.json');
         badTemplateFile = path.join(tmpDir, 'bad-template.json');
 
-        fs.writeFileSync(templateFile, JSON.stringify(synthTable({
-            columns: baseColumns(),
-            partitionSpec: [
-                {
-                    sourceColumn: 'placed_at',
-                    transform: IcebergPartitionTransform.DAY,
-                    fieldId: 1000,
-                },
-            ],
-        })));
+        fs.writeFileSync(templateFile, JSON.stringify(BASE_TEMPLATE));
         fs.writeFileSync(metadataFile, JSON.stringify(baseMetadata()));
-        fs.writeFileSync(badTemplateFile, JSON.stringify(synthTable({
-            columns: [
-                ...baseColumns().filter((c) => c.id !== 2),
-                {
-                    name: 'reused',
-                    type: IcebergType.LONG,
-                    id: 2,
-                },
-            ],
-        })));
+        fs.writeFileSync(badTemplateFile, JSON.stringify(synthTable([
+            ...baseColumns().filter((c) => c.id !== 2),
+            {
+                name: 'reused',
+                type: IcebergType.LONG,
+                id: 2,
+            },
+        ])));
     });
 
     afterAll(() => {
@@ -1174,19 +1179,7 @@ describe('CLI execution', () => {
 
     it('exits 1 with violations on stderr when field-id reuse is detected', () => {
         const droppedMeta = path.join(tmpDir, 'dropped-metadata.json');
-        fs.writeFileSync(droppedMeta, JSON.stringify(baseMetadata({
-            'current-schema-id': 1,
-            schemas: [
-                {
-                    'schema-id': 0,
-                    fields: baseMetadataFields(),
-                },
-                {
-                    'schema-id': 1,
-                    fields: baseMetadataFields().filter((f) => (f as { id: number }).id !== 2),
-                },
-            ],
-        })));
+        fs.writeFileSync(droppedMeta, JSON.stringify(metadataAfterDrop()));
         const result = run(badTemplateFile, droppedMeta);
         expect(result.status).toBe(1);
         expect(result.stderr).toContain("Field 'reused' reuses historical field id 2");

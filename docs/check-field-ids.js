@@ -5,74 +5,99 @@
  */
 
 const fs = require('fs');
+const { parseArgs } = require('util');
 
 const USAGE = 'usage: check-field-ids.js <template.json> <metadata.json> [--table <name>]';
 
-function collectNestedType(rawType, path, out) {
+function collectNestedType(rawType, path, parentId, out, problems) {
     let parsed = rawType;
     if (typeof rawType === 'string') {
         const trimmed = rawType.trim();
         if (!trimmed.startsWith('{')) {
-            return;
+            return 'primitive';
         }
-        parsed = JSON.parse(trimmed);
+        try {
+            parsed = JSON.parse(trimmed);
+        } catch (err) {
+            problems.push(`Field '${path}' has invalid JSON type: ${err.message}.`);
+            return null;
+        }
     }
     if (!parsed || typeof parsed !== 'object') {
-        return;
+        return null;
     }
-    const kind = parsed.type ?? parsed.Type;
-    if (kind === 'list') {
-        const elementPath = `${path}.element`;
-        out.push({
-            id: parsed['element-id'] ?? parsed.ElementId,
-            path: elementPath,
-        });
-        collectNestedType(parsed.element ?? parsed.Element, elementPath, out);
-    } else if (kind === 'map') {
-        const keyPath = `${path}.key`;
-        const valuePath = `${path}.value`;
-        out.push({
-            id: parsed['key-id'] ?? parsed.KeyId,
-            path: keyPath,
-        });
-        out.push({
-            id: parsed['value-id'] ?? parsed.ValueId,
-            path: valuePath,
-        });
-        collectNestedType(parsed.key ?? parsed.Key, keyPath, out);
-        collectNestedType(parsed.value ?? parsed.Value, valuePath, out);
-    } else if (kind === 'struct') {
-        collectFields(parsed.fields ?? parsed.Fields, `${path}.`, out);
+    const pushSlot = (slot, id, childType) => {
+        const childPath = `${path}.${slot}`;
+        const entry = {
+            id,
+            path: childPath,
+            parentId,
+            slot,
+            kind: null,
+        };
+        out.push(entry);
+        entry.kind = collectNestedType(childType, childPath, id, out, problems);
+    };
+    if (parsed.type === 'list') {
+        pushSlot('element', parsed['element-id'], parsed.element);
+        return 'list';
     }
+    if (parsed.type === 'map') {
+        pushSlot('key', parsed['key-id'], parsed.key);
+        pushSlot('value', parsed['value-id'], parsed.value);
+        return 'map';
+    }
+    if (parsed.type === 'struct') {
+        collectBindings(parsed.fields, problems, `${path}.`, parentId, out);
+        return 'struct';
+    }
+    problems.push(`Field '${path}' has unsupported object type ${JSON.stringify(parsed.type)}.`);
+    return null;
 }
 
-/**
- * Walk Iceberg schema fields recursively into `list`, `map`, and `struct` types.
- *
- * Accepts both CloudFormation `Schema.Fields` entries (PascalCase keys with
- * JSON-stringified or object `Type`) and Iceberg `metadata.json` `fields`.
- *
- * @param fields Array of field definitions.
- * @param prefix Dotted path prefix for nested fields.
- * @param out Accumulator array (created when omitted).
- * @returns Flat list of `{ id, path }` entries.
- */
-function collectFields(fields, prefix = '', out = []) {
-    for (const field of fields ?? []) {
+function collectBindings(fields, problems = [], prefix = '', parentId = null, out = []) {
+    if (!Array.isArray(fields)) {
+        problems.push(`Schema field list${prefix ? ` under '${prefix}'` : ''} must be an array.`);
+        return out;
+    }
+    for (const field of fields) {
         if (!field || typeof field !== 'object') {
+            problems.push(`Schema field list${prefix ? ` under '${prefix}'` : ''} contains a non-object entry.`);
             continue;
         }
         const rawName = field.name ?? field.Name;
         const name = typeof rawName === 'string' ? rawName : '';
         const segment = /[.`]/.test(name) ? `\`${name.replace(/`/g, '``')}\`` : name;
         const path = `${prefix}${segment}`;
-        out.push({
-            id: field.id ?? field.Id,
+        const id = field.id ?? field.Id;
+        const entry = {
+            id,
             path,
-        });
-        collectNestedType(field.type ?? field.Type, path, out);
+            parentId,
+            slot: 'field',
+            kind: null,
+        };
+        out.push(entry);
+        entry.kind = collectNestedType(field.type ?? field.Type, path, id, out, problems);
     }
     return out;
+}
+
+/**
+ * Walk Iceberg schema fields recursively into `list`, `map`, and `struct` types.
+ *
+ * Accepts both CloudFormation `Schema.Fields` entries (PascalCase keys with
+ * JSON-stringified `Type`) and Iceberg `metadata.json` `fields`.
+ *
+ * @param fields Array of field definitions.
+ * @param prefix Dotted path prefix for nested fields.
+ * @returns Flat list of `{ id, path }` entries.
+ */
+function collectFields(fields, prefix = '') {
+    return collectBindings(fields, [], prefix).map(({ id, path }) => ({
+        id,
+        path,
+    }));
 }
 
 /**
@@ -135,38 +160,67 @@ function findIcebergTable(template, tableName) {
     };
 }
 
-function checkColumnIds(tableInput, metadata, problems) {
+function indexSchemaHistory(metadata, problems) {
     const lastColumnId = metadata['last-column-id'];
     if (typeof lastColumnId !== 'number' || !Number.isInteger(lastColumnId)) {
         problems.push("Iceberg metadata is missing integer 'last-column-id'.");
-        return;
+        return null;
     }
     if (!Array.isArray(metadata.schemas)) {
         problems.push("Iceberg metadata is missing 'schemas' array.");
-        return;
+        return null;
     }
     const currentSchemaId = metadata['current-schema-id'];
     const currentSchema = metadata.schemas.find((s) => s && s['schema-id'] === currentSchemaId);
     if (!currentSchema) {
         problems.push(`Iceberg metadata is missing schema for current-schema-id ${currentSchemaId}.`);
+        return null;
+    }
+    if (!Array.isArray(currentSchema.fields)) {
+        problems.push(`Iceberg metadata schema ${currentSchemaId} is missing 'fields' array.`);
+        return null;
+    }
+    const activeById = new Map();
+    const historicalById = new Map();
+    for (const schema of metadata.schemas) {
+        if (!schema || typeof schema !== 'object' || !Array.isArray(schema.fields)) {
+            problems.push("Iceberg metadata 'schemas' contains an entry missing 'fields' array.");
+            continue;
+        }
+        for (const entry of collectBindings(schema.fields, problems)) {
+            if (schema === currentSchema) {
+                activeById.set(entry.id, entry);
+            }
+            if (!historicalById.has(entry.id)) {
+                historicalById.set(entry.id, new Set());
+            }
+            historicalById.get(entry.id).add(entry.path);
+        }
+    }
+    return {
+        lastColumnId,
+        activeById,
+        historicalById,
+    };
+}
+
+function checkColumnIds(tableInput, metadata, problems) {
+    const history = indexSchemaHistory(metadata, problems);
+    if (!history) {
         return;
     }
     if (!Array.isArray(tableInput.Schema?.Fields)) {
         problems.push("Template IcebergTableInput is missing 'Schema.Fields' array.");
         return;
     }
-    const activeIds = new Set(collectFields(currentSchema.fields).map((f) => f.id));
-    const historicalById = new Map();
-    for (const schema of metadata.schemas) {
-        for (const { id, path } of collectFields(schema?.fields)) {
-            if (!historicalById.has(id)) {
-                historicalById.set(id, new Set());
-            }
-            historicalById.get(id).add(path);
-        }
-    }
+    const {
+        lastColumnId, activeById, historicalById,
+    } = history;
     const seenIds = new Map();
-    for (const { id, path } of collectFields(tableInput.Schema.Fields)) {
+    for (const entry of collectBindings(tableInput.Schema.Fields, problems)) {
+        const {
+            id, path, parentId, slot, kind,
+        } = entry;
         if (typeof id !== 'number' || !Number.isInteger(id)) {
             problems.push(`Template field '${path}' has non-integer id ${JSON.stringify(id)}.`);
             continue;
@@ -177,7 +231,16 @@ function checkColumnIds(tableInput, metadata, problems) {
             continue;
         }
         seenIds.set(id, path);
-        if (activeIds.has(id)) {
+        const cur = activeById.get(id);
+        if (cur !== undefined) {
+            if (parentId !== cur.parentId || slot !== cur.slot) {
+                problems.push(
+                    `Field '${path}' uses active field id ${id} in ${slot} under parent ${parentId ?? 'root'}, `
+                    + `but current schema binds id ${id} to '${cur.path}' (${cur.slot} under parent ${cur.parentId ?? 'root'}).`,
+                );
+            } else if (kind !== null && cur.kind !== null && kind !== cur.kind) {
+                problems.push(`Field '${path}' changes active field id ${id} kind from '${cur.kind}' to '${kind}'.`);
+            }
             continue;
         }
         const priorPaths = historicalById.get(id);
@@ -196,16 +259,29 @@ function checkColumnIds(tableInput, metadata, problems) {
     }
 }
 
-function checkPartitionIds(tableInput, metadata, problems) {
+function indexPartitionHistory(metadata, problems) {
     const specs = metadata['partition-specs'];
     if (specs !== undefined && !Array.isArray(specs)) {
         problems.push("Iceberg metadata 'partition-specs' must be an array.");
-        return;
+        return null;
+    }
+    const lastPartitionId = metadata['last-partition-id'];
+    if (lastPartitionId !== undefined && (typeof lastPartitionId !== 'number' || !Number.isInteger(lastPartitionId))) {
+        problems.push("Iceberg metadata has non-integer 'last-partition-id'.");
+        return null;
     }
     const historicalPartitions = new Map();
     let maxHistoricalPartitionId = 0;
     for (const spec of specs ?? []) {
-        for (const field of spec?.fields ?? []) {
+        if (!spec || typeof spec !== 'object' || (spec.fields !== undefined && !Array.isArray(spec.fields))) {
+            problems.push("Iceberg metadata 'partition-specs' contains a malformed spec entry.");
+            continue;
+        }
+        for (const field of spec.fields ?? []) {
+            if (!field || typeof field !== 'object') {
+                problems.push("Iceberg metadata partition spec 'fields' contains a non-object entry.");
+                continue;
+            }
             const fieldId = field['field-id'];
             const binding = `${field['source-id']}:${field.transform}`;
             if (fieldId > maxHistoricalPartitionId) {
@@ -217,24 +293,36 @@ function checkPartitionIds(tableInput, metadata, problems) {
             historicalPartitions.get(fieldId).add(binding);
         }
     }
-    const lastPartitionId = metadata['last-partition-id'];
-    if (lastPartitionId !== undefined && (typeof lastPartitionId !== 'number' || !Number.isInteger(lastPartitionId))) {
-        problems.push("Iceberg metadata has non-integer 'last-partition-id'.");
-        return;
-    }
     if (lastPartitionId !== undefined && maxHistoricalPartitionId > lastPartitionId) {
         problems.push(
             `Stale last-partition-id (${lastPartitionId} < max historical field-id ${maxHistoricalPartitionId}).`,
         );
     }
-    const effectiveLastPartitionId = Math.max(lastPartitionId ?? 0, maxHistoricalPartitionId);
+    return {
+        historicalPartitions,
+        effectiveLastPartitionId: Math.max(lastPartitionId ?? 0, maxHistoricalPartitionId),
+    };
+}
+
+function checkPartitionIds(tableInput, metadata, problems) {
+    const history = indexPartitionHistory(metadata, problems);
+    if (!history) {
+        return;
+    }
     const partitionFields = tableInput.PartitionSpec?.Fields;
     if (partitionFields !== undefined && !Array.isArray(partitionFields)) {
         problems.push("Template IcebergTableInput 'PartitionSpec.Fields' must be an array.");
         return;
     }
+    const {
+        historicalPartitions, effectiveLastPartitionId,
+    } = history;
     const seenPartitionIds = new Set();
     for (const field of partitionFields ?? []) {
+        if (!field || typeof field !== 'object') {
+            problems.push("Template IcebergTableInput 'PartitionSpec.Fields' contains a non-object entry.");
+            continue;
+        }
         const fieldId = field.FieldId;
         const sourceId = field.SourceId;
         const transform = field.Transform;
@@ -300,35 +388,31 @@ function checkFieldIds(template, metadata, options = {}) {
     };
 }
 
-function parseArgs(argv) {
-    const positional = [];
-    let tableName;
-    for (let i = 0; i < argv.length; i++) {
-        const arg = argv[i];
-        if (arg === '--table') {
-            if (i + 1 >= argv.length || !argv[i + 1]) {
-                return null;
-            }
-            tableName = argv[++i];
-        } else if (arg.startsWith('--table=')) {
-            const value = arg.slice('--table='.length);
-            if (!value) {
-                return null;
-            }
-            tableName = value;
-        } else if (arg.startsWith('-')) {
-            return null;
-        } else {
-            positional.push(arg);
-        }
+function parseCliArgs(argv) {
+    let parsed;
+    try {
+        parsed = parseArgs({
+            args: argv,
+            options: {
+                table: {
+                    type: 'string',
+                },
+            },
+            allowPositionals: true,
+        });
+    } catch {
+        return null;
     }
-    if (positional.length !== 2 || !positional[0] || !positional[1]) {
+    const {
+        values, positionals,
+    } = parsed;
+    if (positionals.length !== 2 || !positionals[0] || !positionals[1] || values.table === '') {
         return null;
     }
     return {
-        templatePath: positional[0],
-        metadataPath: positional[1],
-        tableName,
+        templatePath: positionals[0],
+        metadataPath: positionals[1],
+        tableName: values.table,
     };
 }
 
@@ -347,7 +431,7 @@ function readJson(filePath, label) {
 }
 
 if (require.main === module) {
-    const args = parseArgs(process.argv.slice(2));
+    const args = parseCliArgs(process.argv.slice(2));
     if (!args) {
         console.error(USAGE);
         process.exitCode = 2;
