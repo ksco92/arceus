@@ -41,11 +41,15 @@ the `## Unreleased` heading of `CHANGELOG.md`, which becomes
 notes sit under it; a release with no breaking change leaves
 `UPGRADING.md` untouched.
 
-The version is a minor bump when any pending line is `(minor)` or
-`(breaking)` and a patch bump otherwise. While the package is pre-1.0
-(the current state), per semver it is acceptable for a breaking change
-to bump *minor*; the `0.x` → `1.0.0` jump is the "graduate to stable"
-milestone and never happens without the owner's say.
+While the package is pre-1.0 (`0.y.z`, the current state), the version is
+a minor bump when any pending line is `(minor)` or `(breaking)` and a
+patch bump otherwise; `.github/scripts/release-policy.js` also accepts
+an exact `0.y.z` → `1.0.0` jump (with at least one pending line, and
+`UPGRADING.md` when `(breaking)` is present) when the owner decides to
+graduate to stable. Once the package is at `1.0.0` or later,
+`release-policy.js` enforces standard semver: any `(breaking)` line
+requires a major bump, else any `(minor)` line requires a minor bump,
+and `(patch)`-only requires a patch bump.
 
 `.github/workflows/publish.yml` publishes to each of npm and PyPI when
 the version on `main` differs from that registry's version. Its

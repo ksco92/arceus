@@ -80,6 +80,20 @@ function checkPullRequest({files, base, head}) {
     return problems;
 }
 
+/** Expected bump level: pre-1.0 allows exact 1.0.0 graduation or caps at minor; post-1.0 follows standard semver. */
+function expectedBump(baseVersion, headVersion, hasBreaking, hasMinor) {
+    if (baseVersion.startsWith('0.')) {
+        if (headVersion === '1.0.0') {
+            return 'major';
+        }
+        return hasMinor || hasBreaking ? 'minor' : 'patch';
+    }
+    if (hasBreaking) {
+        return 'major';
+    }
+    return hasMinor ? 'minor' : 'patch';
+}
+
 function checkRelease({files, base, head}) {
     const problems = [];
     const version = head.manifest.version;
@@ -105,12 +119,13 @@ function checkRelease({files, base, head}) {
     } else if (second.lines.join('\n') !== pending.join('\n')) {
         problems.push(`The lines under "## ${version}" must be the lines that were under "## ${UNRELEASED}" on the base.`);
     }
-    const expected = pending.some((line) => /^- \((minor|breaking)\)/.test(line)) ? 'minor' : 'patch';
+    const hasBreaking = pending.some((line) => line.startsWith('- (breaking)'));
+    const hasMinor = pending.some((line) => line.startsWith('- (minor)'));
+    const expected = expectedBump(base.manifest.version, version, hasBreaking, hasMinor);
     const actual = bumpLevel(base.manifest.version, version);
     if (actual !== expected) {
         problems.push(`The pending lines call for a ${expected} bump, not ${actual}.`);
     }
-    const hasBreaking = pending.some((line) => line.startsWith('- (breaking)'));
     const editsUpgrading = files.includes(UPGRADING);
     if (hasBreaking !== editsUpgrading) {
         problems.push(`${UPGRADING} must change in a release with a (breaking) line, and only then.`);

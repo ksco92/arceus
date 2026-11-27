@@ -143,6 +143,7 @@ describe('a pull request that leaves the version alone', () => {
 
 describe('a release pull request', () => {
     const release = (opts: {
+        baseVersion?: string;
         pending?: string[];
         version?: string;
         files?: string[];
@@ -155,6 +156,7 @@ describe('a release pull request', () => {
         ];
         const version = opts.version ?? '0.22.2';
         const input = change({
+            baseVersion: opts.baseVersion,
             baseLines: pending,
             headVersion: version,
             files: opts.files ?? files(MANIFEST, 'CHANGELOG.md', ...pending.includes(BREAKING) ? [
@@ -170,14 +172,19 @@ describe('a release pull request', () => {
         pending,
         version,
     });
+    const postOne = (version: string, ...pending: string[]) => release({
+        baseVersion: '1.0.0',
+        pending,
+        version,
+    });
     const editing = (...names: string[]) => release({
         files: files(MANIFEST, 'CHANGELOG.md', ...names),
     });
-    const breakingWithoutUpgrading = release({
+    const withoutUpgrading = (version: string) => release({
         pending: [
             BREAKING,
         ],
-        version: '0.23.0',
+        version,
         files: files(MANIFEST, 'CHANGELOG.md'),
     });
     const withChangelog = (headChangelog: string) => release({
@@ -191,40 +198,56 @@ describe('a release pull request', () => {
     });
 
     test.each`
-        name                                           | input                                                                  | problems
-        ${'a patch bump of a patch line'}              | ${release({})}                                                         | ${0}
-        ${'a minor bump of a minor line'}              | ${bump('0.23.0', MINOR)}                                               | ${0}
-        ${'a minor bump of a breaking line'}           | ${bump('0.23.0', BREAKING)}                                            | ${0}
-        ${'a minor bump of patch and minor lines'}     | ${bump('0.23.0', PATCH, MINOR)}                                        | ${0}
-        ${'the lockfile edited only in the version'}   | ${editing('package-lock.json')}                                        | ${0}
-        ${'a patch bump of a minor line'}              | ${bump('0.22.2', MINOR)}                                               | ${1}
-        ${'a minor bump of a patch line'}              | ${bump('0.23.0', PATCH)}                                               | ${1}
-        ${'a major bump'}                              | ${bump('1.0.0', BREAKING)}                                             | ${1}
-        ${'a version equal to the base as numbers'}    | ${bump('0.22.01', PATCH)}                                              | ${1}
-        ${'a lower minor version'}                     | ${bump('0.21.9', PATCH)}                                               | ${1}
-        ${'a lower patch version'}                     | ${bump('0.22.0', PATCH)}                                               | ${1}
-        ${'a version with a prefix'}                   | ${bump('v0.22.2', PATCH)}                                              | ${1}
-        ${'a version with a suffix'}                   | ${bump('0.22.2-rc.1', PATCH)}                                          | ${1}
-        ${'no pending lines'}                          | ${bump('0.22.2')}                                                      | ${1}
-        ${'a lib file edited too'}                     | ${editing(LIB_FILE)}                                                   | ${1}
-        ${'the root README edited too'}                | ${editing('README.md')}                                                | ${1}
-        ${'the package README edited too'}             | ${editing(PACKAGE_README)}                                             | ${1}
-        ${'peerDependencies edited'}                   | ${withManifest(PEER_EDIT)}                                             | ${1}
-        ${'devDependencies edited'}                    | ${withManifest(DEV_EDIT)}                                              | ${1}
-        ${'a dependency changed in the lockfile'}      | ${withLock(DEPENDENCY_SWAP)}                                           | ${1}
-        ${'a top-level lockfile key changed'}          | ${withLock({}, 2)}                                                     | ${1}
-        ${'a breaking line and no UPGRADING.md edit'}  | ${breakingWithoutUpgrading}                                            | ${1}
-        ${'UPGRADING.md edited with no breaking line'} | ${editing('UPGRADING.md')}                                             | ${1}
-        ${'pending lines left under Unreleased'}       | ${withChangelog(md('## Unreleased', PATCH, '## 0.22.2', PATCH))}       | ${1}
-        ${'no section for the new version'}            | ${withChangelog(md('## Unreleased'))}                                  | ${1}
-        ${'a section for another version'}             | ${withChangelog(md('## Unreleased', '## 0.22.3', PATCH))}              | ${1}
-        ${'an older section holds the lines'}          | ${withChangelog(md('## Unreleased', '## 0.22.1', PATCH, '## 0.22.2'))} | ${1}
-        ${'an older section is empty'}                 | ${withChangelog(md('## Unreleased', '## 0.22.1', '## 0.22.2', PATCH))} | ${1}
-        ${'a first section that is not Unreleased'}    | ${withChangelog(md('## Pending', '## 0.22.2', PATCH))}                 | ${1}
-        ${'changed lines under the new version'}       | ${withChangelog(md('## Unreleased', '## 0.22.2', MINOR))}              | ${1}
-        ${'a dropped line under the new version'}      | ${withChangelog(md('## Unreleased', '## 0.22.2'))}                     | ${1}
-        ${'an added line under the new version'}       | ${withChangelog(md('## Unreleased', '## 0.22.2', PATCH, MINOR))}       | ${1}
-        ${'no Unreleased heading'}                     | ${withChangelog(md('## 0.22.2', PATCH))}                               | ${1}
+        name                                                                  | input                                                                  | problems
+        ${'a patch bump of a patch line'}                                     | ${release({})}                                                         | ${0}
+        ${'a minor bump of a minor line'}                                     | ${bump('0.23.0', MINOR)}                                               | ${0}
+        ${'a minor bump of a breaking line'}                                  | ${bump('0.23.0', BREAKING)}                                            | ${0}
+        ${'a minor bump of patch and minor lines'}                            | ${bump('0.23.0', PATCH, MINOR)}                                        | ${0}
+        ${'the lockfile edited only in the version'}                          | ${editing('package-lock.json')}                                        | ${0}
+        ${'a patch bump of a minor line'}                                     | ${bump('0.22.2', MINOR)}                                               | ${1}
+        ${'a minor bump of a patch line'}                                     | ${bump('0.23.0', PATCH)}                                               | ${1}
+        ${'a 1.0.0 graduation of a patch line'}                               | ${bump('1.0.0', PATCH)}                                                | ${0}
+        ${'a 1.0.0 graduation of a minor line'}                               | ${bump('1.0.0', MINOR)}                                                | ${0}
+        ${'a 1.0.0 graduation of a breaking line'}                            | ${bump('1.0.0', BREAKING)}                                             | ${0}
+        ${'a 1.0.0 graduation with a breaking line and no UPGRADING.md edit'} | ${withoutUpgrading('1.0.0')}                                           | ${1}
+        ${'a 1.0.0 graduation with no pending lines'}                         | ${bump('1.0.0')}                                                       | ${1}
+        ${'a pre-1.0 jump to 1.0.1'}                                          | ${bump('1.0.1', PATCH)}                                                | ${1}
+        ${'a pre-1.0 jump to 1.1.0'}                                          | ${bump('1.1.0', BREAKING)}                                             | ${1}
+        ${'a pre-1.0 jump to 2.0.0'}                                          | ${bump('2.0.0', BREAKING)}                                             | ${1}
+        ${'a post-1.0 patch bump of a patch line'}                            | ${postOne('1.0.1', PATCH)}                                             | ${0}
+        ${'a post-1.0 minor bump of a minor line'}                            | ${postOne('1.1.0', MINOR)}                                             | ${0}
+        ${'a post-1.0 major bump of a breaking line'}                         | ${postOne('2.0.0', BREAKING)}                                          | ${0}
+        ${'a post-1.0 major bump of minor and breaking lines'}                | ${postOne('2.0.0', MINOR, BREAKING)}                                   | ${0}
+        ${'a post-1.0 minor bump of a breaking line'}                         | ${postOne('1.1.0', BREAKING)}                                          | ${1}
+        ${'a post-1.0 minor bump of minor and breaking lines'}                | ${postOne('1.1.0', MINOR, BREAKING)}                                   | ${1}
+        ${'a post-1.0 major bump of a minor line'}                            | ${postOne('2.0.0', MINOR)}                                             | ${1}
+        ${'a post-1.0 patch bump of a minor line'}                            | ${postOne('1.0.1', MINOR)}                                             | ${1}
+        ${'a post-1.0 minor bump of a patch line'}                            | ${postOne('1.1.0', PATCH)}                                             | ${1}
+        ${'a version equal to the base as numbers'}                           | ${bump('0.22.01', PATCH)}                                              | ${1}
+        ${'a lower minor version'}                                            | ${bump('0.21.9', PATCH)}                                               | ${1}
+        ${'a lower patch version'}                                            | ${bump('0.22.0', PATCH)}                                               | ${1}
+        ${'a version with a prefix'}                                          | ${bump('v0.22.2', PATCH)}                                              | ${1}
+        ${'a version with a suffix'}                                          | ${bump('0.22.2-rc.1', PATCH)}                                          | ${1}
+        ${'no pending lines'}                                                 | ${bump('0.22.2')}                                                      | ${1}
+        ${'a lib file edited too'}                                            | ${editing(LIB_FILE)}                                                   | ${1}
+        ${'the root README edited too'}                                       | ${editing('README.md')}                                                | ${1}
+        ${'the package README edited too'}                                    | ${editing(PACKAGE_README)}                                             | ${1}
+        ${'peerDependencies edited'}                                          | ${withManifest(PEER_EDIT)}                                             | ${1}
+        ${'devDependencies edited'}                                           | ${withManifest(DEV_EDIT)}                                              | ${1}
+        ${'a dependency changed in the lockfile'}                             | ${withLock(DEPENDENCY_SWAP)}                                           | ${1}
+        ${'a top-level lockfile key changed'}                                 | ${withLock({}, 2)}                                                     | ${1}
+        ${'a breaking line and no UPGRADING.md edit'}                         | ${withoutUpgrading('0.23.0')}                                          | ${1}
+        ${'UPGRADING.md edited with no breaking line'}                        | ${editing('UPGRADING.md')}                                             | ${1}
+        ${'pending lines left under Unreleased'}                              | ${withChangelog(md('## Unreleased', PATCH, '## 0.22.2', PATCH))}       | ${1}
+        ${'no section for the new version'}                                   | ${withChangelog(md('## Unreleased'))}                                  | ${1}
+        ${'a section for another version'}                                    | ${withChangelog(md('## Unreleased', '## 0.22.3', PATCH))}              | ${1}
+        ${'an older section holds the lines'}                                 | ${withChangelog(md('## Unreleased', '## 0.22.1', PATCH, '## 0.22.2'))} | ${1}
+        ${'an older section is empty'}                                        | ${withChangelog(md('## Unreleased', '## 0.22.1', '## 0.22.2', PATCH))} | ${1}
+        ${'a first section that is not Unreleased'}                           | ${withChangelog(md('## Pending', '## 0.22.2', PATCH))}                 | ${1}
+        ${'changed lines under the new version'}                              | ${withChangelog(md('## Unreleased', '## 0.22.2', MINOR))}              | ${1}
+        ${'a dropped line under the new version'}                             | ${withChangelog(md('## Unreleased', '## 0.22.2'))}                     | ${1}
+        ${'an added line under the new version'}                              | ${withChangelog(md('## Unreleased', '## 0.22.2', PATCH, MINOR))}       | ${1}
+        ${'no Unreleased heading'}                                            | ${withChangelog(md('## 0.22.2', PATCH))}                               | ${1}
     `('$name gives $problems problem(s)', ({
         input, problems,
     }) => {
